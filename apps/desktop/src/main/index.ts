@@ -51,7 +51,7 @@ if (!locked) {
     state = appState;
     setWindowState(appState);
     const services = await createServices(appState, dataDir, emit);
-    const { runs, chats, mcp, projects } = services;
+    const { runs, chats, mcp, projects, ci } = services;
     const result = await createUpdates({ ...services, emit });
     updateActivity = result.activity;
     const updates = result.updates;
@@ -84,11 +84,14 @@ if (!locked) {
       updates.stop();
       event.preventDefault();
       // Agent processes and the MCP server stop before the app does.
-      void Promise.allSettled([runs.close(), chats.close(), mcp.close()]).then(() => {
-        trace('runs and mcp server closed');
-        projects.close();
-        app.quit();
-      });
+      void ci
+        .close()
+        .then(() => Promise.allSettled([runs.close(), chats.close(), mcp.close()]))
+        .then(() => {
+          trace('runs and mcp server closed');
+          projects.close();
+          app.quit();
+        });
     });
   });
 

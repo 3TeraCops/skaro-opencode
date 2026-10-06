@@ -8,8 +8,8 @@ import { completedTaskReply, mergedTaskReply, unmetReply } from './task-merge-re
 import { key, findTask } from './task-run-helpers';
 import { ActiveRun } from './task-run-model';
 import type { TaskRunEngine } from './task-run-engine';
-import { ownsCheckout, stageIdOf } from './task-stage';
-import { readSubject, subjectStage, updateSubject } from './task-subject';
+import { lastAgentText } from './task-merges';
+import { readSubject, updateSubject } from './task-subject';
 
 /** results: a focused part of the task-run controller. */
 export class TaskRunResults {
@@ -19,21 +19,51 @@ export class TaskRunResults {
   }
 
   async mergeTask(args: MergeTaskArgs, scope: SkaroScope): Promise<ToolResult> {
+    if (scope.importId) return { text: 'Import sessions cannot merge tasks.', isError: true };
+    if (scope.kind === 'project_chat') {
+      if (!!args.taskId === !!args.milestoneId)
+        return { text: 'Specify exactly one task_id or milestone_id.', isError: true };
+      try {
+        const artifacts = await this.ctx.project(scope.projectId).load();
+        const task = artifacts.tasks.find((item) => item.id === args.taskId);
+        if (task?.status === 'done')
+          return { text: `${task.id} is already completed. There is no pending task merge.` };
+        const tasks = args.milestoneId
+          ? artifacts.tasks.filter(
+              (item) => item.milestone === args.milestoneId && item.status !== 'cancelled',
+            )
+          : [];
+        if (tasks.length && tasks.every((item) => item.status === 'done'))
+          return {
+            text: `Every task of ${args.milestoneId} is already completed. There is no pending milestone merge.`,
+          };
+        const result = await this.ctx.merges.coordinator.merge(
+          scope.projectId,
+          args.taskId ?? args.milestoneId!,
+          args.partial ?? false,
+          args.commitMessage,
+        );
+        return { text: mergedTaskReply(result) };
+      } catch (error) {
+        return { text: errorText(error), isError: true };
+      }
+    }
     if (!scope.taskId) return { text: 'merge_task works only in a task session.', isError: true };
+    const task = await this.ctx.project(scope.projectId).store.readTask(scope.taskId);
+    if (
+      (args.taskId && args.taskId !== scope.taskId) ||
+      (args.milestoneId && args.milestoneId !== task.milestone)
+    )
+      return { text: 'A task session can only merge its own task or milestone.', isError: true };
     const active = this.ctx.active.get(key(scope.projectId, scope.taskId));
     if (!active || active.run.id !== scope.runId) {
       return { text: 'This session is no longer the current run of the task.', isError: true };
     }
-    const stageId = stageIdOf(active.run);
-    if (stageId) {
-      return {
-        text:
-          `This task works in the branch of milestone ${stageId} and is not merged on its own: ` +
-          'Skaro merges the whole milestone after its acceptance. Do not call merge_task; ' +
-          'tell the user that the task goes into the merge of its milestone.',
-      };
+    try {
+      return await this.ctx.merges.request(args, active, this.ctx.project(active.projectId));
+    } catch (error) {
+      return { text: errorText(error), isError: true };
     }
-    return this.ctx.merges.request(args, active, this.ctx.project(active.projectId));
   }
 
   closeMergeCard(active: ActiveRun, resolution: 'cancelled' | 'answered' = 'cancelled'): void {
@@ -54,43 +84,57 @@ export class TaskRunResults {
     const active =
       this.ctx.active.get(key(projectId, taskId)) ??
       (await this.ctx.history.restore(projectId, taskId));
-    // The acceptance of a stage: a milestone without a readiness criterion has nothing to tick.
-    const stage = subjectStage(artifacts, taskId);
-    if ((!criteria.length && !stage) || !active || task.status === 'done') return 'none';
-    const shown = active.timeline.state.interactions.find(
-      (i): i is MergeInteraction => i.kind === 'merge',
-    );
-
-    if (!criteria.every((c) => c.done)) {
+    if (
+      (!criteria.length && !active?.mergeSummary) ||
+      !active ||
+      active.switching ||
+      task.status === 'done'
+    )
+      return 'none';
+    if (!criteria.every((criterion) => criterion.done)) {
       if (task.status === 'review') await updateSubject(context, taskId, { status: 'in_progress' });
-      // The card of a stage stays and says which criterion holds the merge back.
-      if (stage && shown) {
-        await this.ctx.merges.showCard(active, context, { partial: shown.stage?.partial ?? false });
-      } else this.closeMergeCard(active);
+      this.closeMergeCard(active);
       this.ctx.events.settleRuntime(active);
       this.statusChanged(projectId, taskId);
       await this.ctx.stages.sync(projectId, taskId);
       return 'open';
     }
-    // Criteria ticked ahead of the tasks: the stage merges when its tasks are done.
-    if (stage && task.status !== 'review') return 'none';
-
-    if (!ownsCheckout(active.run)) {
-      await this.ctx.stages.complete(active, context, task);
-      this.statusChanged(projectId, taskId);
-      return 'stage';
-    }
-
     if (!active.run.worktree || !active.run.branch) {
-      const before = artifacts.tasks;
       await updateSubject(context, taskId, { status: 'done' });
       context.invalidate();
-      const after = (await context.load()).tasks;
       this.statusChanged(projectId, taskId);
-      const unblocked = newlyUnblocked(before, after);
-      for (const id of unblocked) this.ctx.changed(projectId, id);
-      void this.ctx.scheduling.launchUnblocked(projectId, unblocked);
+      await this.ctx.stages.sync(projectId, taskId);
+      await this.ctx.scheduling.launchUnblocked(
+        projectId,
+        newlyUnblocked(artifacts.tasks, (await context.load()).tasks),
+      );
       return 'done';
+    }
+    await this.ctx.merges.coordinator.capture(
+      projectId,
+      taskId,
+      active.run.branch,
+      active.run.worktree,
+      active.commitMessage ?? task.id + ': ' + task.title,
+      active.mergeSummary ?? lastAgentText(active),
+    );
+    const after = await context.load();
+    await this.ctx.stages.sync(projectId, taskId);
+    await this.ctx.scheduling.launchUnblocked(
+      projectId,
+      newlyUnblocked(artifacts.tasks, after.tasks),
+    );
+    if (
+      task.milestone &&
+      after.tasks.some(
+        (item) =>
+          item.milestone === task.milestone &&
+          !item.archived &&
+          !['review', 'done', 'cancelled'].includes(item.status),
+      )
+    ) {
+      this.statusChanged(projectId, taskId);
+      return 'stage';
     }
 
     // "Вливать автоматически": commit and merge now; a blocked merge falls back to the card.
@@ -118,9 +162,8 @@ export class TaskRunResults {
     const card = active.timeline.state.interactions.find(
       (i): i is MergeInteraction => i.kind === 'merge',
     );
-    const stale = stage
-      ? card?.stage?.partial || (card?.stage?.unmet.length ?? 0) > 0
-      : active.commitMessage && card?.message !== active.commitMessage;
+    const stale =
+      !!task.milestone || (active.commitMessage && card?.message !== active.commitMessage);
     if (!card || stale) {
       const shown = await this.ctx.merges.showCard(active, context);
       if (!shown) return active.merged ? 'merged' : 'none';
@@ -183,9 +226,8 @@ export class TaskRunResults {
       return {
         text:
           done +
-          'Skaro committed the work to the branch of the milestone. The task is merged together ' +
-          'with its milestone, after the acceptance of the milestone; do not call merge_task. ' +
-          'Tell the user the task is done, with a short summary and how each criterion was checked.',
+          'Skaro saved the accepted result. Implementation is complete; the task stays in review ' +
+          'until its milestone is merged. Report the pending merge accurately. There is no separate milestone chat.',
       };
     }
     return {
@@ -193,10 +235,12 @@ export class TaskRunResults {
         state === 'merge'
           ? done +
             'Skaro showed the user a card to merge the task branch; the merge happens when the ' +
-            'user confirms it. Do not call merge_task. Tell the user the task is done and ready ' +
-            'to merge, with a short summary and how each criterion was checked.'
+            'user confirms it. Do not call merge_task. Tell the user the accepted result is in review ' +
+            'and awaiting merge, with a short summary and how each criterion was checked.'
           : done +
-            'Tell the user the task is done, with a short summary and how each criterion was checked.',
+            (state === 'done'
+              ? 'The task status is done. Report completion with a short summary and how each criterion was checked.'
+              : 'Report the current task status accurately. Acceptance alone does not confirm a merge or completion.'),
     };
   }
 }

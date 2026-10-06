@@ -1,270 +1,239 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { ArtifactStore, MergeBlockedError, newlyUnblocked, type MergeCheck } from '@skaro/core';
+import { MergeBlockedError } from '@skaro/core';
+import type { MergeTaskArgs } from '@skaro/mcp-server';
 import type { ProjectContext } from './projects';
 import type { ActiveRun, TaskRunDeps } from './tasks';
-import type { MergeTaskArgs } from '@skaro/mcp-server';
+import { mergeInteraction, withStage, type MergeInteraction } from './task-merge-card';
 import type { TaskMergeHooks } from './task-merge-refresh';
 import { MergeCardRefresh } from './task-merge-refresh';
-import { mergeInteraction, withStage, type MergeInteraction } from './task-merge-card';
-import { taskSections, withSummary } from './task-body';
-import { requestTaskMerge } from './task-merge-request';
-import { closeMergeCards, recordedTaskMerge } from './task-merge-result';
-import { runChecks } from './check-runner';
+import { closeMergeCards, completedTaskReply, mergedTaskReply } from './task-merge-result';
 import { undoTaskMerge } from './task-merge-undo';
-import { confirmStageMerge } from './stage-merge-confirm';
-import { stageMergeInfo } from './stage-merge';
-import { stageNotice } from './stage-views';
-import { readLedger } from './task-stage';
-import { subjectOf, subjectStage, updateSubject } from './task-subject';
+import { CompletionCoordinator } from './completion-coordinator';
+import { CompletionStore } from './completion-store';
+import { acceptedResult } from './completion-results';
+import { withCompletionCheckout } from './completion-checkout';
+import { projectCompletion } from './completion-feed';
 
+/** Chat adapter. All sources of a merge use the same durable coordinator. */
 export class TaskMerges {
+  readonly coordinator: CompletionCoordinator;
   private readonly refresh: MergeCardRefresh;
-  private readonly pending = new Map<string, Promise<unknown>>();
+  private readonly fingerprints = new Map<string, string>();
   private readonly hooks: TaskMergeHooks & { deps: TaskRunDeps };
   constructor(hooks: TaskMergeHooks & { deps: TaskRunDeps }) {
     this.hooks = hooks;
-    this.refresh = new MergeCardRefresh(hooks);
+    this.refresh = new MergeCardRefresh({
+      ...hooks,
+      refreshCard: async (active, card) => {
+        const context = hooks.project(active.projectId);
+        const artifacts = await context.load();
+        if (artifacts.tasks.find((task) => task.id === active.taskId)?.status === 'done') {
+          closeMergeCards(active, hooks);
+          return;
+        }
+        const fingerprint = JSON.stringify([
+          await context.git.head(artifacts.config.baseBranch),
+          artifacts.tasks.map((task) => [task.id, task.status, task.body]),
+          new CompletionStore(hooks.deps.db, active.projectId).operations().at(-1),
+        ]);
+        if (this.fingerprints.get(active.run.id) === fingerprint) return;
+        await this.showCard(active, context, { partial: card.stage?.partial ?? false });
+        this.fingerprints.set(active.run.id, fingerprint);
+      },
+    });
+    this.coordinator = new CompletionCoordinator({
+      deps: hooks.deps,
+      busy: (projectId, taskId) =>
+        hooks
+          .active()
+          .some(
+            (run) =>
+              run.projectId === projectId &&
+              run.taskId === taskId &&
+              (!!run.switching || run.timeline.state.status === 'working'),
+          ),
+      completed: (projectId, operation, unblocked) =>
+        projectCompletion(hooks, projectId, operation, unblocked),
+      failed: (projectId, taskId, error) => {
+        hooks.deps.db.addEvent(projectId, 'completion_failed', { taskId, error });
+        hooks.deps.emit('project.changed', { projectId });
+        hooks.deps.notify?.('error', error);
+        const active = hooks
+          .active()
+          .find((run) => run.projectId === projectId && run.taskId === taskId);
+        if (active)
+          hooks.skaroEvent(active, {
+            t: 'item.upsert',
+            item: {
+              id: `skaro-completion-error-${projectId}`,
+              turnId: active.timeline.state.turns.at(-1)?.id ?? '',
+              kind: 'notice',
+              level: 'error',
+              code: 'other',
+              text: error,
+              status: 'done',
+              startedAt: Date.now(),
+              native: { agent: 'skaro', type: 'completion_failed', ref: projectId },
+            },
+          });
+        console.error(`Completion ${projectId}: ${error}`);
+      },
+    });
   }
 
+  start(): void {
+    this.coordinator.start();
+  }
   watch(active: ActiveRun): void {
-    this.refresh.watch(active);
+    if (active.merged) closeMergeCards(active, this.hooks);
+    else this.refresh.watch(active);
   }
-  close(): void {
+  close(): Promise<void> {
     this.refresh.close();
+    return this.coordinator.close();
   }
+  async idle(projectId: string): Promise<void> {
+    await this.coordinator.idle(projectId);
+  }
+
   revert(active: ActiveRun, context: ProjectContext, commit: string): Promise<string> {
-    return this.enqueue(active, () => undoTaskMerge(active, context, commit, this.hooks));
-  }
-
-  request(args: MergeTaskArgs, active: ActiveRun, context: ProjectContext) {
-    return this.enqueue(active, () =>
-      requestTaskMerge(args, active, context, this.hooks, {
-        confirm: () => this.performConfirm(active, context, undefined, active.commitMessage ?? ''),
-        showCard: () => this.performShowCard(active, context),
-      }),
+    return this.coordinator.serialized(active.projectId, () =>
+      undoTaskMerge(active, context, commit, this.hooks),
     );
   }
 
-  /** `partial`: «Влить готовое» of a stage, the finished tasks while the stage goes on. */
-  showCard(active: ActiveRun, context: ProjectContext, options: { partial?: boolean } = {}) {
-    return this.enqueue(active, () => this.performShowCard(active, context, options));
-  }
-
-  private async performShowCard(
-    active: ActiveRun,
-    context: ProjectContext,
-    options: { partial?: boolean } = {},
-  ): Promise<MergeInteraction | undefined> {
-    context.invalidate();
-    const artifacts = await context.load();
-    const task = subjectOf(artifacts, active.taskId);
-    if (!task) throw new Error('The task no longer exists');
-    const stage = subjectStage(artifacts, active.taskId);
-    if (task.status === 'done') {
+  async request(args: MergeTaskArgs, active: ActiveRun, context: ProjectContext) {
+    if (args.summary) active.mergeSummary = args.summary;
+    if (args.commitMessage) active.commitMessage = args.commitMessage;
+    const task = await context.store.readTask(active.taskId);
+    if (task.status === 'done' && !args.milestoneId) {
       closeMergeCards(active, this.hooks);
-      return undefined;
+      return {
+        text: completedTaskReply(
+          active,
+          (await context.load()).config.baseBranch,
+          this.hooks.deps.db,
+        ),
+      };
     }
-    const previous = active.timeline.state.interactions.find(
-      (i): i is MergeInteraction => i.kind === 'merge',
-    );
-    const label = `${task.id} · ${task.title}`;
-    if (stage) {
-      // A stage is never stored as "in review": the first card of its full merge says so.
-      if (!previous && !options.partial) {
-        this.hooks.deps.db.addEvent(active.projectId, 'stage_review', { stage: stage.id });
-        this.hooks.deps.notify?.(
-          'review',
-          stage.title,
-          stageNotice('review', stage.id, this.hooks.deps.locale()),
-        );
-      }
-    } else if (task.status !== 'review') {
-      await updateSubject(context, task.id, { status: 'review' });
-      context.invalidate();
-      this.hooks.deps.db.addEvent(active.projectId, 'task_review', { task: task.id });
-      this.hooks.deps.notify?.('review', label);
-    }
-    await context.git.commitAll(
-      active.run.worktree!,
-      (stage && active.commitMessage?.trim()) || `${task.id}: ${task.title}`,
-    );
-    const check = await context.git.checkMerge(artifacts.config.baseBranch, active.run.branch!);
-    if (previous)
-      this.hooks.skaroEvent(active, {
-        t: 'interaction.closed',
-        id: previous.id,
-        resolution: 'cancelled',
-      });
-    const card = mergeInteraction(
-      randomUUID(),
-      active.run.branch!,
-      artifacts.config.baseBranch,
-      check,
-    );
-    if (stage) {
-      const ledger = readLedger(this.hooks.deps.db, active.projectId, stage.id);
-      const partial = options.partial ?? false;
-      withStage(
-        card,
-        stageMergeInfo(stage, artifacts, ledger, { partial, previous: previous?.stage }),
+    if (task.status !== 'done' && task.status !== 'review') {
+      if (!active.run.branch || !active.run.worktree)
+        throw new Error('The task has no result branch');
+      await this.coordinator.capture(
+        active.projectId,
+        active.taskId,
+        active.run.branch,
+        active.run.worktree,
+        active.commitMessage ?? `${task.id}: ${task.title}`,
+        active.mergeSummary,
       );
-    } else if (active.commitMessage) card.message = active.commitMessage;
-    this.hooks.skaroEvent(active, { t: 'interaction.opened', interaction: card });
-    this.hooks.settleRuntime(active);
-    this.watch(active);
-    return card;
+    }
+    const result = await this.coordinator.merge(
+      active.projectId,
+      args.milestoneId ?? active.taskId,
+      args.partial ?? false,
+      args.commitMessage,
+    );
+    active.merged = result;
+    return { text: mergedTaskReply(result) };
   }
-  /** The merge itself: after "Влить" on the card, or on its own when the project merges automatically. */
-  confirm(
+
+  showCard(active: ActiveRun, context: ProjectContext, options: { partial?: boolean } = {}) {
+    return this.coordinator.serialized(
+      active.projectId,
+      async (): Promise<MergeInteraction | undefined> => {
+        context.invalidate();
+        const artifacts = await context.load();
+        const task = artifacts.tasks.find((item) => item.id === active.taskId);
+        if (!task) throw new Error('The task no longer exists');
+        if (task.status === 'done') {
+          closeMergeCards(active, this.hooks);
+          return undefined;
+        }
+        const stage = artifacts.milestones.find((item) => item.id === task.milestone);
+        const tasks = stage
+          ? artifacts.tasks.filter(
+              (item) => item.milestone === stage.id && !item.archived && item.status === 'review',
+            )
+          : [task];
+        const results = [];
+        for (const item of tasks)
+          results.push(await acceptedResult(this.hooks.deps.db, context, item));
+        if (!results.length) throw new Error('No accepted results awaiting merge');
+        const check = await withCompletionCheckout(
+          context.git,
+          artifacts.config.baseBranch,
+          results,
+          (_checkout, head) => context.git.checkMerge(artifacts.config.baseBranch, head),
+        ).catch((error: unknown) => {
+          if (error instanceof MergeBlockedError) return error.check;
+          throw error;
+        });
+        check.blockers = check.blockers.filter((blocker) => blocker !== 'no_changes');
+        const previous = active.timeline.state.interactions.find((item) => item.kind === 'merge');
+        const card = mergeInteraction(
+          previous?.id ?? randomUUID(),
+          stage?.id ?? results[0]!.branch,
+          artifacts.config.baseBranch,
+          check,
+        );
+        if (stage)
+          withStage(card, {
+            id: stage.id,
+            partial: options.partial ?? false,
+            unmet: [],
+            tasks: results.map((result) => ({
+              id: result.taskId,
+              title: tasks.find((item) => item.id === result.taskId)!.title,
+              message:
+                previous?.kind === 'merge'
+                  ? (previous.stage?.tasks.find((item) => item.id === result.taskId)?.message ??
+                    result.message)
+                  : result.message,
+            })),
+          });
+        else
+          card.message =
+            previous?.kind === 'merge'
+              ? (previous.message ?? active.commitMessage ?? results[0]!.message)
+              : (active.commitMessage ?? results[0]!.message);
+        this.hooks.skaroEvent(active, { t: 'interaction.opened', interaction: card });
+        this.hooks.settleRuntime(active);
+        this.watch(active);
+        return card;
+      },
+    );
+  }
+
+  async confirm(
     active: ActiveRun,
-    context: ProjectContext,
+    _context: ProjectContext,
     card: MergeInteraction | undefined,
     message: string,
   ) {
-    return this.enqueue(active, () => this.performConfirm(active, context, card, message));
-  }
-
-  private async enqueue<T>(active: ActiveRun, action: () => Promise<T>): Promise<T> {
-    // Serialize the whole lifecycle, including reading/updating task metadata.
-    this.refresh.busy.add(active.projectId);
-    const previous = this.pending.get(active.projectId) ?? Promise.resolve();
-    const current = previous.catch(() => undefined).then(action);
-    this.pending.set(active.projectId, current);
-    try {
-      return await current;
-    } finally {
-      if (this.pending.get(active.projectId) === current) {
-        this.pending.delete(active.projectId);
-        this.refresh.busy.delete(active.projectId);
-        await this.refresh.refresh();
+    if (active.switching) throw new Error('The agent is being changed; retry after the handoff');
+    if (card?.stage) {
+      const store = new CompletionStore(this.hooks.deps.db, active.projectId);
+      for (const task of card.stage.tasks) {
+        const result = store.result(task.id);
+        if (result) store.saveResult({ ...result, message: task.message });
       }
     }
-  }
-
-  private async performConfirm(
-    active: ActiveRun,
-    context: ProjectContext,
-    card: MergeInteraction | undefined,
-    message: string,
-  ): Promise<{ commit: string; base: string }> {
-    context.invalidate();
-    const artifacts = await context.load();
-    const task = subjectOf(artifacts, active.taskId);
-    if (!task) throw new Error('The task no longer exists');
-    const configProblems = artifacts.problems.filter((p) => p.path === '.skaro/config.yaml');
-    if (configProblems.length) throw new Error(configProblems.map((p) => p.message).join('\n'));
-    const stage = subjectStage(artifacts, active.taskId);
-    if (stage && task.status !== 'done')
-      return confirmStageMerge(active, context, stage, card, this.hooks);
-    if (task.status === 'done') {
-      closeMergeCards(active, this.hooks);
-      const merge = recordedTaskMerge(active, artifacts.config.baseBranch, this.hooks.deps.db);
-      if (merge) return merge;
-      throw new Error('The task is already completed; there is no recorded merge for this run');
-    }
-    if (taskSections(task.body).criteria.some((criterion) => !criterion.done))
-      throw new Error('The task has unfinished acceptance criteria');
-    const base = artifacts.config.baseBranch;
-    const branch = active.run.branch!;
-    const summaryText = active.mergeSummary ?? lastAgentText(active);
-    // Whatever the agent wrote after the card was shown goes into the merge too.
-    if (active.run.worktree)
-      await context.git.commitAll(active.run.worktree, `${task.id}: ${task.title}`);
-    let result: { commit: string; check: MergeCheck; before: string };
-    try {
-      result = await context.git.merge({
-        base,
-        branch,
-        strategy: artifacts.config.merge.strategy,
-        worktree: active.run.worktree,
-        message: message.trim() || `${task.id}: ${task.title}`,
-        managedPaths: [task.path],
-        verify: (checkout) => runChecks(checkout, artifacts.config.checks),
-        beforeCommit: async (checkout) => {
-          const path = join(checkout, task.path);
-          await mkdir(dirname(path), { recursive: true });
-          await writeFile(path, await readFile(join(context.root, task.path)));
-          const store = new ArtifactStore(checkout);
-          const current = await store.readTask(task.id);
-          if (taskSections(current.body).criteria.some((criterion) => !criterion.done))
-            throw new Error('The task has unfinished acceptance criteria');
-          const updated = await store.updateTask(task.id, {
-            status: 'done',
-            ...(summaryText ? { body: withSummary(current.body, summaryText) } : {}),
-          });
-          return [updated.path];
-        },
-      });
-    } catch (error) {
-      if (card && error instanceof MergeBlockedError) {
-        this.hooks.skaroEvent(active, {
-          t: 'interaction.opened',
-          interaction: mergeInteraction(card.id, branch, base, error.check),
-        });
-      }
-      context.invalidate();
-      throw error;
-    }
-    active.merged = { commit: result.commit, base };
-    context.invalidate();
-    const after = await context.load();
-
-    this.hooks.deps.db.recordMerge({
-      projectId: active.projectId,
-      taskId: task.id,
-      branch,
-      commit: result.commit,
-      strategy: artifacts.config.merge.strategy,
-    });
-    this.hooks.deps.db.addEvent(active.projectId, 'merged', { task: task.id, base });
-    this.hooks.deps.notify?.('merged', `${task.id} · ${task.title}`);
-    closeMergeCards(active, this.hooks);
-    const unblocked = newlyUnblocked(artifacts.tasks, after.tasks);
-    this.hooks.skaroEvent(active, {
-      t: 'item.upsert',
-      item: {
-        id: `skaro-merged-${card?.id ?? result.commit}`,
-        turnId: active.timeline.state.turns.at(-1)?.id ?? '',
-        kind: 'notice',
-        level: 'info',
-        code: 'merged',
-        merge: { before: result.before, strategy: artifacts.config.merge.strategy },
-        text: base,
-        status: 'done',
-        startedAt: Date.now(),
-        native: { agent: 'skaro', type: 'merged', ref: result.commit },
-      },
-    });
-
-    for (const id of unblocked) this.hooks.changed(active.projectId, id);
-    this.hooks.deps.emit('project.changed', { projectId: active.projectId });
-    void this.hooks.launchUnblocked(active.projectId, unblocked);
-
-    // Close the agent after its reply. The checkout and its ignored data stay; the task's
-    // environment is a disposable copy and goes now, without holding up the merge.
-    const cleanup = async (): Promise<void> => {
-      await this.hooks.detach(active);
-      this.hooks.deps.db.finishRun(active.run.id, 'done');
-      this.hooks.setRuntime(active.projectId, active.taskId, 'idle');
-      this.hooks.changed(active.projectId, active.taskId);
-      void this.hooks.removeEnvironment(active.projectId, active.taskId);
-    };
-    if (active.session && active.timeline.state.status !== 'idle') active.afterTurn = cleanup;
-    else await cleanup();
-    return { commit: result.commit, base };
+    const result = await this.coordinator.merge(
+      active.projectId,
+      card?.stage?.id ?? active.taskId,
+      card?.stage?.partial ?? false,
+      message || undefined,
+    );
+    active.merged = result;
+    return result;
   }
 }
 
-/** The last agent reply of the run: the fallback task summary. */
 export function lastAgentText(active: ActiveRun): string | undefined {
-  const items = active.timeline.state.items;
-  for (let i = items.length - 1; i >= 0; i--) {
-    const item = items[i]!;
-    if (item.kind === 'message' && item.role === 'agent' && !item.parentId && item.text.trim()) {
+  for (const item of [...active.timeline.state.items].reverse()) {
+    if (item.kind === 'message' && item.role === 'agent' && !item.parentId && item.text.trim())
       return item.text.trim();
-    }
   }
   return undefined;
 }

@@ -18,6 +18,7 @@ import { TaskRunStages } from './task-run-stages';
 import { checkoutKey, stageTasks } from './task-stage';
 import { readSubject, subjectStage } from './task-subject';
 import { stageNotice } from './stage-views';
+import { errorText } from './session-log';
 
 function taskKey(k: string): TaskKey {
   const [projectId, taskId] = k.split('\n') as [string, string];
@@ -67,7 +68,9 @@ export class TaskRunEngine {
       const { projectId, taskId } = taskKey(event.taskId);
       if (event.type === 'queued') this.setRuntime(projectId, taskId, 'queued');
       if (event.type === 'finished' && event.error) {
-        this.setRuntime(projectId, taskId, 'idle');
+        this.setRuntime(projectId, taskId, 'failed');
+        deps.db.addEvent(projectId, 'task_failed', { task: taskId, error: errorText(event.error) });
+        deps.notify?.('error', `${taskId}: ${errorText(event.error)}`);
       }
     });
     this.environments = new TaskEnvironments({
@@ -83,6 +86,7 @@ export class TaskRunEngine {
       finished: (task) => this.finished(task),
       ...(deps.docker ? { docker: deps.docker } : {}),
     });
+    this.merges.start();
   }
 
   /**

@@ -3,6 +3,8 @@ import { LiveChat } from './chat-model';
 import { projectContextText } from './chat-context-text';
 
 import type { ChatEngine } from './chat-engine';
+import { CompletionStore } from './completion-store';
+import type { TrackedCiRun } from './ci-runs';
 
 export class ChatContext {
   private readonly ctx: ChatEngine;
@@ -16,7 +18,37 @@ export class ChatContext {
     const artifacts = await context.load();
     const name = this.ctx.deps.db.getProject(scope.projectId)?.name ?? '';
     return {
-      text: projectContextText(name, artifacts, this.ctx.deps.db.getTaskRuntime(scope.projectId)),
+      text:
+        projectContextText(name, artifacts, this.ctx.deps.db.getTaskRuntime(scope.projectId)) +
+        '\n\n## Merge blockers\n' +
+        JSON.stringify(new CompletionStore(this.ctx.deps.db, scope.projectId).issues()) +
+        '\n\n## Merge operations\n' +
+        JSON.stringify(
+          new CompletionStore(this.ctx.deps.db, scope.projectId)
+            .operations()
+            .slice(-20)
+            .map(({ id, state, base, commit, error, results }) => ({
+              id,
+              state,
+              base,
+              commit,
+              error,
+              tasks: results.map((result) => result.taskId),
+            })),
+        ) +
+        '\n\n## CI and release runs\n' +
+        JSON.stringify(
+          this.ctx.deps.db
+            .getSetting<TrackedCiRun[]>('ci.runs', [])
+            .filter((run) => run.projectId === scope.projectId)
+            .map(({ repository, runId, kind, remote, error }) => ({
+              repository,
+              runId,
+              kind,
+              remote,
+              error,
+            })),
+        ),
     };
   }
 

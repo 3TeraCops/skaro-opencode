@@ -101,6 +101,15 @@ export class ChatSessions implements ProjectToolHandlers {
   async context(scope: SkaroScope): Promise<ToolResult> {
     return this.engine.context.context(scope);
   }
+  async operationNotice(
+    projectId: string,
+    chatId: string,
+    text: string,
+    error: boolean,
+  ): Promise<void> {
+    const live = await this.engine.history.restore(projectId, chatId);
+    this.engine.history.notice(live, 'other', error ? 'error' : 'info', text);
+  }
   async writeDoc(args: WriteDocArgs, scope: SkaroScope): Promise<ToolResult> {
     return this.engine.documents.writeDoc(args, scope);
   }

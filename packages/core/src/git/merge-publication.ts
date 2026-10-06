@@ -1,5 +1,6 @@
 import { copyFile, mkdtemp, open, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { git } from './command.ts';
 import {
   captureFiles,
@@ -20,6 +21,7 @@ export async function publishMerge(
   commit: string,
   base: string,
   managed: FileImages,
+  guards: FileImages = new Map(),
 ): Promise<void> {
   const index = (
     await git(repo, ['rev-parse', '--path-format=absolute', '--git-path', 'index'])
@@ -27,6 +29,7 @@ export async function publishMerge(
   const gitDir = (await git(repo, ['rev-parse', '--absolute-git-dir'])).stdout.trim();
   const lock = `${index}.lock`;
   const handle = await open(lock, 'wx');
+  const lockOwner = `Skaro publication ${process.pid} ${randomUUID()}`;
   const dir = await mkdtemp(join(gitDir, 'skaro-merge-recovery-')).catch(async (error) => {
     await handle.close();
     await rm(lock, { force: true });
@@ -40,13 +43,14 @@ export async function publishMerge(
   let original: FileImages = new Map();
   let planned: FileImages = new Map();
   try {
+    await handle.writeFile(lockOwner);
     await handle.close();
     if (
       (await git(repo, ['symbolic-ref', '--short', 'HEAD'])).stdout.trim() !== base ||
       (await git(repo, ['rev-parse', 'HEAD'])).stdout.trim() !== before
     )
       throw new Error('The base branch changed; merge must be checked again');
-    for (const [path, image] of managed)
+    for (const [path, image] of [...managed, ...guards])
       if (!sameImage(image, await fileImage(join(repo, path))))
         throw new Error(`Merge metadata changed during preparation: ${path}`);
     const obstacles = await localMergeObstacles(repo, before, commit, [...managed.keys()]);
@@ -63,7 +67,15 @@ export async function publishMerge(
     await copyFile(index, join(dir, 'original-index'));
     await writeFile(
       join(dir, 'journal.json'),
-      JSON.stringify({ base, before, commit, original: [...original], planned: [...planned] }),
+      JSON.stringify({
+        base,
+        before,
+        commit,
+        ownerPid: process.pid,
+        lockOwner,
+        original: [...original],
+        planned: [...planned],
+      }),
     );
     // Managed metadata is explicitly part of this commit. Other .skaro files retain their staging.
     const metadata = [...managed.keys()].filter((path) => paths.includes(path));

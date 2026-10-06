@@ -33,14 +33,6 @@ export function createRunController(p: RunProps) {
     }),
   );
 
-  /** An earlier selected task of the same stage: this one runs after it and takes no slot. */
-  function lead(task: TaskSummary): TaskSummary | undefined {
-    if (!task.staged || !task.milestone) return undefined;
-    return runnable
-      .slice(0, runnable.indexOf(task))
-      .findLast((x) => x.staged && x.milestone?.id === task.milestone?.id);
-  }
-
   function note(task: TaskSummary): {
     text: string;
     tone: 'blocked' | 'now' | 'queue' | 'stage';
@@ -49,9 +41,9 @@ export function createRunController(p: RunProps) {
       return { text: t('board.waits', { deps: task.waitsFor.join(', ') }), tone: 'blocked' };
     }
     if (!canStart(task)) return { text: statusLabel(task.status), tone: 'queue' };
-    const before = lead(task)?.id ?? task.after;
+    const before = task.after;
     if (before) return { text: t('board.rd.after', { task: before }), tone: 'stage' };
-    return runnable.filter((x) => !lead(x)).indexOf(task) < slots.free
+    return runnable.filter((x) => !x.after).indexOf(task) < slots.free
       ? { text: t('board.rd.now'), tone: 'now' }
       : { text: t('board.rd.queue'), tone: 'queue' };
   }

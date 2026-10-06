@@ -103,6 +103,15 @@ export class TaskRuns {
   mergeTask(args: MergeTaskArgs, scope: SkaroScope): Promise<ToolResult> {
     return this.engine.results.mergeTask(args, scope);
   }
+  async operationNotice(
+    projectId: string,
+    taskId: string,
+    text: string,
+    error: boolean,
+  ): Promise<void> {
+    const active = await this.engine.history.restore(projectId, taskId);
+    if (active) this.engine.history.notice(active, 'other', error ? 'error' : 'info', text);
+  }
   submitResult(args: SubmitResultArgs, scope: SkaroScope): Promise<ToolResult> {
     return this.engine.results.submitResult(args, scope);
   }

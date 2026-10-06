@@ -19,6 +19,10 @@ export interface TaskMergeHooks {
   setRuntime: (projectId: string, taskId: string, state: TaskRuntime) => void;
   /** A merged task has no use for its environment: a disposable copy goes with it. */
   removeEnvironment: (projectId: string, taskId: string) => Promise<void>;
+  refreshCard?: (
+    active: ActiveRun,
+    card: import('./task-merge-card').MergeInteraction,
+  ) => Promise<void>;
 }
 
 /** Only open merge cards are polled. Git and local file edits require no agent turn. */
@@ -52,7 +56,9 @@ export class MergeCardRefresh {
     try {
       const active = this.hooks
         .active()
-        .filter((a) => a.timeline.state.interactions.some((i) => i.kind === 'merge'));
+        .filter(
+          (a) => !a.switching && a.timeline.state.interactions.some((i) => i.kind === 'merge'),
+        );
       if (!active.length) {
         clearInterval(this.timer);
         this.timer = undefined;
@@ -63,6 +69,10 @@ export class MergeCardRefresh {
         if (!card || card.kind !== 'merge' || !run.run.branch) continue;
         const context = this.hooks.project(run.projectId);
         try {
+          if (this.hooks.refreshCard) {
+            await this.hooks.refreshCard(run, card);
+            continue;
+          }
           const artifacts = await context.load();
           if (subjectOf(artifacts, run.taskId)?.status === 'done') {
             closeMergeCards(run, this.hooks);
@@ -75,6 +85,7 @@ export class MergeCardRefresh {
           withStage(next, card.stage);
           if (
             !this.closed &&
+            !run.switching &&
             !this.busy.has(run.projectId) &&
             run.timeline.state.interactions.includes(card) &&
             JSON.stringify(next) !== JSON.stringify(card)

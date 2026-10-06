@@ -24,21 +24,15 @@ export function indexTasks(tasks: readonly Task[]): TaskIndex {
 }
 
 /**
- * Tasks of one milestone that work in the milestone's branch: neither has a branch of its own
- * (a task started before stage execution keeps its own branch and merges by itself).
+ * Tasks of one milestone. The scheduler materializes accepted dependency commits before launch.
  */
 export function sharesStage(task: Task, other: Task): boolean {
-  return (
-    task.milestone !== undefined &&
-    task.milestone === other.milestone &&
-    !task.branch &&
-    !other.branch
-  );
+  return task.milestone !== undefined && task.milestone === other.milestone;
 }
 
 /**
  * Dependencies that are not done yet. Unknown ids count as unfinished. Inside a stage a
- * dependency in review is enough: its work is already in the branch the task will run in.
+ * dependency in review is eligible: execution must first integrate its accepted result.
  */
 export function pendingDependencies(task: Task, index: TaskIndex): string[] {
   return task.dependsOn.filter((id) => {

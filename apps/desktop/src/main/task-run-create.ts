@@ -5,7 +5,7 @@ import { Timeline } from '@skaro/timeline';
 import { findTask, key } from './task-run-helpers';
 import { ActiveRun } from './task-run-model';
 import type { TaskRunEngine } from './task-run-engine';
-import { stageOf } from './task-stage';
+import { prepareTaskDependencies } from './task-dependency-checkout';
 import { updateSubject } from './task-subject';
 import { prepareTaskWorktree } from './task-worktree';
 
@@ -25,11 +25,16 @@ export async function createTaskRun(
 
   let worktree: string | undefined;
   let branch: string | undefined;
-  // A task of a milestone works in the milestone's checkout; the branch is not the task's.
-  const stage = settings.isolation === 'worktree' ? stageOf(task, artifacts) : undefined;
-  if (stage) {
-    ({ worktree, branch } = await ctx.stages.checkout(projectId, stage, context));
-  } else if (settings.isolation === 'worktree') {
+  if (!artifacts.tasks.some((item) => item.id === taskId))
+    throw new Error('Milestones have no agent sessions. Open a task or the project chat.');
+  if (
+    settings.isolation !== 'worktree' &&
+    artifacts.tasks.some((item) => task.dependsOn.includes(item.id) && item.status === 'review')
+  )
+    throw new Error(
+      'An in-place task must wait until its dependencies are merged. Use worktree isolation for parallel milestone tasks.',
+    );
+  if (settings.isolation === 'worktree') {
     branch = task.branch ?? taskBranch(artifacts.config, task);
     worktree = await prepareTaskWorktree({
       git: context.git,
@@ -39,10 +44,11 @@ export async function createTaskRun(
       branch,
       base: artifacts.config.baseBranch,
     });
+    await prepareTaskDependencies(ctx, projectId, task, artifacts, worktree);
   }
   await updateSubject(context, taskId, {
     status: 'in_progress',
-    ...(branch && !stage ? { branch } : {}),
+    ...(branch ? { branch } : {}),
   });
   context.invalidate();
 

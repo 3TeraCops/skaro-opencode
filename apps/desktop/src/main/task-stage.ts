@@ -1,19 +1,17 @@
-// Stage execution: the tasks of a milestone work one after another in the milestone's branch,
-// checkout and environment, and are merged together with it. A task without a milestone, and a
-// task that already has a branch of its own, keeps its own checkout and merges by itself.
+// A milestone groups independently executed tasks. Shared checkouts below are legacy data.
 
 import { basename, dirname } from 'node:path';
 import type { AppDb, Milestone, ProjectArtifacts, RunRecord, Task, TaskKey } from '@skaro/core';
 
-/** The milestone whose branch the task works in, if it does not have a branch of its own. */
+/** The milestone whose completion group includes the task. */
 export function stageOf(task: Task, artifacts: ProjectArtifacts): Milestone | undefined {
-  if (!task.milestone || task.branch) return undefined;
+  if (!task.milestone) return undefined;
   return artifacts.milestones.find((m) => m.id === task.milestone);
 }
 
-/** Tasks that work in the branch of the milestone. */
+/** All non-archived tasks count, including those with their own branches. */
 export function stageTasks(stage: Pick<Milestone, 'id'>, artifacts: ProjectArtifacts): Task[] {
-  return artifacts.tasks.filter((t) => t.milestone === stage.id && !t.branch && !t.archived);
+  return artifacts.tasks.filter((t) => t.milestone === stage.id && !t.archived);
 }
 
 type RunCheckout = Pick<RunRecord, 'worktree' | 'taskId' | 'projectId'>;

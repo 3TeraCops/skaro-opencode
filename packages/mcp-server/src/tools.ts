@@ -14,6 +14,9 @@ export interface SkaroScope {
 }
 
 export interface MergeTaskArgs {
+  taskId?: string;
+  milestoneId?: string;
+  partial?: boolean;
   /** Short summary of the work, for the task file. */
   summary?: string;
   commitMessage?: string;
@@ -154,15 +157,25 @@ export function mergeTaskTool(
   return {
     name: 'merge_task',
     description:
-      'Ask Skaro to merge this task branch into the base branch. Call it only when the user asks ' +
-      'to merge. Skaro follows the current merge setting: automatic mode merges immediately ' +
-      'when unblocked; manual mode shows a confirmation card without waiting for the decision. ' +
+      'Merge accepted results into the base branch when the user explicitly asks to merge. ' +
+      'In a project chat specify exactly one task_id or milestone_id. In a task chat the current ' +
+      'task and its milestone are implicit. All tasks in a milestone must be ready unless the user ' +
+      'explicitly requests only completed tasks (partial=true). This executes the merge and updates task statuses. ' +
       'An already merged or completed task returns its status without another card or Git changes. ' +
       'Do not call this tool to reconfirm a merge reported by submit_result. Do not merge, push ' +
       'or switch branches yourself. If the result reports blockers such as conflicts, tell the user.',
     inputSchema: {
       type: 'object',
       properties: {
+        task_id: {
+          type: 'string',
+          description: 'Task to merge; required in project chat unless milestone_id is specified.',
+        },
+        milestone_id: { type: 'string', description: 'Milestone to merge.' },
+        partial: {
+          type: 'boolean',
+          description: 'Merge only accepted tasks of a milestone when explicitly requested.',
+        },
         summary: {
           type: 'string',
           description:
@@ -173,10 +186,16 @@ export function mergeTaskTool(
       },
       additionalProperties: false,
     },
-    available: (scope) => scope.kind === 'task' && scope.taskId !== undefined,
+    available: (scope) =>
+      !scope.importId && (scope.kind === 'project_chat' || scope.taskId !== undefined),
     call: (args, scope) =>
       handler(
         {
+          ...(typeof args['task_id'] === 'string' ? { taskId: args['task_id'] } : {}),
+          ...(typeof args['milestone_id'] === 'string'
+            ? { milestoneId: args['milestone_id'] }
+            : {}),
+          ...(typeof args['partial'] === 'boolean' ? { partial: args['partial'] } : {}),
           ...(typeof args['summary'] === 'string' ? { summary: args['summary'] } : {}),
           ...commitMessage(args),
         },

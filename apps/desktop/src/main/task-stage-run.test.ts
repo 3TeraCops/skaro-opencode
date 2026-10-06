@@ -2,217 +2,128 @@ import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { git, indexTasks, isBlocked } from '@skaro/core';
-import type { SkaroScope } from '@skaro/mcp-server';
-import type { Interaction } from '@skaro/timeline';
-import { beforeEach, expect, it } from 'vitest';
-import { db, dir, projectId, projects, repo, tasks } from './task-run-test-support';
+import { afterEach, beforeEach, expect, it } from 'vitest';
+import { CompletionFixture } from './completion-test-support';
+import { completionTaskRuns } from './completion-task-runs';
+import { acceptedResult } from './completion-results';
 import { readLedger, writeLedger } from './task-stage';
+import type { TaskRuns } from './tasks';
 
-const BRANCH = 'skaro/M01-stage';
-let first: string;
-let second: string;
-let worktree: string;
-let scope: SkaroScope;
-
-/** Two tasks of one milestone; the first already works in the checkout of the stage. */
+let fixture: CompletionFixture;
+let runs: TaskRuns | undefined;
 beforeEach(async () => {
-  const context = projects.get(projectId);
-  const stage = await context.store.createMilestone({ title: 'Stage' });
-  await context.store.updateMilestone(stage.id, { branch: BRANCH });
-  const body = '## Критерии приёмки\n\n- [ ] Works\n';
-  first = (await context.store.createTask({ title: 'First', milestone: stage.id, body })).id;
-  second = (
-    await context.store.createTask({
-      title: 'Second',
-      milestone: stage.id,
-      dependsOn: [first],
-      body,
-    })
-  ).id;
-  await context.store.updateTask(first, { status: 'in_progress' });
-  context.invalidate();
-  worktree = join(dir, 'worktrees', projectId, stage.id);
-  await context.git.createWorktree({ path: worktree, branch: BRANCH, base: 'main' });
-  const runId = db.createRun({
-    projectId,
-    taskId: first,
-    agent: 'codex',
-    worktree,
-    branch: BRANCH,
-    logPath: 'runs/stage.jsonl',
-    adapterVersion: 'test',
-  }).id;
-  scope = { kind: 'task', projectId, taskId: first, runId };
-  // The task began at the tip of main and made two commits of its own.
-  const ledger = readLedger(db, projectId, stage.id);
-  ledger.open[first] = (await git(worktree, ['rev-parse', 'HEAD'])).stdout.trim();
-  writeLedger(db, projectId, stage.id, ledger);
-  for (const name of ['a.txt', 'b.txt']) {
-    await writeFile(join(worktree, name), name);
-    await git(worktree, ['add', '-A']);
-    await git(worktree, ['commit', '-qm', `wip ${name}`]);
-  }
-  await writeFile(join(worktree, 'c.txt'), 'left uncommitted');
-  await tasks.open(projectId, first);
+  fixture = await CompletionFixture.create();
+});
+afterEach(async () => {
+  await runs?.close();
+  runs = undefined;
+  await fixture.close();
 });
 
-function submit() {
-  return tasks.submitResult(
-    {
-      summary: 'Checked',
-      commitMessage: 'feat: first task of the stage',
-      criteria: [{ number: 1, met: true, evidence: 'ran it' }],
-    },
-    scope,
-  );
-}
-
-it('finishes a stage task as one commit in the stage branch, without a merge card', async () => {
-  const main = (await git(repo, ['rev-parse', 'main'])).stdout.trim();
-  const result = await submit();
-  expect(result.isError).not.toBe(true);
-  expect(result.text).toContain('merged together with its milestone');
-
-  const context = projects.get(projectId);
-  expect((await context.store.readTask(first)).status).toBe('review');
-  const view = await tasks.open(projectId, first);
-  expect(view.timeline?.interactions).toEqual([]);
-  expect(view.timeline?.items.some((i) => i.kind === 'notice' && i.code === 'stage_done')).toBe(
-    true,
-  );
-  // Three pieces of work became one commit; main is untouched.
-  const log = (await git(repo, ['log', '--format=%s', `main..${BRANCH}`])).stdout.trim();
-  expect(log).toBe('feat: first task of the stage');
-  expect((await git(repo, ['rev-parse', 'main'])).stdout.trim()).toBe(main);
-  expect((await git(worktree, ['status', '--porcelain'])).stdout.trim()).toBe('');
-  const ledger = readLedger(db, projectId, 'M01');
-  expect(ledger.open).toEqual({});
-  expect(ledger.commits.map((c) => [c.taskId, c.message])).toEqual([
-    [first, 'feat: first task of the stage'],
-  ]);
-
-  // Submitting again without new work adds neither a commit nor a second notice.
-  await submit();
-  expect(readLedger(db, projectId, 'M01').commits).toHaveLength(1);
-});
-
-it('unblocks the next task of the stage once its dependency is in review', async () => {
-  const blocked = async () => {
-    const context = projects.get(projectId);
-    context.invalidate();
-    const all = (await context.load()).tasks;
-    return isBlocked(
-      all.find((t) => t.id === second)!,
-      indexTasks(all),
+it('retains accepted SHA provenance in a legacy shared checkout without squashing other task work', async () => {
+  const stage = await fixture.context.store.createMilestone({ title: 'Legacy stage' });
+  const first = await fixture.task('First', stage.id);
+  const second = await fixture.task('Second', stage.id, [first.id]);
+  for (const task of [first, second])
+    await fixture.context.store.updateTask(task.id, { branch: undefined });
+  await fixture.commit();
+  const before = await fixture.context.git.head();
+  const branch = `skaro/${stage.id}-stage`;
+  const checkout = join(fixture.root, 'worktrees', fixture.projectId, stage.id);
+  await fixture.context.git.createWorktree({ path: checkout, branch, base: 'main' });
+  for (const task of [first, second]) {
+    fixture.db.createRun({
+      projectId: fixture.projectId,
+      taskId: task.id,
+      agent: 'codex',
+      branch,
+      worktree: checkout,
+      logPath: `runs/${task.id}.jsonl`,
+      adapterVersion: 'test-record-only',
+    });
+    await writeFile(join(checkout, `${task.id}.txt`), task.id);
+    await fixture.coordinator.capture(
+      fixture.projectId,
+      task.id,
+      branch,
+      checkout,
+      `feat: ${task.id}`,
     );
-  };
-  expect(await blocked()).toBe(true);
-  // The board does not call it blocked: tasks of a stage run in order anyway.
-  const summary = async () => (await tasks.list(projectId)).find((t) => t.id === second)!;
-  expect(await summary()).toMatchObject({ status: 'todo', staged: true, waitsFor: [] });
-  await submit();
-  expect(await blocked()).toBe(false);
-});
-
-it('does not merge a stage task on its own and keeps the stage checkout when it is deleted', async () => {
-  const result = await tasks.mergeTask({ summary: 'merge it' }, scope);
-  expect(result.text).toContain('not merged on its own');
-  expect((await tasks.open(projectId, first)).timeline?.interactions).toEqual([]);
-
-  await submit();
-  await tasks.forget(projectId, first);
-  expect(existsSync(worktree)).toBe(true);
-  expect((await git(repo, ['rev-parse', '--verify', BRANCH], { allowFail: true })).code).toBe(0);
-});
-
-type MergeCard = Extract<Interaction, { kind: 'merge' }>;
-
-async function stageCard(): Promise<MergeCard | undefined> {
-  const view = await tasks.open(projectId, 'M01');
-  return view.timeline?.interactions.find((i): i is MergeCard => i.kind === 'merge');
-}
-
-const mainLog = async () => (await git(repo, ['log', '--format=%s', 'main'])).stdout.split('\n');
-
-it('merges a finished stage as a commit per task with the messages of its card, and undoes it', async () => {
-  const context = projects.get(projectId);
-  await context.store.updateTask(second, { status: 'cancelled' });
-  context.invalidate();
-  await submit();
-  // Nothing to check (no readiness criterion): the card of the stage shows by itself.
-  await expect.poll(stageCard, { timeout: 15_000 }).toBeDefined();
-  const card = (await stageCard())!;
-  expect(card.blockers).toEqual([]);
-  expect(card.stage).toEqual({
-    id: 'M01',
-    tasks: [{ id: first, title: 'First', message: 'feat: first task of the stage' }],
-    partial: false,
-    unmet: [],
-  });
-
-  await tasks.merge(projectId, 'M01', card.id, {
-    action: 'confirm',
-    message: '',
-    messages: { [first]: 'feat: renamed on the card' },
-  });
-  expect((await context.store.readTask(first)).status).toBe('done');
-  expect(await stageCard()).toBeUndefined();
-  expect((await mainLog()).slice(0, 2)).toEqual(['M01: Stage', 'feat: renamed on the card']);
-  const merge = db.listMerges(projectId, 'M01')[0]!;
-  expect(readLedger(db, projectId, 'M01').merged).toEqual([
-    { commit: merge.commit, tasks: [first] },
-  ]);
-
-  await tasks.revertMerge(projectId, 'M01', merge.commit);
-  expect((await context.store.readTask(first)).status).toBe('review');
-  expect(existsSync(join(repo, 'a.txt'))).toBe(false);
-}, 30_000);
-
-it('«Влить готовое» merges the finished tasks and leaves the stage working', async () => {
-  const context = projects.get(projectId);
-  await submit();
-  expect(await stageCard()).toBeUndefined();
-  await tasks.mergeFinished(projectId, 'M01');
-  const card = (await stageCard())!;
-  expect(card.stage?.partial).toBe(true);
-  expect(card.stage?.tasks.map((t) => t.id)).toEqual([first]);
-
-  await tasks.merge(projectId, 'M01', card.id, { action: 'confirm', message: '' });
-  expect((await context.store.readTask(first)).status).toBe('done');
-  expect((await context.store.readTask(second)).status).toBe('todo');
-  expect(existsSync(join(repo, 'a.txt'))).toBe(true);
-  // The stage goes on from what is merged: its branch has the base, its checkout stays.
-  expect(existsSync(worktree)).toBe(true);
-  expect((await git(repo, ['rev-list', '--count', `${BRANCH}..main`])).stdout.trim()).toBe('0');
-  const merged = (await tasks.open(projectId, 'M01')).timeline?.items.find(
-    (i) => i.kind === 'notice' && i.code === 'merged',
+  }
+  const firstSha = fixture.journal.result(first.id)!.head;
+  const secondSha = fixture.journal.result(second.id)!.head;
+  expect(firstSha).not.toBe(secondSha);
+  expect((await git(fixture.repo, ['merge-base', '--is-ancestor', firstSha, secondSha])).code).toBe(
+    0,
   );
-  expect(merged?.kind === 'notice' && merged.merge?.tasks).toBe(1);
+  expect(await fixture.context.git.head()).toBe(before);
+  const merged = await fixture.coordinator.merge(fixture.projectId, stage.id);
+  expect((await fixture.context.store.readTask(first.id)).status).toBe('done');
+  expect((await fixture.context.store.readTask(second.id)).status).toBe('done');
+  expect(fixture.journal.operations()[0]?.results.map((result) => result.head)).toEqual([
+    firstSha,
+    secondSha,
+  ]);
+  expect(await fixture.context.git.head(branch)).toBe(secondSha);
+  expect(merged.commit).not.toBe(secondSha);
+  expect(existsSync(checkout)).toBe(true);
 }, 30_000);
 
-it('holds the stage card back while a readiness criterion is not ticked', async () => {
-  const context = projects.get(projectId);
-  const stage = (await context.load()).milestones.find((m) => m.id === 'M01')!;
-  await context.store.updateMilestone('M01', {
-    body: `${stage.body.trimEnd()}\n\nВсё работает вместе\n`,
+it('imports a legacy result from its ledger rather than guessing from the current shared tip', async () => {
+  const stage = await fixture.context.store.createMilestone({ title: 'Legacy provenance' });
+  const task = await fixture.task('Legacy task', stage.id);
+  await fixture.context.store.updateTask(task.id, { branch: undefined });
+  await fixture.commit();
+  const branch = `skaro/${stage.id}-stage`;
+  const checkout = join(fixture.root, 'worktrees', fixture.projectId, stage.id);
+  await fixture.context.git.createWorktree({ path: checkout, branch, base: 'main' });
+  fixture.db.createRun({
+    projectId: fixture.projectId,
+    taskId: task.id,
+    agent: 'codex',
+    branch,
+    worktree: checkout,
+    logPath: 'runs/legacy.jsonl',
+    adapterVersion: 'test-record-only',
   });
-  await context.store.updateTask(second, { status: 'cancelled' });
-  context.invalidate();
-  await submit();
-  // The acceptance would start an agent here; none is installed, so the stage only waits.
-  await tasks.mergeFinished(projectId, 'M01');
-  expect((await stageCard())?.stage?.partial).toBe(true);
+  await writeFile(join(checkout, 'accepted.txt'), 'accepted code');
+  await fixture.commit(checkout, 'accepted task');
+  const accepted = await fixture.context.git.head(branch);
+  const ledger = readLedger(fixture.db, fixture.projectId, stage.id);
+  ledger.commits.push({ taskId: task.id, commit: accepted, message: 'accepted task' });
+  writeLedger(fixture.db, fixture.projectId, stage.id, ledger);
+  await writeFile(join(checkout, 'later.txt'), 'different task code');
+  await fixture.commit(checkout, 'other task');
+  await fixture.context.store.updateTask(task.id, { status: 'review' });
+  const result = await acceptedResult(
+    fixture.db,
+    fixture.context,
+    await fixture.context.store.readTask(task.id),
+  );
+  expect(result.head).toBe(accepted);
+  expect(result.head).not.toBe(await fixture.context.git.head(branch));
+}, 30_000);
 
-  // The criterion written as plain text is ticked like a list item.
-  await tasks.toggleCriterion(projectId, 'M01', 0);
-  const ready = (await stageCard())!;
-  expect(ready.stage).toMatchObject({ partial: false, unmet: [] });
-  expect(ready.blockers).toEqual([]);
-  context.invalidate();
-  expect((await context.load()).milestones[0]!.body).toContain('- [x] Всё работает вместе');
-
-  await tasks.toggleCriterion(projectId, 'M01', 0);
-  const held = (await stageCard())!;
-  expect(held.blockers).toEqual(['criteria']);
-  expect(held.stage?.unmet).toEqual(['Всё работает вместе']);
+it('shows independent own-branch tasks without an artificial stage wait and retains real dependencies', async () => {
+  const stage = await fixture.context.store.createMilestone({ title: 'Independent stage' });
+  const first = await fixture.task('First', stage.id);
+  const independent = await fixture.task('Independent', stage.id);
+  const dependent = await fixture.task('Dependent', stage.id, [first.id]);
+  await fixture.context.store.updateTask(dependent.id, { status: 'todo' });
+  await fixture.commit();
+  const a = await fixture.checkout(first);
+  await fixture.checkout(independent);
+  runs = completionTaskRuns(fixture);
+  const summaries = await runs.list(fixture.projectId);
+  expect(summaries.find((item) => item.id === independent.id)?.after).toBeUndefined();
+  expect(summaries.find((item) => item.id === dependent.id)?.waitsFor).toContainEqual(first.id);
+  await fixture.accept(first, a);
+  const artifacts = await fixture.context.load();
+  expect(
+    isBlocked(
+      artifacts.tasks.find((item) => item.id === dependent.id)!,
+      indexTasks(artifacts.tasks),
+    ),
+  ).toBe(false);
+  expect(fixture.db.listRuns(fixture.projectId, stage.id)).toEqual([]);
 }, 30_000);

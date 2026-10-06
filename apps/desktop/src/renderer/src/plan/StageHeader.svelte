@@ -24,11 +24,6 @@
     info
       ? [
           {
-            label: t('plan.menu.open'),
-            icon: 'milestone' as const,
-            onselect: () => model.p.onmenu('open'),
-          },
-          {
             label: t('plan.menu.mergeFinished'),
             icon: 'merge' as const,
             ...(info.mergeable ? {} : { tip: t('plan.menu.mergeFinished.none'), disabled: true }),

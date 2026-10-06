@@ -19,6 +19,7 @@ export class TaskRunEvents {
     active.pending.push(event);
     active.flushTimer ??= setTimeout(() => this.ctx.history.flush(active), FLUSH_MS);
     const { projectId, taskId } = active;
+    if (active.switching) return;
     switch (event.t) {
       case 'session.started':
         if (event.nativeSessionId && event.nativeSessionId !== active.run.nativeSessionId) {
@@ -87,13 +88,15 @@ export class TaskRunEvents {
       // for the user ("Нужен ответ", derived from "В работе" with no agent working).
       // Older task files may still hold the "failed" stage.
       if (task.status === 'failed') await updateSubject(context, taskId, { status: 'in_progress' });
-      const state = await this.ctx.results.criteriaChanged(projectId, taskId);
-      if (state === 'open' || state === 'none') {
+      // Acceptance is explicit (submit_result or the owner's criterion action). An ended or
+      // interrupted turn must never commit new edits under a previous report's checked criteria.
+      if (task.status === 'review') await this.ctx.stages.sync(projectId, taskId);
+      else {
         this.ctx.deps.notify?.('need', label);
         this.ctx.results.statusChanged(projectId, taskId);
       }
-    } catch {
-      // The task file is gone or broken: the feed still works.
+    } catch (error) {
+      this.ctx.history.notice(active, 'other', 'error', errorText(error));
     }
     this.ctx.changed(projectId, taskId);
   }

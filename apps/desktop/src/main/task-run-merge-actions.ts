@@ -1,10 +1,13 @@
 import type { MergeAction } from '../shared/ipc';
+import { git } from '@skaro/core';
 import type { ProjectContext } from './projects';
-import { mergeInteraction, withStage, type MergeInteraction } from './task-merge-card';
+import { type MergeInteraction } from './task-merge-card';
 import { ActiveRun } from './task-run-model';
 import type { TaskRunEngine } from './task-run-engine';
 import { key } from './task-run-helpers';
 import { subjectOf } from './task-subject';
+import { CompletionStore } from './completion-store';
+import { stageIdOf } from './task-stage';
 
 /** mergeActions: a focused part of the task-run controller. */
 export class TaskRunMergeActions {
@@ -46,13 +49,30 @@ export class TaskRunMergeActions {
         this.ctx.events.settleRuntime(active);
         return;
       case 'update_branch': {
-        const result = await context.git.rebase(active.run.worktree!, base);
-        const check = await context.git.checkMerge(base, branch);
-        const next = mergeInteraction(card.id, branch, base, check);
-        if (card.message) next.message = card.message;
-        withStage(next, card.stage);
-        if (!result.ok) next.conflicts = result.conflicts;
-        this.ctx.history.skaroEvent(active, { t: 'interaction.opened', interaction: next });
+        if (active.timeline.state.status !== 'idle')
+          throw new Error('Wait for the task agent to finish before updating its branch');
+        if (stageIdOf(active.run))
+          throw new Error(
+            'A legacy shared branch must be updated by its task agent and resubmitted; Skaro preserves the other accepted results',
+          );
+        const result = await this.ctx.merges.coordinator.serialized(projectId, async () => {
+          if ((await git(active.run.worktree!, ['status', '--porcelain'])).stdout.trim())
+            throw new Error('Preserve uncommitted edits before updating the accepted branch');
+          return context.git.rebase(active.run.worktree!, base);
+        });
+        if (result.ok) {
+          const saved = new CompletionStore(this.ctx.deps.db, projectId).result(taskId);
+          const task = await context.store.readTask(taskId);
+          await this.ctx.merges.coordinator.capture(
+            projectId,
+            taskId,
+            branch,
+            active.run.worktree!,
+            saved?.message ?? `${task.id}: ${task.title}`,
+            saved?.summary,
+          );
+        }
+        await this.ctx.merges.showCard(active, context, { partial: card.stage?.partial ?? false });
         return;
       }
       case 'resolve_with_agent': {

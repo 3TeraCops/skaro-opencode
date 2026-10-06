@@ -46,7 +46,7 @@
   } = $props();
 </script>
 
-{#if task && (stage ? section === 'plan' : section === 'tasks')}
+{#if task && !stage && section === 'tasks'}
   {#key task}
     <TaskScreen
       projectId={project.id}

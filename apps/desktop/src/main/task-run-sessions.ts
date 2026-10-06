@@ -30,6 +30,8 @@ export class TaskRunSessions {
     const { projectId, taskId, run } = active;
     const context = this.ctx.project(projectId);
     const artifacts = await context.load();
+    if (!artifacts.tasks.some((task) => task.id === taskId))
+      throw new Error('Milestones have no agent sessions. Use a task or the project chat.');
     const task = findTask(artifacts, taskId);
     const agent = run.agent as AgentId;
     await this.ctx.views.ensureAgent(agent);
@@ -153,9 +155,10 @@ export class TaskRunSessions {
   }
 
   async close(): Promise<void> {
-    this.ctx.merges.close();
+    await this.ctx.merges.close();
     await Promise.all([...this.ctx.active.values()].map((a) => this.detach(a)));
     for (const active of this.ctx.active.values()) active.log?.end();
+    await this.ctx.environments.idle();
   }
 
   async forget(projectId: string, taskId: string): Promise<void> {

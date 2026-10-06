@@ -74,12 +74,13 @@ export interface TaskSummary extends TaskRef {
   model?: string;
   deps: string[];
   /**
-   * Dependencies not done yet (a blocked task waits for them). Inside a stage the tasks run in
-   * order anyway: a dependency in the same stage is not listed and does not block.
+   * Dependencies whose accepted results are not available yet; including those in this stage.
    */
   waitsFor: string[];
-  /** Works in the branch of its milestone and is merged with it (stage execution). */
+  /** Belongs to a milestone completion group. Its execution checkout is independent. */
   staged?: boolean;
+  /** A retained legacy run actually uses a shared milestone checkout. */
+  sharedCheckout?: boolean;
   /** Told to start and waiting its turn in the stage: the task that goes before it. */
   after?: string;
   /** Last change: the task file or its latest run. */

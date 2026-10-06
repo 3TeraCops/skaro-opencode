@@ -3,14 +3,14 @@ import {
   indexTasks,
   isBlocked,
   pendingDependencies,
-  sharesStage,
   type ProjectArtifacts,
   type Task,
   type TaskRuntime,
+  type RunRecord,
 } from '@skaro/core';
 import type { AgentId, RunInfo, TaskDetail, TaskRef, TaskSummary } from '../shared/ipc';
 import { taskSections } from './task-body';
-import { stageOf } from './task-stage';
+import { stageOf, stageIdOf } from './task-stage';
 import { subjectOf } from './task-subject';
 
 import type { ActiveRun } from './task-run-model';
@@ -65,10 +65,7 @@ export function summary(
   const milestone = artifacts.milestones.find((m) => m.id === task.milestone);
   const spec = task.spec ? artifacts.specs.find((s) => s.id === task.spec) : undefined;
   const base = ref(task, index, runtime);
-  // Tasks of a stage run one after another: only a task of another stage holds one back.
-  const waitsFor = (isBlocked(task, index) ? pendingDependencies(task, index) : []).filter(
-    (id) => !index.get(id) || !sharesStage(task, index.get(id)!),
-  );
+  const waitsFor = isBlocked(task, index) ? pendingDependencies(task, index) : [];
   return {
     ...base,
     ...(base.status === 'blocked' && !waitsFor.length ? { status: 'todo' as const } : {}),
@@ -88,6 +85,7 @@ export function detail(
   task: Task,
   artifacts: ProjectArtifacts,
   runtime: Map<string, { state: TaskRuntime }>,
+  run?: RunRecord,
 ): TaskDetail {
   const index = indexTasks(artifacts.tasks);
   const refOf = (t: Task) => ref(t, index, runtime.get(t.id)?.state);
@@ -97,10 +95,8 @@ export function detail(
       (id) => (index.get(id) && refOf(index.get(id)!)) ?? { id, title: id, status: 'todo' },
     ),
     blocks: artifacts.tasks.filter((t) => t.dependsOn.includes(task.id)).map(refOf),
-    // A task of a stage works in the branch of its milestone.
-    ...((task.branch ?? stageOf(task, artifacts)?.branch)
-      ? { branch: task.branch ?? stageOf(task, artifacts)?.branch }
-      : {}),
+    ...((task.branch ?? run?.branch) ? { branch: task.branch ?? run?.branch } : {}),
+    ...(run && stageIdOf(run) ? { sharedCheckout: true } : {}),
     ...taskSections(task.body),
     ...requirementsOf(artifacts.specs.find((s) => s.id === task.spec)?.body),
   };

@@ -6,6 +6,7 @@ import { updateSubject } from './task-subject';
 import { key, awaitingKey, findTask } from './task-run-helpers';
 import { ActiveRun } from './task-run-model';
 import type { TaskRunEngine } from './task-run-engine';
+import { errorText } from './session-log';
 
 /** scheduling: a focused part of the task-run controller. */
 export class TaskRunScheduling {
@@ -100,7 +101,15 @@ export class TaskRunScheduling {
       const { message, assignment } = awaiting[id]!;
       delete awaiting[id];
       this.ctx.deps.db.setSetting(awaitingKey(projectId), awaiting);
-      await this.launch(projectId, [id], message, assignment).catch(() => undefined);
+      try {
+        await this.launch(projectId, [id], message, assignment);
+      } catch (error) {
+        awaiting[id] = { message, ...(assignment ? { assignment } : {}) };
+        this.ctx.deps.db.setSetting(awaitingKey(projectId), awaiting);
+        this.ctx.setRuntime(projectId, id, 'failed');
+        this.ctx.deps.db.addEvent(projectId, 'task_failed', { task: id, error: errorText(error) });
+        this.ctx.deps.notify?.('error', `${id}: ${errorText(error)}`);
+      }
     }
   }
 

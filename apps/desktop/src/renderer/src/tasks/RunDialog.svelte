@@ -83,7 +83,7 @@
     <span data-task-run-dialog class="hint"
       >{state.blocked
         ? t('board.rd.hint.blocked')
-        : tasks.some((x) => x.staged)
+        : tasks.some((x) => x.after)
           ? t('board.rd.hint.stage')
           : t('board.rd.hint')}</span
     >

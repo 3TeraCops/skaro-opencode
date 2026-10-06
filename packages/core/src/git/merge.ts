@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { git } from './command.ts';
@@ -6,6 +6,7 @@ import { MergeBlockedError, type GitService, type MergeOptions, type MergeCheck 
 import { serializedMerge } from './merge-queue.ts';
 import { localMergeObstacles } from './merge-safety.ts';
 import { captureFiles, publishMerge } from './merge-publication.ts';
+import { recoverPublications } from './merge-recovery.ts';
 
 export function merge(
   service: GitService,
@@ -15,21 +16,19 @@ export function merge(
 }
 
 async function prepareMerge(service: GitService, options: MergeOptions) {
-  const gitDir = (await git(service.repo, ['rev-parse', '--absolute-git-dir'])).stdout.trim();
-  const recovery = (await readdir(gitDir)).find((name) => name.startsWith('skaro-merge-recovery-'));
-  if (recovery)
-    throw new Error(
-      `Previous merge requires recovery; original files and index retained at ${join(gitDir, recovery)}`,
-    );
+  await recoverPublications(service.repo);
   const check = await service.checkMerge(options.base, options.branch);
+  if (options.allowMetadataOnly && options.managedPaths?.length)
+    check.blockers = check.blockers.filter((blocker) => blocker !== 'no_changes');
   if (check.blockers.length) throw new MergeBlockedError(check);
   const before = await service.head();
   const managed = await captureFiles(service.repo, options.managedPaths ?? []);
+  const guards = await captureFiles(service.repo, options.guardPaths ?? []);
   const dir = await mkdtemp(join(tmpdir(), 'skaro-merge-'));
   const checkout = join(dir, 'checkout');
   let registered = false;
   try {
-    await git(service.repo, ['worktree', 'add', '--detach', checkout, before]);
+    await service.createDetachedWorktree(checkout, before);
     registered = true;
     if (options.strategy === 'rebase') {
       if (!options.worktree) throw new Error('a rebase merge needs the task worktree');
@@ -40,7 +39,7 @@ async function prepareMerge(service: GitService, options: MergeOptions) {
           blockers: ['conflicts'],
           conflicts: rebased.conflicts,
         });
-      await git(checkout, ['merge', '--ff-only', options.branch]);
+      await git(checkout, ['merge', '--ff-only', await service.head('HEAD', options.worktree)]);
     } else {
       await git(checkout, [
         'merge',
@@ -76,11 +75,12 @@ async function prepareMerge(service: GitService, options: MergeOptions) {
     const obstacles = await localMergeObstacles(service.repo, before, commit, extra);
     if (obstacles.length)
       throw new MergeBlockedError({ ...check, blockers: ['dirty_base'], localChanges: obstacles });
-    await publishMerge(service.repo, checkout, before, commit, options.base, managed);
+    await options.prepared?.({ before, commit });
+    await publishMerge(service.repo, checkout, before, commit, options.base, managed, guards);
     return { commit, check, before };
   } finally {
     // This is Skaro's private checkout: no services or ignored user data run here.
-    if (registered) await git(service.repo, ['worktree', 'remove', '--force', checkout]);
+    if (registered) await service.removeDetachedWorktree(checkout);
     await rm(dir, { recursive: true, force: true });
   }
 }

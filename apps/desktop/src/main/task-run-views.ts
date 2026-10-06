@@ -7,7 +7,7 @@ import { toggleCriterion } from './task-body';
 import { key, settingsKey, findTask, ref, runInfo, summary, detail } from './task-run-helpers';
 import type { TaskRunEngine } from './task-run-engine';
 import { orderedStageTasks, stageInfo } from './stage-views';
-import { stageOf } from './task-stage';
+import { stageIdOf } from './task-stage';
 import { subjectStage } from './task-subject';
 import { readSubject, updateSubject } from './task-subject';
 
@@ -24,7 +24,6 @@ export class TaskRunViews {
     const runtime = this.ctx.deps.db.getTaskRuntime(projectId);
     const index = indexTasks(artifacts.tasks);
     const runs = this.ctx.deps.db.listRuns(projectId);
-    const awaiting = this.ctx.scheduling.awaiting(projectId);
     return Promise.all(
       artifacts.tasks.map(async (task) => {
         const run = runs.find((r) => r.taskId === task.id);
@@ -35,9 +34,7 @@ export class TaskRunViews {
           ...this.assigned(projectId, task, run),
           updatedAt,
         });
-        const waiting = task.status === 'todo' && (state === 'queued' || task.id in awaiting);
-        const after = waiting && !result.waitsFor.length ? this.before(task, artifacts) : undefined;
-        return after ? { ...result, after } : result;
+        return { ...result, ...this.waitsInStage(projectId, task, artifacts, runtime) };
       }),
     );
   }
@@ -49,27 +46,27 @@ export class TaskRunViews {
     artifacts: ProjectArtifacts,
     runtime: ReadonlyMap<string, { state: string }>,
   ): { after?: string } {
-    const stage = task.status === 'todo' ? stageOf(task, artifacts) : undefined;
-    if (!stage) return {};
-    const busy = orderedStageTasks(stage, artifacts).find(
-      (t) =>
-        t.id !== task.id &&
-        (t.status === 'in_progress' ||
-          ['running', 'queued', 'waiting'].includes(runtime.get(t.id)?.state ?? '')),
-    );
-    const after = busy ? (this.before(task, artifacts) ?? busy.id) : undefined;
-    return after ? { after } : {};
+    const run =
+      this.ctx.active.get(key(projectId, task.id))?.run ??
+      this.ctx.deps.db.listRuns(projectId, task.id)[0];
+    const stageId = run && stageIdOf(run);
+    if (!stageId) return {};
+    const busy = artifacts.tasks.find((item) => {
+      const other =
+        this.ctx.active.get(key(projectId, item.id))?.run ??
+        this.ctx.deps.db.listRuns(projectId, item.id)[0];
+      return (
+        item.id !== task.id &&
+        other &&
+        stageIdOf(other) === stageId &&
+        (item.status === 'in_progress' ||
+          ['running', 'waiting'].includes(runtime.get(item.id)?.state ?? ''))
+      );
+    });
+    return busy ? { after: busy.id } : {};
   }
 
   /** The unfinished task of the stage that runs before this one. */
-  private before(task: Task, artifacts: ProjectArtifacts): string | undefined {
-    const stage = stageOf(task, artifacts);
-    if (!stage) return undefined;
-    const order = orderedStageTasks(stage, artifacts);
-    return order
-      .slice(0, order.indexOf(task))
-      .findLast((t) => t.status !== 'review' && t.status !== 'done')?.id;
-  }
 
   assigned(
     projectId: string,
@@ -94,7 +91,22 @@ export class TaskRunViews {
       (await this.ctx.history.restore(projectId, taskId));
     if (active) {
       if (task.status === 'done') this.ctx.results.closeMergeCard(active, 'answered');
-      else this.ctx.merges.watch(active);
+      else {
+        const ready =
+          task.status === 'review' &&
+          (!task.milestone ||
+            artifacts.tasks
+              .filter((item) => item.milestone === task.milestone && !item.archived)
+              .every((item) => ['review', 'done', 'cancelled'].includes(item.status)));
+        if (ready && !active.timeline.state.interactions.some((item) => item.kind === 'merge')) {
+          try {
+            await this.ctx.merges.showCard(active, this.ctx.project(projectId));
+          } catch (error) {
+            this.ctx.history.notice(active, 'other', 'error', String(error));
+          }
+        }
+        this.ctx.merges.watch(active);
+      }
     }
     const runtime = this.ctx.deps.db.getTaskRuntime(projectId);
     const settings = this.settings(projectId, task, artifacts);
@@ -106,7 +118,7 @@ export class TaskRunViews {
     const index = indexTasks(artifacts.tasks);
     return {
       projectId,
-      task: detail(task, artifacts, runtime),
+      task: detail(task, artifacts, runtime, active?.run),
       ...(stage
         ? {
             stage: {

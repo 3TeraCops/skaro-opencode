@@ -87,10 +87,14 @@ export function createPlanController(getProps: () => PlanProps) {
     else void window.skaro.invoke('stages.run', p.projectId, id, t('task.start.message'));
   }
 
-  /** «Влить готовое»: the card shows in the feed of the stage. */
+  /** The merge card belongs to an existing task chat. */
   async function mergeFinished(id: string): Promise<void> {
     await window.skaro.invoke('stages.mergeFinished', p.projectId, id);
-    p.onopen(id);
+    const task = p.data.tasks
+      .filter((task) => task.milestone?.id === id && task.status === 'review')
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id))
+      .at(-1);
+    if (task) p.onopen(task.id);
   }
 
   function restoreTask(id: string): void {

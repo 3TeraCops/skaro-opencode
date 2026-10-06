@@ -49,12 +49,15 @@ describe('task instructions', () => {
   });
 
   it('forbids calling the task done without a full report', () => {
-    expect(text).toMatch(/done only when submit_result reports every criterion met/);
+    expect(text).toContain(
+      'acceptance as verified only when submit_result reports every criterion met',
+    );
+    expect(text).toContain('done only when Skaro confirms its done status or publication');
   });
 
   it('explains both merge modes and forbids reconfirming an already merged result', () => {
-    expect(text).toContain('in automatic mode it merges immediately when unblocked');
-    expect(text).toContain('in manual mode it shows a confirmation card');
+    expect(text).toContain('automatic mode merges a ready completion group');
+    expect(text).toContain('manual mode shows a confirmation card in a real task chat');
     expect(text).toContain('do not call merge_task again to confirm it');
     expect(text).not.toContain('merges after the user confirms');
   });

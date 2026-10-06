@@ -69,10 +69,10 @@ describe('blocked', () => {
     expect(isBlocked(loose, index)).toBe(true);
   });
 
-  it('a dependency with a branch of its own must be merged even in the same milestone', () => {
+  it('allows a reviewed own-branch dependency in the same milestone for exact checkout integration', () => {
     const own = task('T-2', { status: 'review', milestone: 'M01', branch: 'skaro/T-2-own' });
     const t = task('T-3', { dependsOn: ['T-2'], milestone: 'M01' });
-    expect(isBlocked(t, indexTasks([own, t]))).toBe(true);
+    expect(isBlocked(t, indexTasks([own, t]))).toBe(false);
   });
 });
 

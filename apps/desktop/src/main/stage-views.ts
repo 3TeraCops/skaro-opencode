@@ -12,7 +12,6 @@ import {
 } from '@skaro/core';
 import type { StageInfo } from '../shared/ipc';
 import { stageTasks } from './task-stage';
-import { stageStatus } from './task-subject';
 
 const finished = (task: Task) => task.status === 'review' || task.status === 'done';
 
@@ -66,14 +65,7 @@ export function stageInfo(
   if (waiting) return { ...base, state: 'needs_answer', task: waiting.id };
 
   if (tasks.length && tasks.every(finished)) {
-    const own = state(stage.id);
-    if (own === 'running' || own === 'queued') return { ...base, state: 'acceptance' };
-    if (own === 'waiting' || own === 'failed') {
-      return { ...base, state: 'acceptance_needs_answer' };
-    }
-    if (stageStatus(stage, artifacts) === 'review') return { ...base, state: 'awaiting_merge' };
-    // The acceptance starts by itself after the last task; one that never did is continued.
-    return { ...base, state: options.accepted ? 'acceptance_needs_answer' : 'stopped' };
+    return { ...base, state: 'awaiting_merge' };
   }
 
   const queued = tasks.find((t) => state(t.id) === 'queued' || options.awaiting.has(t.id));

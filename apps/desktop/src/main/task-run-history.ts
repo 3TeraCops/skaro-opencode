@@ -11,6 +11,7 @@ import {
 } from '@skaro/timeline';
 import { projectorFor, readRunLog } from './session-log';
 import { key } from './task-run-helpers';
+import { CompletionStore } from './completion-store';
 import { ActiveRun } from './task-run-model';
 import type { TaskRunEngine } from './task-run-engine';
 
@@ -36,15 +37,20 @@ export class TaskRunHistory {
     const active = new ActiveRun(projectId, taskId, run, Timeline.from(events));
     active.seq = events.length;
     active.segments = countSegments(lines);
+    const result = new CompletionStore(this.ctx.deps.db, projectId).result(taskId);
+    active.mergeSummary = result?.summary;
+    active.commitMessage = result?.message;
     this.ctx.active.set(k, active);
     // A live turn cannot survive a restart; async questions still wait for a later reply.
     const turn = active.timeline.state.turns.at(-1);
     if (turn && !turn.outcome) {
+      active.switching = true;
       for (const i of active.timeline.state.interactions) {
         if (!persistsAfterTurn(i))
           this.skaroEvent(active, { t: 'interaction.closed', id: i.id, resolution: 'expired' });
       }
       this.skaroEvent(active, { t: 'turn.completed', turnId: turn.id, outcome: 'interrupted' });
+      active.switching = false;
     }
     this.ctx.events.settleRuntime(active);
     return active;

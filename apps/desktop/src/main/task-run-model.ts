@@ -52,6 +52,8 @@ export class ActiveRun {
   attaching: Promise<AgentSession> | undefined;
   /** Work that waits for the running turn to end (cleanup after a merge). */
   afterTurn: (() => Promise<void>) | undefined;
+  /** A frozen run cannot publish accepted work or refresh its merge card. */
+  switching = false;
 
   constructor(projectId: string, taskId: string, run: RunRecord, timeline: Timeline) {
     this.projectId = projectId;

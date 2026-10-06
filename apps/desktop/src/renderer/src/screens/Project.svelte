@@ -109,8 +109,9 @@
 
   /** Opens a task, or the stage of a milestone. */
   function openTask(id: string): void {
-    task = id;
-    section = data.milestones.some((m) => m.id === id) ? 'plan' : 'tasks';
+    const milestone = data.milestones.some((m) => m.id === id);
+    task = milestone ? undefined : id;
+    section = milestone ? 'plan' : 'tasks';
   }
 
   /** Tasks and plans are made with the agent, in a new chat ("Новая задача", "Перепланировать"). */

@@ -78,7 +78,7 @@
         class="branch"
         data-tip={stage
           ? t('task.branch.stageTip', { stage: task.id })
-          : task.staged && task.milestone
+          : task.sharedCheckout && task.milestone
             ? t('task.branch.stageTip', { stage: task.milestone.id })
             : t('task.branch.tip')}
       >

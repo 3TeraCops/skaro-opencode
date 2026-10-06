@@ -67,6 +67,11 @@ export class TaskEnvironments {
     this.docker = deps.docker ?? systemDocker;
   }
 
+  /** Shutdown must drain scheduled cleanup before the application's database is closed. */
+  async idle(): Promise<void> {
+    await Promise.allSettled([this.work, this.allocation]);
+  }
+
   private worktrees(): string {
     return join(this.deps.dataDir, 'worktrees');
   }
