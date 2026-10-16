@@ -177,15 +177,16 @@ export function registerChatProposalChecks(context: () => Context): void {
   });
 
   it('requires a coherent C4 package before accepting or editing a specification', async () => {
-    const { chatId, scope } = await startChat();
     const spec = '## Проблема\n\nВозвраты вручную.\n\n## Требования\n\n- R-1 Полный возврат\n';
+    const store = new ArtifactStore(root);
+    await store.createSpec({ title: 'Возвраты', body: spec });
+    await prepareFixtureArchitecture(root, ['0001']);
+    // Prepare persisted inputs before opening the cached project/chat context.
+    const { chatId, scope } = await startChat();
     const rejected = await chats.proposeSpec({ title: 'Возвраты', content: spec }, scope);
     expect(rejected.isError).toBe(true);
     expect(rejected.text).toContain('C4');
     expect(await proposals(chatId)).toEqual([]);
-    const store = new ArtifactStore(root);
-    await store.createSpec({ title: 'Возвраты', body: spec });
-    await prepareFixtureArchitecture(root, ['0001']);
     let artifacts = await store.load();
     expect(artifacts.specs.map((s) => [s.id, s.title, s.status])).toEqual([
       ['0001', 'Возвраты', 'accepted'],
@@ -196,7 +197,7 @@ export function registerChatProposalChecks(context: () => Context): void {
       scope,
     );
     expect(unknown.isError).toBe(true);
-    await chats.proposeTasks(
+    const offered = await chats.proposeTasks(
       {
         tasks: [
           { ref: 'r', title: 'Возврат', goal: 'g', criteria: ['c'], dependsOn: [], spec: '1' },
@@ -204,6 +205,7 @@ export function registerChatProposalChecks(context: () => Context): void {
       },
       scope,
     );
+    expect(offered.isError, offered.text).not.toBe(true);
     const plan = (await proposals(chatId)).at(-1)!;
     await chats.proposal(projectId, chatId, plan.id, { action: 'apply' });
 
