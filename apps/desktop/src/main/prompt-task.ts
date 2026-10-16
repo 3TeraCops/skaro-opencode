@@ -4,6 +4,7 @@ import { taskSections } from './task-body';
 import { agentInteractionInstructions } from './agent-interaction-instructions';
 import { taskEnvironmentInstructions } from './task-environment-instructions';
 import { LANGUAGES, terms, instructionsOf } from './prompt-context';
+import { C4_INSTRUCTIONS } from './c4-instructions';
 
 export function taskInstructions(options: {
   task: Task;
@@ -44,6 +45,7 @@ export function taskInstructions(options: {
     });
 
   const parts = [
+    C4_INSTRUCTIONS,
     `You are working on task ${task.id} "${task.title}" in a project managed by Skaro.`,
     task.status === 'done'
       ? 'The task is done and merged into the base branch. The user may ask follow-up ' +

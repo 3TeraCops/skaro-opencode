@@ -10,9 +10,11 @@ import type { IntegrationOperation } from './integration-model';
 import { assertPublicationDependencies } from './completion-dependencies';
 import { withCompletionCheckout } from './completion-checkout';
 import { runChecks } from './check-runner';
+import { prepareC4Publication, c4PublicationPaths, writeC4Publication } from './c4-publication';
+import { validateC4Code } from '@skaro/core';
 
 /** What every publication does besides Git: task metadata, guards and the durable record. */
-function publication(
+async function publication(
   context: ProjectContext,
   artifacts: ProjectArtifacts,
   store: CompletionStore,
@@ -24,6 +26,11 @@ function publication(
     if (!task) throw new Error(`Task ${result.taskId} was removed`);
     return task;
   });
+  const architecture = await prepareC4Publication(
+    context,
+    artifacts,
+    operation.results.flatMap((result) => result.c4?.realized ?? []),
+  );
   return {
     base: operation.base,
     strategy: operation.strategy,
@@ -31,8 +38,10 @@ function publication(
       operation.results.length > 1
         ? `${message.split('\n\n')[0]}\n\n${operation.results.map((result) => result.message).join('\n')}`
         : message,
-    managedPaths: tasks.map((task) => task.path),
+    managedPaths: [...tasks.map((task) => task.path), ...c4PublicationPaths(architecture)],
     guardPaths: [
+      '.skaro/c4/model.json',
+      '.skaro/architecture.md',
       '.skaro/config.yaml',
       ...artifacts.specs
         .filter((spec) => tasks.some((task) => task.spec === spec.id))
@@ -43,6 +52,14 @@ function publication(
       context.invalidate();
       assertPublicationDependencies(await context.load(), operation.results, store);
       const target = new ArtifactStore(candidate);
+      const c4Files = await writeC4Publication(candidate, architecture);
+      const c4Model = architecture
+        ? JSON.parse(architecture.files.find((f) => f.path === 'c4/model.json')!.after)
+        : artifacts.c4;
+      if (c4Model) {
+        const problems = await validateC4Code(candidate, c4Model);
+        if (problems.length) throw new Error(problems.join('\n'));
+      }
       for (const task of tasks) {
         const path = join(candidate, task.path);
         await mkdir(dirname(path), { recursive: true });
@@ -57,7 +74,7 @@ function publication(
           throw new Error(`${task.id}: acceptance changed during merge`);
         await target.updateTask(task.id, { status: 'done' });
       }
-      return tasks.map((task) => task.path);
+      return [...tasks.map((task) => task.path), ...c4Files];
     },
     prepared: async ({ before, commit }) => {
       context.invalidate();
@@ -86,7 +103,7 @@ export async function publishCompletion(
   operation: CompletionOperation,
   message: string,
 ): Promise<void> {
-  const options = publication(context, artifacts, store, operation, message);
+  const options = await publication(context, artifacts, store, operation, message);
   const verify = (candidate: string) => runChecks(candidate, artifacts.config.checks);
   const [result] = operation.results;
   // One accepted result goes into the base as it is; only a rebase needs a checkout to replay in.
@@ -122,7 +139,7 @@ export async function publishCandidate(
   await integrations.assertReady(integration);
   const head = integration.head;
   await context.git.merge({
-    ...publication(context, artifacts, store, operation, message),
+    ...(await publication(context, artifacts, store, operation, message)),
     expectedBaseHead: integration.baseHead,
     branch: head,
     worktree: integration.worktree,

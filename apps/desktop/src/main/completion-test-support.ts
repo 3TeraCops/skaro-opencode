@@ -8,6 +8,7 @@ import { CompletionStore, type CompletionOperation } from './completion-store';
 import { reconcileCompletions } from './completion-recovery';
 import { IntegrationService } from './integration-service';
 import { IntegrationStore } from './integration-store';
+import { prepareFixtureArchitecture, reviewFixtureResult } from './c4-test-support';
 
 /** Owner-authorized real Git/SQLite fixtures. No agent, HTTP server or backend replacement. */
 export class CompletionFixture {
@@ -47,6 +48,7 @@ export class CompletionFixture {
     await writeFile(join(repo, '.gitignore'), 'data/\n');
     const store = new ArtifactStore(repo);
     await store.writeConfig((await store.load()).config);
+    await prepareFixtureArchitecture(repo);
     const db = AppDb.open(join(root, 'app.sqlite'));
     const projectId = db.addProject({ name: 'Completion test', path: repo }).id;
     return new CompletionFixture(root, db, projectId);
@@ -118,6 +120,7 @@ export class CompletionFixture {
 
   async accept(task: Task, worktree: string, name = `${task.id}.txt`): Promise<void> {
     await writeFile(join(worktree, name), `${task.id} result\n`);
+    await this.review(task.id);
     await this.coordinator.capture(
       this.projectId,
       task.id,
@@ -125,6 +128,16 @@ export class CompletionFixture {
       worktree,
       `feat: ${task.id}`,
       `Accepted ${task.id}`,
+    );
+  }
+
+  async review(taskId: string): Promise<void> {
+    await reviewFixtureResult(
+      this.db,
+      this.projects,
+      this.projectId,
+      taskId,
+      this.db.listRuns(this.projectId, taskId)[0]!.id,
     );
   }
 

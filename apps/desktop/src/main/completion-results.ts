@@ -6,6 +6,7 @@ import { taskSections } from './task-body';
 import { readLedger } from './task-stage';
 import { stageIdOf } from './task-stage';
 import { dependencySnapshot, preparedDependencies } from './completion-dependencies';
+import { c4ArchitectureHash, c4ChangeHash } from './c4-review';
 
 /** Import an accepted legacy result once. Never include unsubmitted work at a shared tip. */
 export async function acceptedResult(
@@ -78,6 +79,8 @@ export async function assertResultUnchanged(
   context: ProjectContext,
   result: TaskResult,
 ): Promise<void> {
+  context.invalidate();
+  const artifacts = await context.load();
   if (
     result.worktree &&
     existsSync(result.worktree) &&
@@ -92,4 +95,20 @@ export async function assertResultUnchanged(
       : false);
   if (!shared && (await context.git.head(task.branch ?? result.branch)) !== result.head)
     throw new Error(`${result.taskId}: branch changed after submission; submit the result again`);
+  if (
+    !result.c4 ||
+    result.c4.modelHash !== c4ArchitectureHash(artifacts) ||
+    (result.worktree &&
+      result.c4.changeHash !==
+        (await c4ChangeHash(
+          shared ? context.root : result.worktree,
+          result.c4.baseHead,
+          // A legacy shared checkout may already contain another accepted task.
+          // Verify this result's immutable commit, never that checkout's later tip.
+          shared ? result.head : undefined,
+        )))
+  )
+    throw new Error(
+      `${result.taskId}: C4 acceptance is missing or stale; review architecture and submit the result again`,
+    );
 }

@@ -31,6 +31,7 @@ export interface ProposeAdrArgs {
 }
 
 export interface ProposeSpecArgs {
+  c4?: { baseRevision: number; model: unknown; documents: { path: string; content: string }[] };
   /** An existing specification to change (0003); without it the specification is new. */
   id?: string;
   title?: string;

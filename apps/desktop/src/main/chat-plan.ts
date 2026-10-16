@@ -95,7 +95,7 @@ export class ChatPlan {
         'call or of earlier cards, or ids of existing tasks.'
       );
     }
-    const specProblem = planSpecProblem(tasks, artifacts.specs);
+    const specProblem = planSpecProblem(tasks, artifacts.specs, artifacts);
     if (specProblem) return specProblem;
     const self = tasks.filter((t) => t.dependsOn.includes(t.ref));
     if (self.length) return `A task cannot depend on itself: ${self.map((t) => t.ref).join(', ')}.`;

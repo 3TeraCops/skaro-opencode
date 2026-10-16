@@ -2,6 +2,7 @@
   import { Icon, t } from '@skaro/ui';
   import { drawMermaid } from '../feed/markdown';
   import type { Block } from './render';
+  import C4Attachments from '../c4/C4Attachments.svelte';
 
   /** The text of a document in the look of the Documents mockup. */
   let {
@@ -81,6 +82,8 @@
         </div>
         <pre data-doc-article>{block.text}</pre>
       </div>
+    {:else if block.kind === 'c4'}
+      <C4Attachments source={block.source} />
     {:else}
       {#key block.source}
         <div data-doc-article class="diagram">

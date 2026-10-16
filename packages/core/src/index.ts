@@ -17,3 +17,4 @@ export * from './docker/owner.ts';
 export * from './environment/variables.ts';
 export * from './environment/ports.ts';
 export * from './environment/run.ts';
+export * from './c4/index.ts';

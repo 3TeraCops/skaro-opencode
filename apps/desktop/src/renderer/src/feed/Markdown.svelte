@@ -3,6 +3,7 @@
   import { useFeed } from './context.svelte';
   import { hostOf, localImageUrl } from './format';
   import { drawMermaid, renderMarkdown } from './markdown';
+  import { mountC4 } from '../c4/markdown';
 
   /** Agent text rendered from Markdown; links to files only where the file exists. */
   let { text }: { text: string } = $props();
@@ -17,6 +18,7 @@
     if (!el) return;
     void drawMermaid(el);
     decorate(el);
+    return mountC4(el);
   });
 
   /** Paths that exist become links; images get their previews. */

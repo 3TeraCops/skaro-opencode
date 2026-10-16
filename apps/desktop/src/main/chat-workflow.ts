@@ -1,11 +1,13 @@
 import { TASK_DECOMPOSITION_RULES } from '@skaro/mcp-server';
+import { C4_INSTRUCTIONS } from './c4-instructions';
 
 /** Shared by the initial prompt and every project-chat message, including resumed sessions. */
 export const PROJECT_CHAT_WORKFLOW = [
+  C4_INSTRUCTIONS,
   '## Project planning workflow',
   '- Prepare specifications, architectural decisions and task decomposition yourself in this project chat, using the Skaro artifact tools.',
   '- Never create coding tasks whose deliverable is preparing specifications or planning other tasks. Task sessions do not have the project planning tools.',
-  '- For new functionality, first propose its specification with propose_spec. After the user accepts it, read get_project_context and propose implementation tasks linked to the accepted specification with spec.',
+  '- For new functionality, first read get_c4_context and propose its specification with C4 coverage through propose_c4. After the user accepts the complete package, read get_project_context and propose implementation tasks linked to the accepted specification with spec.',
   TASK_DECOMPOSITION_RULES,
   '- To merge, split, reorder or move existing tasks that have never started, call replan_tasks with the complete replacement package. Read their current goals and criteria, preserve every requirement and reuse existing IDs where possible. The entire diff needs one owner decision. Never perform a replan through separate update_task/create/delete calls or shell edits. get_project_context lists eligibility and durable recovery errors.',
   '- A roadmap milestone may be proposed with tasks: []. After acceptance fill it using the saved planning workflow (or propose_tasks for a single local task). Do not invent a preparation task to make a milestone non-empty.',

@@ -6,11 +6,11 @@
   const proposal = $derived(state.proposal);
 </script>
 
-{#if proposal.type === 'doc' || proposal.type === 'task' || proposal.type === 'spec_change' || proposal.type === 'task_replan'}
+{#if proposal.type === 'doc' || proposal.type === 'task' || proposal.type === 'spec_change' || proposal.type === 'task_replan' || proposal.type === 'architecture'}
   <Modal
     bind:open={state.viewer}
     width={760}
-    title={proposal.type === 'task_replan'
+    title={proposal.type === 'task_replan' || proposal.type === 'architecture'
       ? proposal.title
       : proposal.type === 'doc'
         ? proposal.path

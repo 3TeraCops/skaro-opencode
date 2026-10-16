@@ -2,6 +2,7 @@ import type { MethodName, EventName } from './ipc';
 
 /** The whitelist the preload exposes; must list every key of `Methods`. */
 export const METHODS = [
+  'c4.decide',
   'task.revertMerge',
   'window.minimize',
   'window.toggleMaximize',

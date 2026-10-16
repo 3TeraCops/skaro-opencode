@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { PlanProposal } from './chat-model';
 import { applyChatPlan } from './chat-plan-apply';
 import { planSpecProblem } from './chat-plan-specs';
+import { prepareFixtureArchitecture } from './c4-test-support';
 
 let root: string;
 let store: ArtifactStore;
@@ -49,9 +50,15 @@ async function apply(proposal: PlanProposal, picked?: string[]) {
   });
 }
 
+async function acceptedSpec() {
+  const spec = await store.createSpec({ title: 'Черновик' });
+  await prepareFixtureArchitecture(root, [spec.id]);
+  return spec;
+}
+
 describe('project plan application with real persistence', () => {
   it('rejects deselecting a required predecessor before any milestone, task or event is written', async () => {
-    await store.createSpec({ title: 'Черновик', status: 'accepted' });
+    await acceptedSpec();
     const second = {
       ...implementation,
       ref: 'save',
@@ -85,7 +92,7 @@ describe('project plan application with real persistence', () => {
   });
 
   it('links implementation tasks to accepted specs while preserving dependencies', async () => {
-    await store.createSpec({ title: 'Черновик', status: 'accepted' });
+    await acceptedSpec();
     const second = {
       ...implementation,
       ref: 'save',
@@ -121,7 +128,7 @@ describe('project plan application with real persistence', () => {
   );
 
   it('rechecks spec acceptance after a valid proposal, before the user applies it', async () => {
-    const spec = await store.createSpec({ title: 'Черновик', status: 'accepted' });
+    const spec = await acceptedSpec();
     expect(planSpecProblem([implementation], (await store.load()).specs)).toBeUndefined();
     await store.setSpecStatus(spec.id, 'superseded');
     await expect(apply({ ...roadmap, tasks: [implementation] })).rejects.toThrow(

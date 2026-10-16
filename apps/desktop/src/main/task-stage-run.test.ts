@@ -42,6 +42,7 @@ it('retains accepted SHA provenance in a legacy shared checkout without squashin
       adapterVersion: 'test-record-only',
     });
     await writeFile(join(checkout, `${task.id}.txt`), task.id);
+    await fixture.review(task.id);
     await fixture.coordinator.capture(
       fixture.projectId,
       task.id,

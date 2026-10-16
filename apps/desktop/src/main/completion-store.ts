@@ -8,6 +8,7 @@ export interface ResultDependency {
 }
 
 export interface TaskResult {
+  c4?: import('./c4-review').C4TaskReview;
   taskId: string;
   head: string;
   branch: string;

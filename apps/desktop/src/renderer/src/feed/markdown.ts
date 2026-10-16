@@ -23,6 +23,7 @@ marked.use({
   renderer: {
     code({ text, lang }: Tokens.Code): string {
       const language = (lang ?? '').trim().split(/\s+/)[0] ?? '';
+      if (language === 'skaro-c4') return `<div class="md-c4" data-source="${escape(text)}"></div>`;
       if (language === 'mermaid') {
         return `<div class="md-mermaid" data-source="${escape(text)}"></div>`;
       }

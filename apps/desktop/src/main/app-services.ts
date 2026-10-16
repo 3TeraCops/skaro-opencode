@@ -11,6 +11,7 @@ import {
   taskHistoryTool,
   ciRunTool,
   projectTools,
+  c4Tools,
   type ToolResult,
   type SkaroScope,
 } from '@skaro/mcp-server';
@@ -26,6 +27,8 @@ import { TaskBoard } from './task-board';
 import { TaskRuns } from './tasks';
 import { trace } from './trace';
 import { CiRuns } from './ci-runs';
+import { C4Service } from './c4-service';
+import { proposeC4Specification } from './c4-specification';
 
 export async function createServices(
   appState: AppState,
@@ -48,6 +51,15 @@ export async function createServices(
     name: 'skaro',
     version: app.getVersion(),
     tools: [
+      ...c4Tools({
+        context: (scope) =>
+          scope.kind === 'task' ? runs.c4Tool(scope, () => c4.context(scope)) : c4.context(scope),
+        propose: (args, scope) =>
+          scope.kind === 'task'
+            ? runs.c4Tool(scope, () => c4.propose(args, scope))
+            : c4.propose(args, scope),
+        review: (args, scope) => runs.c4Tool(scope, () => c4.review(args, scope)),
+      }),
       // Tools are called only after the app is up, when `runs` exists.
       mergeTaskTool((args, scope): Promise<ToolResult> => runs.mergeTask(args, scope)),
       submitResultTool((args, scope): Promise<ToolResult> => runs.submitResult(args, scope)),
@@ -66,7 +78,7 @@ export async function createServices(
         context: (scope) => chats.context(scope),
         writeDoc: (args, scope) => chats.writeDoc(args, scope),
         proposeAdr: (args, scope) => chats.proposeAdr(args, scope),
-        proposeSpec: (args, scope) => chats.proposeSpec(args, scope),
+        proposeSpec: (args, scope) => proposeC4Specification(c4, projects, args, scope),
         stageArtifact: (args, scope) => chats.stageArtifact(args, scope),
         finishImport: (args, scope) => chats.finishImport(args, scope),
         proposeMilestones: (args, scope) => chats.proposeMilestones(args, scope),
@@ -120,6 +132,17 @@ export async function createServices(
     locale: () => appState.getLocale(app.getLocale()),
   });
   trace('task runs created');
+  const c4 = new C4Service({
+    db,
+    projects,
+    locale: () => appState.getLocale(app.getLocale()),
+    publish: (scope, item) =>
+      scope.kind === 'task'
+        ? runs.architectureEvent(scope, item)
+        : chats.architectureEvent(scope, item),
+    changed: (projectId) => emit('project.changed', { projectId }),
+    stageImport: (args, scope) => chats.stageC4(args, scope),
+  });
   await chats.recoverReplans();
   const ci = new CiRuns(db, projects, async (scope, text, error) => {
     if (scope.kind === 'task' && scope.taskId)
@@ -129,6 +152,7 @@ export async function createServices(
   });
 
   return {
+    c4,
     appState,
     dataDir,
     db,

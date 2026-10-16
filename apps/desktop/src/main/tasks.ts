@@ -1,6 +1,6 @@
 import { type ProjectArtifacts, type Task } from '@skaro/core';
 import type { MergeTaskArgs, SubmitResultArgs, SkaroScope, ToolResult } from '@skaro/mcp-server';
-import { type InteractionAnswer } from '@skaro/timeline';
+import { type InteractionAnswer, type Item } from '@skaro/timeline';
 import type {
   AgentSettings,
   MergeAction,
@@ -27,6 +27,28 @@ export { requirementsOf } from './task-run-helpers';
 
 /** Public API: composes focused task-run services without owning their workflows. */
 export class TaskRuns {
+  c4Tool(scope: SkaroScope, action: () => Promise<ToolResult>): Promise<ToolResult> {
+    return taskTool(this.engine, scope, action);
+  }
+  async architectureEvent(
+    scope: SkaroScope,
+    item: Extract<Item, { kind: 'proposal' }>,
+  ): Promise<void> {
+    if (!scope.taskId) throw new Error('Missing architecture task');
+    const active = await this.engine.history.restore(scope.projectId, scope.taskId);
+    if (!active) throw new Error('Architecture task history is unavailable');
+    await this.engine.history.drain(active);
+    const previous = active.timeline.state.items.find((i) => i.id === item.id);
+    if (
+      previous?.kind === 'proposal' &&
+      JSON.stringify({ ...previous, turnId: '' }) === JSON.stringify({ ...item, turnId: '' })
+    )
+      return;
+    this.engine.history.skaroEvent(active, {
+      t: 'item.upsert',
+      item: { ...item, turnId: previous?.turnId ?? active.timeline.state.turns.at(-1)?.id ?? '' },
+    });
+  }
   revertMerge(projectId: string, taskId: string, commit: string): Promise<void> {
     return this.engine.mergeActions.revert(projectId, taskId, commit);
   }

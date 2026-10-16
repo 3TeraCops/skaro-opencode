@@ -67,6 +67,8 @@ export interface ImportReport {
 }
 
 export interface ImportState {
+  c4?: import('@skaro/mcp-server').ProposeC4Args;
+  c4Package?: import('@skaro/core').C4Package;
   id: string;
   /** Absolute folder of the import in the app data. */
   dir: string;

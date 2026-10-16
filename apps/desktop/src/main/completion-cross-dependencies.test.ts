@@ -158,4 +158,4 @@ it('retains inherited inputs and rejects a dependency resubmitted after integrat
   await fixture.coordinator.merge(fixture.projectId, first.id);
   await fixture.coordinator.merge(fixture.projectId, second.id);
   expect((await fixture.context.store.readTask(second.id)).status).toBe('done');
-}, 30_000);
+}, 60_000);

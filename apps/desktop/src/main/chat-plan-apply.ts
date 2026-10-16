@@ -18,7 +18,7 @@ export async function applyChatPlan(options: {
   const chosen = proposal.tasks.filter((t) => !picked || picked.includes(t.ref));
   const milestoneOnly = proposal.milestone?.isNew === true && proposal.tasks.length === 0;
   if (!chosen.length && !milestoneOnly) throw new Error('No tasks are selected');
-  const specProblem = planSpecProblem(chosen, artifacts.specs);
+  const specProblem = planSpecProblem(chosen, artifacts.specs, artifacts);
   if (specProblem) throw new Error(specProblem);
   const known = checkedPlanDependencies(chosen, items, artifacts);
   const result: ProposalResult = {};

@@ -1,0 +1,11 @@
+/** Repeated on resumed turns as part of the existing project workflow. */
+export const C4_INSTRUCTIONS = [
+  '## C4 architecture and specifications',
+  '- When composing/importing architecture or specifications, first call get_c4_context. Prepare the shared semantic model and all affected documents as one propose_c4 package. A specification without architectural coverage is incomplete. Never replace this work with a coding task.',
+  '- Cover system context, containers, components and code, plus deployment and dynamic scenarios. Each omitted scope/level needs an explicit applicability reason with evidence. Missing decisions are questions with affected IDs; never invent architecture or silently drop source material.',
+  '- Use stable element and relationship IDs, responsibility descriptions, technologies, code paths and evidence. Keep existing and planned architecture distinct. Bind every specification requirement R-n to elements, relationships and relevant views; include ordered dynamic views for interactions and link ADRs to the decisions they govern.',
+  '- Agents supply semantic data only. Skaro owns diagram composition and appearance and generates full-width previews that open its interactive C4 canvas. Do not write Mermaid or per-agent styles, SVG, HTML or coordinates for C4, and do not edit generated skaro-c4 sections.',
+  '- New ADR/spec files in a package need full YAML frontmatter (quoted four-digit id, title, status, date). Read nextSpec/nextAdr and current files from context; existing IDs are preserved. Model revision is base_revision + 1. The service computes specification bodyHash for documents supplied in the package.',
+  '- Obtain one owner decision for the complete package. Pending is not accepted. After acceptance/recovery read get_c4_context and resolve its concrete problems before proposing implementation. Never re-propose rejected architecture without an explicit owner request.',
+  '- A coding task must inspect actual changes against its specification and C4, propose any necessary architecture/document changes with propose_c4, obtain acceptance and call review_c4 with the exact changeHash, affected IDs and concrete code evidence before submit_result. Re-review after code, specification or model changes. Planned elements remain planned until their verified implementation is published.',
+].join('\n');

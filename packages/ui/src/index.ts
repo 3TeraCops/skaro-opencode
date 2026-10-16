@@ -26,6 +26,8 @@ export { default as RadioCards } from './components/RadioCards.svelte';
 export { default as TooltipHost } from './components/TooltipHost.svelte';
 export { default as Banner } from './components/Banner.svelte';
 export { default as Modal } from './components/Modal.svelte';
+export { default as ViewerModal } from './components/ViewerModal.svelte';
+export { default as SelectOption } from './components/SelectOption.svelte';
 export { default as ConfirmDialog } from './components/ConfirmDialog.svelte';
 export { default as Progress } from './components/Progress.svelte';
 export { default as AgentLogo } from './components/AgentLogo.svelte';

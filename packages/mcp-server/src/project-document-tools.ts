@@ -2,6 +2,7 @@ import type { Tool } from './server.ts';
 import type { SkaroScope } from './tools.ts';
 import type { ProjectToolHandlers } from './project-tool-model.ts';
 import { guarded, text, optional, inChat, ToolArgsError } from './project-tool-args.ts';
+import { readSpecC4 } from './spec-c4-args.ts';
 
 export function documentTools(handlers: ProjectToolHandlers): Tool<SkaroScope>[] {
   return [
@@ -71,6 +72,7 @@ export function documentTools(handlers: ProjectToolHandlers): Tool<SkaroScope>[]
     {
       name: 'propose_spec',
       description:
+        'Include c4 (base_revision, complete model and other related documents) to propose a specification together with its C4 coverage in ONE owner decision. Read get_c4_context first. For multiple specifications use propose_c4 directly. ' +
         'Prepare and propose a specification directly in this project chat, before its implementation tasks are cut. ' +
         'Do not delegate specification preparation to a coding task. Pass the whole ' +
         'Markdown text with the sections Problem, Scenarios, Requirements (numbered R-1, R-2…), ' +
@@ -81,6 +83,24 @@ export function documentTools(handlers: ProjectToolHandlers): Tool<SkaroScope>[]
       inputSchema: {
         type: 'object',
         properties: {
+          c4: {
+            type: 'object',
+            properties: {
+              base_revision: { type: 'integer', minimum: 0 },
+              model: { type: 'object' },
+              documents: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: { path: { type: 'string' }, content: { type: 'string' } },
+                  required: ['path', 'content'],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ['base_revision', 'model', 'documents'],
+            additionalProperties: false,
+          },
           id: {
             type: 'string',
             description: 'Number of an existing specification to change (0003).',
@@ -105,6 +125,7 @@ export function documentTools(handlers: ProjectToolHandlers): Tool<SkaroScope>[]
             throw new ToolArgsError('"title" is required for a new specification.');
           }
           return {
+            ...(a.c4 ? { c4: readSpecC4(a.c4) } : {}),
             ...id,
             ...title,
             content: text(a, 'content'),
