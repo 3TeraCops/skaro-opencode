@@ -93,6 +93,11 @@ export class Timeline {
         if (done && s.usage) {
           done.usage = { inputTokens: s.usage.inputTokens, outputTokens: s.usage.outputTokens };
         }
+        // A turn Skaro ends for a lost agent process gets no closing from the agent itself.
+        s.items.forEach((item, at) => {
+          if (item.turnId === event.turnId && isLive(item))
+            s.items[at] = { ...item, status: event.outcome === 'done' ? 'done' : 'interrupted' };
+        });
         delete s.activity;
         // Async questions wait for a later user message, even after the agent finishes.
         s.interactions = s.interactions.filter(persistsAfterTurn);
@@ -130,7 +135,8 @@ export class Timeline {
           ...s.interactions.filter((i) => i.id !== event.interaction.id),
           event.interaction,
         ];
-        s.status = 'waiting';
+        // A merge card asks the agent nothing: Skaro shows it, also when no turn is running.
+        if (event.interaction.kind !== 'merge') s.status = 'waiting';
         return;
       case 'interaction.closed':
         s.interactions = s.interactions.filter((i) => i.id !== event.id);
@@ -177,6 +183,14 @@ export class Timeline {
     this.index.clear();
     this.state.items.forEach((item, i) => this.index.set(item.id, i));
   }
+}
+
+/** Reasoning or agent text still being streamed: it lives only inside a running turn. */
+function isLive(item: Item): boolean {
+  return (
+    item.status === 'running' &&
+    (item.kind === 'reasoning' || (item.kind === 'message' && item.role === 'agent'))
+  );
 }
 
 /** Items of the main timeline; subagent items (with parentId) are nested under their task. */

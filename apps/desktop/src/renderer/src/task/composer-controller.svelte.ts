@@ -15,6 +15,7 @@ export function createComposerController(options: {
   let atRows = $state<PathSuggestion[]>([]);
   let highlighted = $state(0);
   let sending = $state(false);
+  let pasting = $state(0);
 
   const has = $derived(text.trim().length > 0 || attachments.length > 0);
   const slashRows = $derived.by(() => {
@@ -98,7 +99,7 @@ export function createComposerController(options: {
   }
 
   async function send(): Promise<void> {
-    if (!has || sending) return;
+    if (!has || sending || pasting) return;
     const files = attachments.filter((a) => a.kind !== 'image');
     const images = attachments.filter((a) => a.kind === 'image').map((a) => a.path);
     // Files and folders are references to paths, not uploads (agent-output.md 5.1).
@@ -116,6 +117,22 @@ export function createComposerController(options: {
       queueMicrotask(autosize);
     } finally {
       sending = false;
+    }
+  }
+
+  async function onpaste(event: ClipboardEvent): Promise<void> {
+    const items = Array.from(event.clipboardData?.items ?? []);
+    if (!items.some((item) => item.kind === 'file' && item.type.startsWith('image/'))) return;
+    event.preventDefault();
+    if (sending) return;
+    pasting++;
+    try {
+      const image = await window.skaro.invoke('files.pasteImage');
+      if (image && !attachments.some((a) => a.path === image.path)) {
+        attachments = [...attachments, image];
+      }
+    } finally {
+      pasting--;
     }
   }
 
@@ -195,7 +212,7 @@ export function createComposerController(options: {
       highlighted = value;
     },
     get sending() {
-      return sending;
+      return sending || pasting > 0;
     },
     get has() {
       return has;
@@ -208,6 +225,7 @@ export function createComposerController(options: {
     },
     oninput,
     onkeydown,
+    onpaste,
     refreshAt,
     pickCommand,
     pickPath,

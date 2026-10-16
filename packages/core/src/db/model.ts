@@ -21,6 +21,12 @@ export interface RunRecord {
   logPath: string;
   adapterVersion: string;
   nativeSessionId?: string;
+  /** History of a deleted task; excluded from restoration and scheduling. */
+  retiredAt?: number;
+  /** A continuation by another agent; the predecessor's log is retained. */
+  previousRunId?: string;
+  /** Recorded facts and unresolved work supplied to the new native session. */
+  handoff?: string;
   startedAt: number;
   endedAt?: number;
   outcome?: RunOutcome;

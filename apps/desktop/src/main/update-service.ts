@@ -57,7 +57,10 @@ export async function createUpdates(options: {
     emit: (state) => emit('updates.changed', state),
     fetch: net.fetch.bind(net) as typeof fetch,
     executable: app.getPath('exe'),
-    installable: app.isPackaged && (platform.os !== 'linux' || !!process.env['APPIMAGE']),
+    installable:
+      app.isPackaged &&
+      platform.os !== 'darwin' &&
+      (platform.os !== 'linux' || !!process.env['APPIMAGE']),
   });
   driver.onApplyFailure((error) => updates.applyFailed(error));
   await updates.initialize();

@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { afterEach, beforeEach } from 'vitest';
 import { git, GitService } from './git.ts';
 
@@ -56,10 +56,14 @@ beforeEach(async () => {
     'README.md': '# calc\n',
     '.skaro/tasks/T-001-a.md': '---\nid: T-001\nstatus: in_progress\n---\n',
   });
-  service = new GitService(repo, { inspectMounts: async () => [] });
+  service = new GitService(repo);
 });
 
 afterEach(async () => {
   await git(repo, ['worktree', 'prune'], { allowFail: true });
-  await rm(dir, { recursive: true, force: true, maxRetries: 3 });
+  const target = resolve(dir);
+  const inside = relative(resolve(tmpdir()), target);
+  if (!inside || isAbsolute(inside) || inside.startsWith('..') || !inside.startsWith('skaro-git-'))
+    throw new Error(`Refuse fixture cleanup outside its temporary root: ${target}`);
+  await rm(target, { recursive: true, force: true, maxRetries: 3 });
 });

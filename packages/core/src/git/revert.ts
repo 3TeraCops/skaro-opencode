@@ -1,16 +1,18 @@
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { git, GitError } from './command.ts';
 import type { GitService } from './git.ts';
 import { serializedMerge } from './merge-queue.ts';
 import { captureFiles, publishMerge } from './merge-publication.ts';
+import { recoverPublications } from './merge-recovery.ts';
 
 export interface RevertOptions {
   /** Rebase merges require reverting every commit published since this exact base head. */
   before?: string;
   managedPaths?: string[];
   beforeCommit?: (checkout: string) => Promise<string[]>;
+  prepared?: (candidate: { before: string; commit: string }) => Promise<void>;
 }
 
 export function revert(
@@ -23,16 +25,14 @@ export function revert(
     if (!(await service.isClean())) throw new Error('working copy has uncommitted changes');
     const base = await service.currentBranch();
     if (!base) throw new Error('Cannot revert a task merge on a detached HEAD');
-    const gitDir = (await git(service.repo, ['rev-parse', '--absolute-git-dir'])).stdout.trim();
-    if ((await readdir(gitDir)).some((name) => name.startsWith('skaro-merge-recovery-')))
-      throw new Error('Previous merge requires recovery before reverting');
+    await recoverPublications(service.repo);
     const before = await service.head();
     const managed = await captureFiles(service.repo, options.managedPaths ?? []);
     const dir = await mkdtemp(join(tmpdir(), 'skaro-revert-'));
     const checkout = join(dir, 'checkout');
     let registered = false;
     try {
-      await git(service.repo, ['worktree', 'add', '--detach', checkout, before]);
+      await service.createDetachedWorktree(checkout, before);
       registered = true;
       let commits = [commit];
       if (options.before) {
@@ -67,10 +67,11 @@ export function revert(
         ...(message ? ['-m', message] : ['--no-edit']),
       ]);
       const reverted = await service.head('HEAD', checkout);
+      await options.prepared?.({ before, commit: reverted });
       await publishMerge(service.repo, checkout, before, reverted, base, managed);
       return { ok: true as const, commit: reverted };
     } finally {
-      if (registered) await git(service.repo, ['worktree', 'remove', '--force', checkout]);
+      if (registered) await service.removeDetachedWorktree(checkout);
       await rm(dir, { recursive: true, force: true });
     }
   });

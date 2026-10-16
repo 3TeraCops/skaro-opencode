@@ -88,7 +88,7 @@ export const ru = {
   'feed.notice.more': 'Подробнее',
   'feed.live': 'Агент сейчас работает',
   'feed.live.thinking': 'Думает…',
-  'feed.live.writing': 'Думаю…',
+  'feed.live.writing': 'Думает…',
   'feed.live.edit': 'Готовит правку',
   'feed.live.editNoTarget': 'Готовит правку…',
   'feed.live.model': 'Ждёт ответа модели',

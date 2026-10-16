@@ -3,6 +3,7 @@ import type { MessageInput } from '../shared/ipc';
 import { withoutSecrets } from './session-log';
 import { key } from './task-run-helpers';
 import { ActiveRun } from './task-run-model';
+import { trackRun } from './task-run-access';
 import type { TaskRunEngine } from './task-run-engine';
 
 /** messages: a focused part of the task-run controller. */
@@ -13,20 +14,22 @@ export class TaskRunMessages {
   }
 
   async send(projectId: string, taskId: string, input: MessageInput): Promise<void> {
-    const k = key(projectId, taskId);
-    const active = this.ctx.active.get(k) ?? (await this.ctx.history.restore(projectId, taskId));
+    if (await this.ctx.integrations.controls.send(projectId, taskId, input)) return;
+    let active = await this.ctx.history.restore(projectId, taskId);
     if (!active) return this.ctx.scheduling.start(projectId, taskId, input);
+    active = await this.ctx.handoff.recover(active);
     await this.turn(active, input);
   }
 
   /** Joins the running turn, or starts a new one when a slot is free (it waits in the queue). */
   async turn(active: ActiveRun, input: MessageInput): Promise<void> {
+    if (active.switching) throw new Error('The agent is being changed. Retry after the handoff.');
     const { projectId, taskId } = active;
     const working = active.timeline.state.status !== 'idle';
     if (working || this.ctx.scheduling.holdsSlot(projectId, taskId)) {
       await this.deliver(active, input);
     } else {
-      this.ctx.scheduling.enqueue(projectId, taskId, input);
+      await this.ctx.scheduling.enqueue(projectId, taskId, input);
     }
   }
 
@@ -43,10 +46,18 @@ export class TaskRunMessages {
     interactionId: string,
     answer: InteractionAnswer,
   ): Promise<void> {
-    const active =
-      this.ctx.active.get(key(projectId, taskId)) ??
-      (await this.ctx.history.restore(projectId, taskId));
+    if (await this.ctx.integrations.controls.respond(projectId, taskId, interactionId, answer))
+      return;
+    const active = await this.ctx.history.restore(projectId, taskId);
     if (!active) throw new Error('The agent session has ended');
+    return trackRun(active, () => this.answer(active, interactionId, answer));
+  }
+
+  private async answer(
+    active: ActiveRun,
+    interactionId: string,
+    answer: InteractionAnswer,
+  ): Promise<void> {
     const interaction = active.timeline.state.interactions.find((i) => i.id === interactionId);
     if (isAsyncQuestion(interaction)) {
       await this.turn(active, asyncQuestionInput(interaction, answer));
@@ -57,7 +68,10 @@ export class TaskRunMessages {
       });
     } else {
       if (!active.session) throw new Error('The agent session has ended');
-      await active.session.respond(interactionId, answer);
+      const nativeId = active.run.previousRunId
+        ? interactionId.replace(`${active.run.id}:`, '')
+        : interactionId;
+      await active.session.respond(nativeId, answer);
     }
     if (!interaction) return;
     // The decision stays in the feed (and the log) after the card closes.
@@ -77,7 +91,10 @@ export class TaskRunMessages {
   }
 
   async interrupt(projectId: string, taskId: string): Promise<void> {
+    await this.ctx.integrations.controls.interrupt(projectId, taskId);
     const k = key(projectId, taskId);
+    if (this.ctx.handoff.changing(this.ctx.active.get(k)))
+      throw new Error('Wait for the agent handoff to finish before stopping the task.');
     if (this.ctx.queue.cancel(k)) {
       this.ctx.queuedInputs.delete(k);
       // A started task goes back to what its feed says; a new one was never running.

@@ -39,6 +39,8 @@ export interface Milestone {
   id: string;
   title: string;
   order: number;
+  /** The branch its tasks share once the first of them started (stage execution). */
+  branch?: string;
   body: string;
   path: string;
 }
@@ -85,6 +87,8 @@ export interface Doc {
 export interface ProjectCheck {
   name: string;
   run: string;
+  /** Omitted/system uses the platform shell; PowerShell scripts require an explicit choice. */
+  shell?: 'system' | 'powershell';
 }
 
 /**
@@ -148,6 +152,7 @@ export type InheritableSetting = Exclude<keyof ConfigDefaults, 'agentInstruction
 export const DEFAULT_CONFIG: ProjectConfig = {
   checks: [],
   defaultAgent: 'claude-code',
+  defaultEffort: 'high',
   permissionMode: 'auto',
   baseBranch: 'main',
   branchTemplate: 'skaro/{id}-{slug}',

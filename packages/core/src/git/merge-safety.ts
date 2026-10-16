@@ -1,4 +1,5 @@
 import { git } from './command.ts';
+import { identicalUntrackedAdditions } from './merge-identical.ts';
 
 const paths = (output: string) => output.split('\0').filter(Boolean);
 const overlaps = (first: string, second: string) => {
@@ -18,12 +19,14 @@ export async function localMergeObstacles(
     (await git(repo, ['diff', '--name-only', '--no-renames', '-z', before, target])).stdout,
   ).filter((path) => !managed.includes(path));
   if (!changed.length) return [];
-  const outputs = await Promise.all([
+  const [unstaged, staged, untracked] = await Promise.all([
     git(repo, ['diff', '--name-only', '--no-renames', '-z']),
     git(repo, ['diff', '--cached', '--name-only', '--no-renames', '-z']),
     git(repo, ['ls-files', '--others', '-z']),
   ]);
-  return [...new Set(outputs.flatMap((out) => paths(out.stdout)))]
-    .filter((path) => changed.some((affected) => overlaps(path, affected)))
-    .sort();
+  const affected = (path: string) => changed.some((changedPath) => overlaps(path, changedPath));
+  const tracked = new Set([...paths(unstaged.stdout), ...paths(staged.stdout)].filter(affected));
+  const newPaths = paths(untracked.stdout).filter(affected);
+  const identical = new Set(await identicalUntrackedAdditions(repo, before, target, newPaths));
+  return [...new Set([...tracked, ...newPaths.filter((path) => !identical.has(path))])].sort();
 }

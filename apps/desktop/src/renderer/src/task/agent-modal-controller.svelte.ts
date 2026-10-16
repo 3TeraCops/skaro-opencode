@@ -1,4 +1,4 @@
-import type { AgentModel } from '@skaro/timeline';
+import { modelEffortDefault, type AgentModel } from '@skaro/timeline';
 import { t } from '@skaro/ui';
 import { untrack } from 'svelte';
 import { agentReady, type AgentId, type AgentInfo, type AgentSettings } from '../../../shared/ipc';
@@ -62,9 +62,7 @@ export function createAgentModalController(options: {
   const efforts = $derived(
     (model?.efforts ?? []).map((e) => ({ id: e.id, label: effortLabel(e.id) })),
   );
-  const effortDefault = $derived(
-    model?.defaultEffort ?? efforts[Math.floor(efforts.length / 2)]?.id,
-  );
+  const effortDefault = $derived(modelEffortDefault(model));
 
   function effortLabel(id: string): string {
     const key = `effort.${id}`;

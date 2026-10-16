@@ -1,9 +1,20 @@
 import { environmentName, type AppDb, type TaskKey } from '@skaro/core';
+import type { EnvironmentStartTiming } from './task-environment-start';
 
 /** What Skaro promised a task: the name of its environment and its host ports. */
 export interface EnvironmentRecord extends TaskKey {
   name: string;
   ports: Record<string, number>;
+  /** Old links in the task feed keep addressing this task after a port is replaced. */
+  previousPorts?: Record<string, number[]>;
+  /** Measured cost of the last actual launch, including time waiting for Docker. */
+  lastStart?: EnvironmentStartTiming;
+  /** Task-specific launch command, retained while this environment exists. */
+  start?: string;
+  /** Additional host access requested through the tool; Skaro assigns the numbers. */
+  extraPorts?: string[];
+  /** Service-owned candidate checkout; task checkouts use their normal path. */
+  worktree?: string;
   /** The copy of the data was created (the project's `create` command succeeded). */
   created: boolean;
   /** Last time the task's agent worked or asked for the environment. */

@@ -107,7 +107,9 @@ export class ChatSessions {
   async pump(live: LiveChat, session: AgentSession, segment: number): Promise<void> {
     try {
       for await (const event of session.events) {
-        this.ctx.history.onEvent(live, segmentTurns(segment, event));
+        const projected = segmentTurns(segment, event);
+        this.ctx.history.onEvent(live, projected);
+        this.ctx.planningContinuation.onEvent(live, projected);
       }
     } catch (error) {
       this.ctx.history.failTurn(live, error);
@@ -124,6 +126,7 @@ export class ChatSessions {
   }
 
   async detach(live: LiveChat): Promise<void> {
+    this.ctx.planningContinuation.userMessage(live);
     const session = live.session;
     live.session = undefined;
     live.grant?.revoke();

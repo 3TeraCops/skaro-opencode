@@ -35,8 +35,11 @@ Baseline сценария — текущие `updates/UpdateButton.svelte`,
 
 ## Контракт релиза
 
-Публичный стабильный GitHub Release `skarodev/skaro`, tag `v<bundleVersion>`,
-asset `skaro-release.json`, platform feeds electron-builder и установщики.
+Публичный стабильный GitHub Release `dartdavros/skaro`, tag `v<bundleVersion>`,
+содержит только шесть установщиков: Windows EXE, macOS DMG, Linux AppImage,
+каждый для x64 и arm64. GitHub дополнительно показывает два архива исходников.
+`skaro-release.json` и шесть platform feeds находятся отдельно в orphan-ветке
+`updates`, каталог `v<bundleVersion>/`, доступный через raw.githubusercontent.com.
 Метаданные публикуются только вместе с полностью проверенными артефактами.
 Формат и генератор лежат в исходниках desktop; произвольный npm latest не используется.
 Метаданные содержат schema, bundleVersion, skaroVersion, закреплённые package/shown
@@ -84,24 +87,62 @@ Manifest schema 1 определяется в `src/main/update-release.ts`. `pla
 У каждой платформы: имя `feed`, `payload.{name,sha512,size}` и `agents` с точными
 `agent/version/shownVersion/name/npmVersion/binary/pathDirs/tarball/integrity`.
 Tarball разрешён только с HTTPS npm registry; SDK должен равняться Claude pin.
-NSIS использует `latest-<arch>.yml`, macOS ZIP — `latest-<arch>-mac.yml`, AppImage —
-`latest-linux.yml` либо `latest-linux-arm64.yml`. Feeds и payload относятся к
-одному tag `v<bundleVersion>`; версия, имена assets, hashes и sizes сверяются.
+NSIS использует `latest-<arch>.yml`, macOS DMG — `latest-<arch>-mac.yml`, AppImage —
+`latest-linux.yml` либо `latest-linux-arm64.yml`. Feed содержит абсолютный HTTPS
+URL установщика в публичном релизе того же номера; версия, URL, hashes и sizes
+сверяются. Windows/Linux скачивают полный установщик с проверкой SHA512,
+без differential downloads и внешних blockmaps. macOS обновляется вручную.
 
-`.github/workflows/release-artifacts.yml` запускается вручную. Установщики
+`.github/workflows/release-artifacts.yml` (Build and publish release) запускается
+вручную. Установщики
 создаются на native Windows/macOS/Linux x64/arm64 runners и сохраняются как
-Actions artifacts. Workflow не создаёт GitHub Release и не публикует assets.
+Actions artifacts. По умолчанию `publish_release=false`: GitHub Release не создаётся.
+При `publish_release=true` после успешной сборки всех платформ и проверки feeds,
+размеров и SHA512 workflow создаёт новый tag на точный commit запуска, черновик
+GitHub Release, загружает шесть установщиков и сверяет их имена/размеры.
+Затем записывает и перечитывает семь файлов метаданных в ветке `updates`.
+Только затем черновик публикуется как latest stable release. Существующие tags
+не переиспользуются, assets не перезаписываются. Сбой загрузки оставляет черновик;
+его нужно проверить вручную перед повторным выпуском с новым номером.
+Повторная запись каталога версии в `updates` запрещена. Platform manifests
+и диагностические файлы сборки остаются в Actions artifacts; ZIP и blockmaps
+в публичный релиз не попадают. Публикация разрешена только из `main`.
 Владелец подтверждает реальные canary/model проверки pins через `agents_verified`.
 Полный существующий suite содержит HTTP test servers и fixtures: отдельный
 `test_fixtures_allowed` по умолчанию false требует явного разрешения владельца
 на такой release-прогон; без обоих подтверждений сборка релиза не начинается.
 
-Signing secrets: `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`, `MAC_CSC_LINK` /
-`MAC_CSC_KEY_PASSWORD` и `MAC_IDENTITY`. `CSC_LINK` — поддерживаемый electron-builder
-certificate/base64. Для notarization: `APPLE_API_KEY` — содержимое настоящего
-`.p8`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`; workflow записывает ключ в runner
-temp file и передаёт его путь. Windows и macOS release jobs прекращаются без
-credentials. Локальный macOS ad-hoc build остаётся только dev-пакетом.
+По прямому указанию владельца от 16.10.2026 релизы выпускаются без сертификатов
+издателя и notarization. Windows: `signExecutable=false` сохраняет иконку и
+version resources, отключая подпись. macOS: только техническая ad-hoc подпись
+`identity: '-'`, без Hardened Runtime и notarization. Signing secrets не требуются.
+Windows может показать предупреждение неизвестного издателя, macOS — заблокировать
+первый запуск. Автообновление macOS без Developer ID подписи не считается рабочим;
+новый DMG устанавливается вручную. SHA512 проверяет целостность, но не заменяет
+подпись издателя.
+
+## Запуск выпуска
+
+1. Закоммитить и интегрировать проверенные исходники в `main` репозитория `dartdavros/skaro`.
+2. В Actions открыть Build and publish release → Run workflow и выбрать `main`.
+3. Задать `bundle_version` и `skaro_version` в формате `X.Y.Z` без `v` и prerelease
+   суффиксов. Номер комплекта повышается; существующий tag запрещён. В частности,
+   опубликованные ранее `v2.0.1` и другие tags нельзя использовать повторно.
+4. После реальных canary/model проверок закреплённых агентов отметить
+   `agents_verified`. `test_fixtures_allowed` отметить только при явном разрешении
+   на существующий полный suite с fixtures и HTTP test servers. Без обоих флагов
+   сборка не начнётся.
+5. Для проверки комплекта оставить `publish_release=false` и скачать artifact
+   `skaro-update-bundle-<version>`. Для публикации выбрать `publish_release=true`.
+
+Публикация использует встроенный `GITHUB_TOKEN` с `contents: write` только в job
+assemble; отдельный PAT не требуется. Политика репозитория должна разрешать job
+создание tags и releases. Запуск в fork не публикует релиз оригинального проекта.
+Обычный `pnpm dist` по-прежнему никогда ничего не публикует.
+
+После очистки assets версии 2.0.2 установленную 2.0.2 нужно один раз обновить
+вручную: её встроенный клиент ещё ищет служебные файлы среди release assets.
+Начиная с 2.0.3 клиент использует отдельную ветку `updates`.
 
 ## Восстановление
 
@@ -122,13 +163,60 @@ main state. Автоматического отката userData или беск
 ## Ограничения проверки и выпуска
 
 - Dev checkout не заменяется установщиком. Проверка feed доступна, применение —
-  только в штатно установленном NSIS / подписанном macOS app / AppImage.
-- macOS требует настоящую подпись, notarization и ZIP помимо DMG. Ad-hoc подпись
-  dev/CI не подтверждает готовность автообновления.
+  только в штатно установленном NSIS / AppImage. Выпуск macOS без сертификата
+  предназначен для ручной установки и обновления.
+- Для штатного автообновления macOS нужны настоящая подпись и ZIP помимо DMG;
+  текущая ad-hoc подпись не подтверждает готовность автообновления.
 - При отсутствии настоящего feed/релиза end-to-end загрузка и применение не
   считаются проверенными. Заглушки и временные серверы не используются.
-- Подготовка release artifacts не публикует релиз. Публикация и внешние signing
-  credentials остаются отдельным действием владельца.
+- Подготовка release artifacts без `publish_release` не публикует релиз.
+  Публикация выполняется только при явном выборе этого флага владельцем.
+
+## Проверка подготовки выпуска 16.10.2026
+
+После публикации 2.0.2 выпуск переработан по требованию владельца: в release
+assets остаются только установщики, метаданные вынесены в `updates`, публикация
+допускается только из `main`. Локально прошли production-сборка 2.0.3, desktop
+main TypeScript, ESLint/Prettier и 14 тестов release/update activity. Ниже
+сохранены результаты первоначальной подготовки 2.0.2; ограничения тех проверок
+не означают, что последующая публикация не состоялась.
+
+Для публикации `2.0.2` владелец отдельно разрешил включить все текущие исходники
+и документацию, выполнить существующий полный suite с файловыми/Git fixtures
+и HTTP test servers, а также штатные проверки агентов. `output/`, сборочные
+артефакты и локальные записи canary в исходники релиза не входят.
+Codex 0.159.2 прошёл реальные read/edit/question; экспортированы 440 схем.
+Текущий Claude canary завершился отказом организации в subscription access.
+Владелец подтвердил свою ранее выполненную проверку Claude и поручил выпуск
+без её повторения; этот отказ не считается успешным локальным прогоном.
+
+Предрелизный полный suite на Windows после обновления устаревших контрактов
+выполнен с двумя worker и timeout 30 секунд: 719 passed, 6 skipped, 2 failed.
+Оба оставшихся сценария затем исправлены и прошли отдельно: карточка доски
+создаётся через `submit_result`, а тест очереди использует настоящие отдельные
+worktree вместо двух задач в общей основной копии. Продуктовая логика этими
+исправлениями не менялась. Сборка `2.0.2`, типы всех поставляемых пакетов,
+ESLint/Prettier и настоящий Electron/live feed прошли. Полный suite повторяется
+в GitHub Actions перед сборкой и публикацией всех шести платформ.
+
+- Production-сборка `pnpm build`, desktop main TypeScript, целевой ESLint,
+  Prettier и разбор workflow/config YAML прошли.
+- 12 узких тестов release compatibility и update activity прошли. Новые проверки
+  объединяют все шесть platform manifests и отвергают пропуски, дубли и разные
+  версии комплекта/адаптеров. Использованы только входные данные в памяти;
+  серверы, файлы-заглушки и подмена fetch не применялись.
+- Настоящий Windows x64 NSIS-пакет `0.0.0` собран в
+  `apps/desktop/release/unsigned-verification/`. Установщик и `Skaro.exe` имеют
+  Authenticode status `NotSigned`, встроенный app-update.yml указывает
+  `dartdavros/skaro`. На настоящем feed/payload проверены SHA512, размер и наличие
+  blockmap; несовпадение payload с manifest отвергается. Это локальный проверочный
+  пакет; установка и публикация не выполнялись.
+- Узкий browser-тест настоящего Electron с live GitHub feed прошёл; экран
+  «О программе» визуально проверен. Локальный запуск publication script запрещён
+  до обращения к GitHub; защитный отказ также проверен.
+- Workflow на GitHub, macOS/Linux и arm64 пакеты, реальные canary/model пробы
+  агентов и полный release suite в этой задаче не запускались. Загрузка и
+  применение опубликованного обновления не проверялись. Релиз не публиковался.
 
 ## Локальная проверка 30.09.2026
 

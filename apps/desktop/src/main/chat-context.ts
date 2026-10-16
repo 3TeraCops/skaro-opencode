@@ -3,6 +3,10 @@ import { LiveChat } from './chat-model';
 import { projectContextText } from './chat-context-text';
 
 import type { ChatEngine } from './chat-engine';
+import { CompletionStore } from './completion-store';
+import type { TrackedCiRun } from './ci-runs';
+import { planStatusText } from './chat-planning-status';
+import { taskReplanContext } from './task-replan-context';
 
 export class ChatContext {
   private readonly ctx: ChatEngine;
@@ -15,8 +19,60 @@ export class ChatContext {
     const context = this.ctx.project(scope.projectId);
     const artifacts = await context.load();
     const name = this.ctx.deps.db.getProject(scope.projectId)?.name ?? '';
+    const live = scope.chatId ? this.ctx.live.get(scope.chatId) : undefined;
+    const plans = live ? this.ctx.planning.store(live).list() : [];
     return {
-      text: projectContextText(name, artifacts, this.ctx.deps.db.getTaskRuntime(scope.projectId)),
+      text:
+        projectContextText(name, artifacts, this.ctx.deps.db.getTaskRuntime(scope.projectId)) +
+        taskReplanContext(this.ctx, scope.projectId, artifacts) +
+        (live && plans.length
+          ? '\n\n## Saved planning operations\n' +
+            plans
+              .map((plan) => planStatusText(plan, live.timeline.state.items, artifacts))
+              .join('\n')
+          : '') +
+        (live
+          ? '\n\n## Confirmed plans being created or recovering from a write error\n' +
+            JSON.stringify(
+              this.ctx.proposals
+                .proposals(live)
+                .filter((p) => p.state === 'accepted')
+                .map((p) => ({
+                  id: p.id,
+                  proposal: p.proposal,
+                  result: p.result,
+                })),
+            )
+          : '') +
+        '\n\n## Merge blockers\n' +
+        JSON.stringify(new CompletionStore(this.ctx.deps.db, scope.projectId).issues()) +
+        '\n\n## Merge operations\n' +
+        JSON.stringify(
+          new CompletionStore(this.ctx.deps.db, scope.projectId)
+            .operations()
+            .slice(-20)
+            .map(({ id, state, base, commit, error, results }) => ({
+              id,
+              state,
+              base,
+              commit,
+              error,
+              tasks: results.map((result) => result.taskId),
+            })),
+        ) +
+        '\n\n## CI and release runs\n' +
+        JSON.stringify(
+          this.ctx.deps.db
+            .getSetting<TrackedCiRun[]>('ci.runs', [])
+            .filter((run) => run.projectId === scope.projectId)
+            .map(({ repository, runId, kind, remote, error }) => ({
+              repository,
+              runId,
+              kind,
+              remote,
+              error,
+            })),
+        ),
     };
   }
 

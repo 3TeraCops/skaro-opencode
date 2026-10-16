@@ -4,11 +4,33 @@ const MANAGED =
   'skaro MCP server when you need running services (browser verification, integration checks, ' +
   'service logs); it returns the addresses once the services are ready. The first call builds ' +
   'images and copies data and may take several minutes.\n' +
+  '- After changing sources, dependencies, service configuration or migrations, call ' +
+  'start_environment again before claiming verification. The project launch command must ' +
+  "build/restart the required services and run its documented migrations. Verify this task's " +
+  'current code; another task finishing does not update your checkout.\n' +
+  '- If a documented service required by the task is missing from the launch command, use ' +
+  'configure_environment with no arguments to read it, then pass start and expected_start to ' +
+  'save the corrected command for this environment. Call start_environment afterwards and ' +
+  'verify the required service with compose ps/exec before running its tests. Carry out this ' +
+  'routine setup yourself through Skaro; do not ask the owner to edit settings by hand. ' +
+  'Preserve existing services, name, ports, data and readiness. Explicit owner restrictions ' +
+  'still apply; an owner decision is authorization to perform the agreed action, not evidence ' +
+  'that the owner has already performed it. Do not wait for them to do your configuration work.\n' +
+  '- Skaro admits every Compose port before starting services. Services without allocated host ' +
+  'ports, including test/admin backends, stay accessible inside the Compose network and through ' +
+  '`docker compose exec`; they need no host port for tests. If the authorized task needs documented ' +
+  'host access, read configure_environment and add the documented port variable names with ports ' +
+  'and expected_ports. Skaro chooses free numbers. This routine tool configuration requires no ' +
+  'owner decision. Do not add inline port overrides, choose port numbers or ask the owner to do it.\n' +
   '- Do not start, recreate or re-point services yourself: no `docker compose up`, `docker run`, ' +
   'other project names, ports, data folders or override files. Skaro gives the environment its ' +
   'name, ports and data; your shell already has them (COMPOSE_PROJECT_NAME and the port ' +
-  'variables), so `docker compose ps`, `logs` and `exec` address it.\n' +
-  '- The environment holds nothing unique. Skaro stops it while the task is idle and removes it ' +
+  'variables), so `docker compose ps`, `logs` and `exec` address it. Skaro can replace a port ' +
+  'occupied after stopping the environment; use the current addresses returned by start_environment ' +
+  'for browser/HTTP checks. The service-owned Compose files keep ps/logs/exec on the current bindings.\n' +
+  "- Skaro retains this task's data through review and fixes. A user opening an environment " +
+  'link in this feed owns a review slot until Finish review; your next turn waits for it. ' +
+  'Skaro stops unused services and removes the environment ' +
   'when the task is merged, so call start_environment again whenever you need the services, ' +
   'and never keep there anything that must survive the task.';
 
@@ -18,7 +40,7 @@ const UNMANAGED =
   'start belongs to this task. Take free ports and keep persistent state outside the ' +
   'worktree; never take over a port or attach a database of another task or of the main ' +
   'working copy.\n' +
-  '- Skaro stops the containers of an idle task when more tasks run than the limit allows, and ' +
+  '- Skaro stops the containers of an idle task when its agent turn ends, and ' +
   'removes them when the task is merged. Start them again with the same commands when you need ' +
   'them, and never keep there anything that must survive the task.';
 

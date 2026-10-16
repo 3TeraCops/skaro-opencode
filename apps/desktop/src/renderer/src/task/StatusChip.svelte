@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from '@skaro/ui';
   import type { TaskStatus } from '../../../shared/ipc';
+  import StatusOutlineIcon from './StatusOutlineIcon.svelte';
 
   /** Task status chip of the task screen (mockup "Задача"). */
   let { status }: { status: TaskStatus } = $props();
@@ -38,14 +39,7 @@
       ></path></svg
     >
   {:else}
-    <svg
-      width="11"
-      height="11"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"></circle></svg
-    >
+    <StatusOutlineIcon />
   {/if}
   {t(`task.status.${status}`)}
 </span>

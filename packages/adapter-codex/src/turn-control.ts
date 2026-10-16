@@ -5,6 +5,7 @@ type Completed = Extract<TimelineEvent, { t: 'turn.completed' }>;
 /** Serializes turn-changing actions and waits for the native interrupt to finish. */
 export class TurnControl {
   active: string | undefined;
+  private completed: string | undefined;
   private queue: Promise<unknown> = Promise.resolve();
   private restart:
     | {
@@ -24,6 +25,7 @@ export class TurnControl {
   observe(event: TimelineEvent): TimelineEvent {
     if (event.t === 'turn.started') this.active = event.turnId;
     if (event.t !== 'turn.completed') return event;
+    this.completed = event.turnId;
     if (this.active === event.turnId) this.active = undefined;
     const restart = this.restart;
     if (restart?.id !== event.turnId) return event;
@@ -31,6 +33,11 @@ export class TurnControl {
     if (event.outcome !== 'interrupted' || restart.cancelled) return event;
     restart.continuing = event;
     return { ...event, continuing: true };
+  }
+
+  /** The RPC reply may arrive before turn/started; do not treat accepted work as idle. */
+  accepted(turnId: string | undefined): void {
+    if (turnId && this.completed !== turnId && !this.active) this.active = turnId;
   }
 
   cancelRestart(): void {

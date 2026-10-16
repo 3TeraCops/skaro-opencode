@@ -6,6 +6,10 @@ import {
   mergeTaskTool,
   submitResultTool,
   startEnvironmentTool,
+  configureEnvironmentTool,
+  verifyIntegrationTool,
+  taskHistoryTool,
+  ciRunTool,
   projectTools,
   type ToolResult,
   type SkaroScope,
@@ -21,6 +25,7 @@ import type { AppState } from './state';
 import { TaskBoard } from './task-board';
 import { TaskRuns } from './tasks';
 import { trace } from './trace';
+import { CiRuns } from './ci-runs';
 
 export async function createServices(
   appState: AppState,
@@ -47,7 +52,17 @@ export async function createServices(
       mergeTaskTool((args, scope): Promise<ToolResult> => runs.mergeTask(args, scope)),
       submitResultTool((args, scope): Promise<ToolResult> => runs.submitResult(args, scope)),
       startEnvironmentTool((scope): Promise<ToolResult> => runs.startEnvironment(scope)),
+      configureEnvironmentTool((args, scope) => runs.configureEnvironment(args, scope)),
+      verifyIntegrationTool((checks, scope) => runs.verifyIntegration(checks, scope)),
+      taskHistoryTool((args, scope) => runs.readHistory(args, scope)),
+      ciRunTool((args, scope) => ci.call(args, scope)),
       ...projectTools({
+        planning: {
+          preparePlan: (args, scope) => chats.planning.preparePlan(args, scope),
+          proposeSavedPlan: (args, scope) => chats.planning.proposeSavedPlan(args, scope),
+          finishPlan: (args, scope) => chats.planning.finishPlan(args, scope),
+          controlPlan: (args, scope) => chats.planning.controlPlan(args, scope),
+        },
         context: (scope) => chats.context(scope),
         writeDoc: (args, scope) => chats.writeDoc(args, scope),
         proposeAdr: (args, scope) => chats.proposeAdr(args, scope),
@@ -57,6 +72,7 @@ export async function createServices(
         proposeMilestones: (args, scope) => chats.proposeMilestones(args, scope),
         proposeTasks: (args, scope) => chats.proposeTasks(args, scope),
         updateTask: (args, scope) => chats.updateTask(args, scope),
+        replanTasks: (args, scope) => chats.replanTasks(args, scope),
       }),
     ],
   });
@@ -68,7 +84,7 @@ export async function createServices(
   });
   const runs: TaskRuns = new TaskRuns(
     {
-      notify: (kind, text) => notifier.notify(kind, text),
+      notify: (kind, text, title) => notifier.notify(kind, text, title),
       db,
       dataDir,
       projects,
@@ -104,6 +120,13 @@ export async function createServices(
     locale: () => appState.getLocale(app.getLocale()),
   });
   trace('task runs created');
+  await chats.recoverReplans();
+  const ci = new CiRuns(db, projects, async (scope, text, error) => {
+    if (scope.kind === 'task' && scope.taskId)
+      await runs.operationNotice(scope.projectId, scope.taskId, text, error);
+    else if (scope.chatId) await chats.operationNotice(scope.projectId, scope.chatId, text, error);
+    if (error) notifier.notify('error', text);
+  });
 
   return {
     appState,
@@ -118,6 +141,7 @@ export async function createServices(
     docs,
     plan,
     chats,
+    ci,
   };
 }
 export type Services = Awaited<ReturnType<typeof createServices>>;

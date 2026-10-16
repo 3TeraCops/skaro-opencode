@@ -13,6 +13,8 @@ export class ClaudeStreamProjection {
     const parentId = str(msg['parent_tool_use_id']);
     switch (str(event['type'])) {
       case 'message_start':
+        // A dropped stream is retried as a new message: the old blocks get no final message.
+        for (const block of this.state.streamBlocks.values()) this.finish(block.id);
         this.state.streamMessageId = str(obj(event['message'])?.['id']) ?? '';
         this.state.streamBlocks.clear();
         return;
@@ -23,7 +25,7 @@ export class ClaudeStreamProjection {
         const id = this.state.blockId(this.state.streamMessageId, blockType, block);
         this.state.streamBlocks.set(index, { id, type: blockType });
         if (blockType === 'thinking' || blockType === 'redacted_thinking') {
-          this.state.emit({ t: 'activity', state: 'thinking' });
+          if (!parentId) this.state.emit({ t: 'activity', state: 'thinking' });
           this.state.upsert({
             id,
             parentId,
@@ -34,7 +36,7 @@ export class ClaudeStreamProjection {
             native: { agent: AGENT, type: 'stream.thinking', ref: id },
           });
         } else if (blockType === 'text') {
-          this.state.emit({ t: 'activity', state: 'writing' });
+          if (!parentId) this.state.emit({ t: 'activity', state: 'writing' });
           this.state.upsert({
             id,
             parentId,
@@ -48,7 +50,9 @@ export class ClaudeStreamProjection {
         } else if (blockType === 'tool_use') {
           const name = str(block?.['name']) ?? '';
           const editing = ['Edit', 'Write', 'NotebookEdit'].includes(name);
-          this.state.emit({ t: 'activity', state: editing ? 'preparing_edit' : 'waiting_model' });
+          this.state.streamBlocks.set(index, { id, type: blockType, editing });
+          if (!parentId)
+            this.state.emit({ t: 'activity', state: editing ? 'preparing_edit' : 'waiting_model' });
         }
         return;
       }
@@ -71,7 +75,7 @@ export class ClaudeStreamProjection {
             field: 'text',
             chunk: str(delta['thinking']) ?? '',
           });
-        } else if (deltaType === 'input_json_delta' && block.type === 'tool_use') {
+        } else if (deltaType === 'input_json_delta' && block.editing && !parentId) {
           // Live line: the edited path appears in the partial input before the call completes.
           const match = /"(?:file_path|notebook_path)"\s*:\s*"([^"]+)"/.exec(
             str(delta['partial_json']) ?? '',
@@ -81,8 +85,20 @@ export class ClaudeStreamProjection {
         }
         return;
       }
+      case 'content_block_stop': {
+        const block = this.state.streamBlocks.get(num(event['index']) ?? -1);
+        if (block) this.finish(block.id);
+        return;
+      }
       default:
         return;
     }
+  }
+
+  /** Ends streamed reasoning or text its final message has not closed; tools end by their result. */
+  private finish(id: string): void {
+    const item = this.state.items.get(id);
+    if (item?.status === 'running' && (item.kind === 'reasoning' || item.kind === 'message'))
+      this.state.upsert({ ...item, status: 'done', endedAt: this.state.ctx.now() });
   }
 }

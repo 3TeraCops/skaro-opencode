@@ -1,5 +1,7 @@
 import type { Item } from '@skaro/timeline';
 import { t, tn } from '@skaro/ui';
+import './plan-decisions-i18n';
+import { replanStatus } from '../feed/proposal-replan';
 export type ProposalItem = Extract<Item, { kind: 'proposal' }>;
 /** "Изменено в чате": what each proposal is and where it stands. */
 function changed(item: ProposalItem): {
@@ -34,6 +36,13 @@ function changed(item: ProposalItem): {
         pending,
         note: pending ? t('changed.pending') : (settled ?? t('changed.task.updated')),
       };
+    case 'task_replan':
+      return {
+        icon: 'file',
+        title: p.title,
+        pending,
+        note: replanStatus(item),
+      };
     case 'adr':
       return {
         icon: 'adr',
@@ -65,14 +74,29 @@ function changed(item: ProposalItem): {
     case 'plan':
       return {
         icon: 'milestone',
-        title: p.milestone?.isNew
-          ? `${item.result?.milestone?.id ?? p.milestone.id} · ${p.milestone.title}`
-          : `${p.milestone ? `${p.milestone.id} · ` : ''}${tn('proposal.tasks', p.tasks.length)}`,
+        title: p.complete
+          ? t('proposal.plan.complete', {
+              title: p.title ?? t('proposal.plan.defaultTitle'),
+              tasks: tn('proposal.tasks', p.tasks.length),
+            })
+          : p.milestone?.isNew
+            ? `${item.result?.milestone?.id ?? p.milestone.id} · ${p.milestone.title}`
+            : `${p.milestone ? `${p.milestone.id} · ` : ''}${tn('proposal.tasks', p.tasks.length)}`,
         pending,
-        note: pending
-          ? t('changed.pending')
-          : (settled ??
-            (p.milestone?.isNew ? t('changed.plan.milestone') : t('changed.plan.tasks'))),
+        note:
+          item.state === 'accepted'
+            ? (item.result?.error ?? t('proposal.plan.creating'))
+            : item.state === 'rejected' && (item.result?.tasks?.length || item.result?.milestone)
+              ? t(
+                  item.result.milestone
+                    ? 'proposal.plan.cancelledMilestone'
+                    : 'proposal.plan.cancelled',
+                  { done: item.result.tasks?.length ?? 0, id: item.result.milestone?.id ?? '' },
+                )
+              : pending
+                ? t('changed.pending')
+                : (settled ??
+                  (p.milestone?.isNew ? t('changed.plan.milestone') : t('changed.plan.tasks'))),
       };
   }
 }
@@ -80,6 +104,7 @@ function changed(item: ProposalItem): {
 /** Rows of "Изменено в чате": one per proposal, what an applied import wrote one by one. */
 export function changedRows(proposals: ProposalItem[]) {
   return proposals.flatMap((item) => {
+    if (item.state === 'superseded') return [];
     if (item.proposal.type === 'import' && item.state === 'applied') {
       return (item.result?.imported ?? [])
         .filter((x) => x.kind !== 'plan' || x.code?.startsWith('M'))

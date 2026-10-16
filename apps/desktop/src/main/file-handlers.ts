@@ -1,4 +1,4 @@
-import { dialog, shell, type BrowserWindow } from 'electron';
+import { clipboard, dialog, nativeImage, shell, type BrowserWindow } from 'electron';
 import type { PickedFile } from '../shared/ipc';
 import { fileDiff } from './file-diff';
 import { existingPaths, isImagePath, resolveInside, suggestPaths } from './files';
@@ -6,7 +6,7 @@ import type { Handlers } from './ipc';
 import type { Services } from './app-services';
 
 export function fileHandlers(
-  { runs }: Services,
+  { runs, attachments }: Services,
   window: () => BrowserWindow | undefined,
   picked: Set<string>,
 ): Pick<
@@ -16,9 +16,16 @@ export function fileHandlers(
   | 'files.open'
   | 'files.diff'
   | 'files.pick'
+  | 'files.pasteImage'
   | 'shell.openExternal'
+  | 'task.openExternal'
+  | 'task.stopEnvironmentReview'
 > {
   return {
+    'task.openExternal': (projectId, taskId, url) =>
+      runs.openExternal(projectId, taskId, url, (address) => shell.openExternal(address)),
+    'task.stopEnvironmentReview': (projectId, taskId) =>
+      runs.stopEnvironmentReview(projectId, taskId),
     'files.suggest': (projectId, taskId, query) =>
       suggestPaths(runs.workdir(projectId, taskId), query),
     'files.exist': (projectId, taskId, paths) =>
@@ -28,6 +35,23 @@ export function fileHandlers(
       if (error) throw new Error(error);
     },
     'files.diff': (projectId, taskId, path) => fileDiff(runs.workdir(projectId, taskId), path),
+    'files.pasteImage': async () => {
+      const items = await clipboard.read();
+      const item = items.find((entry) => entry.types.includes('image/png'));
+      if (!item) return undefined;
+      const blob = await item.getType('image/png');
+      if (!('arrayBuffer' in blob)) return undefined;
+      const image = nativeImage.createFromBuffer(Buffer.from(await blob.arrayBuffer()));
+      if (image.isEmpty()) return undefined;
+      const { width, height } = image.getSize();
+      const ref = attachments.save({
+        base64: image.toPNG().toString('base64'),
+        mime: 'image/png',
+        width,
+        height,
+      });
+      return { path: attachments.file(ref), kind: 'image' };
+    },
     'files.pick': async (kind) => {
       const options: Electron.OpenDialogOptions = {
         properties: kind === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'],

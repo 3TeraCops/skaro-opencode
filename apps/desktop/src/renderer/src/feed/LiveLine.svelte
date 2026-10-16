@@ -1,9 +1,10 @@
 <script lang="ts">
-  import type { TimelineState } from '@skaro/timeline';
+  import { activityKind, type TimelineState } from '@skaro/timeline';
   import { t } from '@skaro/ui';
   import { clock } from './context.svelte';
   import { clock as formatClock, displayPath } from './format';
-  import ThinkingMark from './ThinkingMark.svelte';
+  import ActivityMark from '../activity/ActivityMark.svelte';
+  import ActivityText from '../activity/ActivityText.svelte';
 
   /** "Агент сейчас…": one line at the bottom of the feed, replaced by the next event (mockup 9b). */
   let {
@@ -29,22 +30,24 @@
 </script>
 
 <div class="fd-live" data-tip={tip}>
-  <ThinkingMark />
-  {#if environment}
-    {t('feed.live.environment')} · <span class="time">{formatClock(clock.now - since)}</span>
-  {:else if activity?.state === 'thinking'}
-    {t('feed.live.thinking')}
-  {:else if activity?.state === 'writing'}
-    {t('feed.live.writing')}
-  {:else if activity?.state === 'preparing_edit'}
-    {#if activity.target}
-      {t('feed.live.edit')}&nbsp;<code>{displayPath(activity.target, cwd)}</code>…
+  <ActivityMark kind={activityKind(activity, environment)} />
+  <ActivityText>
+    {#if environment}
+      {t('feed.live.environment')} · <span class="time">{formatClock(clock.now - since)}</span>
+    {:else if activity?.state === 'thinking'}
+      {t('feed.live.thinking')}
+    {:else if activity?.state === 'writing'}
+      {t('feed.live.writing')}
+    {:else if activity?.state === 'preparing_edit'}
+      {#if activity.target}
+        {t('feed.live.edit')}&nbsp;<code>{displayPath(activity.target, cwd)}</code>…
+      {:else}
+        {t('feed.live.editNoTarget')}
+      {/if}
     {:else}
-      {t('feed.live.editNoTarget')}
+      {t('feed.live.model')} · <span class="time">{formatClock(clock.now - since)}</span>
     {/if}
-  {:else}
-    {t('feed.live.model')} · <span class="time">{formatClock(clock.now - since)}</span>
-  {/if}
+  </ActivityText>
 </div>
 
 <style>

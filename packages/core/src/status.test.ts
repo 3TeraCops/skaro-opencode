@@ -57,6 +57,34 @@ describe('blocked', () => {
     const t = task('T-3', { dependsOn: ['T-2'], status: 'review' });
     expect(isBlocked(t, indexTasks([running, t]))).toBe(false);
   });
+
+  it('keeps a task from starting until its dependencies are merged, in any milestone', () => {
+    const reviewed = task('T-2', { status: 'review', milestone: 'M01' });
+    const same = task('T-3', { dependsOn: ['T-2'], milestone: 'M01' });
+    const other = task('T-4', { dependsOn: ['T-2'], milestone: 'M02' });
+    const loose = task('T-5', { dependsOn: ['T-2'] });
+    const index = indexTasks([reviewed, same, other, loose]);
+    expect(isBlocked(same, index)).toBe(true);
+    expect(isBlocked(other, index)).toBe(true);
+    expect(isBlocked(loose, index)).toBe(true);
+    expect(startBlocker(other, index)).toBe('blocked');
+    expect(displayStatus(other, index)).toBe('blocked');
+    const merged = indexTasks([{ ...reviewed, status: 'done' }, same, other, loose]);
+    expect(isBlocked(other, merged)).toBe(false);
+    expect(startBlocker(other, merged)).toBeUndefined();
+  });
+
+  it('unblocks a waiting task when its last dependency is merged', () => {
+    const source = task('T-1', { status: 'in_progress', milestone: 'M11' });
+    const other = task('T-2', { status: 'done', milestone: 'M08' });
+    const target = task('T-3', { dependsOn: [source.id, other.id], milestone: 'M08' });
+    const before = [source, other, target];
+    expect(newlyUnblocked(before, [{ ...source, status: 'review' }, other, target])).toEqual([]);
+    expect(newlyUnblocked(before, [{ ...source, status: 'done' }, other, target])).toEqual([
+      target.id,
+    ]);
+    expect(isBlocked(target, indexTasks(before))).toBe(true);
+  });
 });
 
 describe('display status and start', () => {
@@ -78,10 +106,13 @@ describe('display status and start', () => {
     expect(displayStatus(task('T-3', { status: 'review' }), idx)).toBe('review');
   });
 
-  it('shows a failed turn as an error without moving the task off its stage', () => {
-    const review = task('T-4', { status: 'review' });
-    expect(displayStatus(review, indexTasks([review]), 'failed')).toBe('failed');
-    expect(review.status).toBe('review');
+  it('shows a failed turn as an error, but never on an accepted result', () => {
+    const started = task('T-4', { status: 'in_progress' });
+    expect(displayStatus(started, indexTasks([started]), 'failed')).toBe('failed');
+    expect(started.status).toBe('in_progress');
+    // A limit after the result was accepted, a failed merge: the task stays in review.
+    const review = task('T-5', { status: 'review' });
+    expect(displayStatus(review, indexTasks([review]), 'failed')).toBe('review');
     expect(isAgentBusy('failed')).toBe(false);
     expect(isAgentBusy('running')).toBe(true);
   });
@@ -146,12 +177,16 @@ describe('dependency graph', () => {
 
   it('lists tasks unblocked by a change', () => {
     const before = [
-      task('A', { status: 'review' }),
+      task('A', { status: 'in_progress' }),
       task('B', { dependsOn: ['A'] }),
       task('C', { dependsOn: ['A', 'X'] }),
       task('X'),
     ];
     const after = before.map((t) => (t.id === 'A' ? { ...t, status: 'done' as const } : t));
     expect(newlyUnblocked(before, after)).toEqual(['B']);
+    // An accepted dependency does not unblock yet: its merge does.
+    const reviewed = before.map((t) => (t.id === 'A' ? { ...t, status: 'review' as const } : t));
+    expect(newlyUnblocked(before, reviewed)).toEqual([]);
+    expect(newlyUnblocked(reviewed, after)).toEqual(['B']);
   });
 });

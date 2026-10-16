@@ -23,8 +23,18 @@ it('takes a task in progress back to "Не начата" and keeps its run', asy
 
 it('merges from the board with the open merge card, and leaves a task without one to its feed', async () => {
   expect(await tasks.mergeFromBoard(projectId, taskId)).toBe('open');
-  const result = await tasks.mergeTask({ summary: 'Board merge' }, scope());
+  const result = await tasks.submitResult(
+    {
+      summary: 'Board merge',
+      commitMessage: 'feat: preserve runtime data',
+      criteria: [{ number: 1, met: true, evidence: 'Existing runtime data is retained' }],
+    },
+    scope(),
+  );
   expect(result.isError).not.toBe(true);
+  expect((await tasks.open(projectId, taskId)).timeline?.interactions).toContainEqual(
+    expect.objectContaining({ kind: 'merge' }),
+  );
   expect(await tasks.mergeFromBoard(projectId, taskId)).toBe('merged');
   await expectMergedWithoutCard();
 });

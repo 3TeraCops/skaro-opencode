@@ -165,6 +165,10 @@ export class AppDb extends DbTable {
     return this.runs.getRun(id);
   }
 
+  continueRun(...args: Parameters<DbRuns['continueRun']>): RunRecord {
+    return this.runs.continueRun(...args);
+  }
+
   setRunSession(id: string, nativeSessionId: string): void {
     return this.runs.setRunSession(id, nativeSessionId);
   }
@@ -174,8 +178,20 @@ export class AppDb extends DbTable {
   }
 
   /** Newest first. */
-  listRuns(projectId: string, taskId?: string): RunRecord[] {
-    return this.runs.listRuns(projectId, taskId);
+  listRuns(
+    projectId: string,
+    taskId?: string,
+    options: { includeRetired?: boolean } = {},
+  ): RunRecord[] {
+    return this.runs.listRuns(projectId, taskId, options);
+  }
+
+  retireTaskRuns(projectId: string, taskId: string): void {
+    return this.runs.retireTaskRuns(projectId, taskId);
+  }
+
+  usedTaskIds(projectId: string): string[] {
+    return this.runs.usedTaskIds(projectId);
   }
 
   // ── chats ────────────────────────────────────────────────────────────────

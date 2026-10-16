@@ -2,11 +2,16 @@ import type { TaskRuntime } from '@skaro/core';
 import type { TimelineEvent } from '@skaro/timeline';
 import type { ActiveRun } from './tasks';
 import type { ProjectContext } from './projects';
-import { mergeInteraction } from './task-merge-card';
+import { mergeInteraction, withStage } from './task-merge-card';
 import { closeMergeCards } from './task-merge-result';
+import { subjectOf } from './task-subject';
+import type { IntegrationService } from './integration-service';
 
 export interface TaskMergeHooks {
+  integrations: IntegrationService;
   active: () => ActiveRun[];
+  /** The run of a task with its feed, loaded from its log when it is not in memory. */
+  restore: (projectId: string, taskId: string) => Promise<ActiveRun | undefined>;
   project: (id: string) => ProjectContext;
   skaroEvent: (active: ActiveRun, event: TimelineEvent) => void;
   settleRuntime: (active: ActiveRun) => void;
@@ -14,8 +19,14 @@ export interface TaskMergeHooks {
   launchUnblocked: (projectId: string, ids: string[]) => Promise<void>;
   detach: (active: ActiveRun) => Promise<void>;
   setRuntime: (projectId: string, taskId: string, state: TaskRuntime) => void;
+  /** The merge of the task met a conflict: its own agent resolves it and submits again. */
+  conflicted: (active: ActiveRun, conflicts: string[]) => Promise<void>;
   /** A merged task has no use for its environment: a disposable copy goes with it. */
   removeEnvironment: (projectId: string, taskId: string) => Promise<void>;
+  refreshCard?: (
+    active: ActiveRun,
+    card: import('./task-merge-card').MergeInteraction,
+  ) => Promise<void>;
 }
 
 /** Only open merge cards are polled. Git and local file edits require no agent turn. */
@@ -49,7 +60,9 @@ export class MergeCardRefresh {
     try {
       const active = this.hooks
         .active()
-        .filter((a) => a.timeline.state.interactions.some((i) => i.kind === 'merge'));
+        .filter(
+          (a) => !a.switching && a.timeline.state.interactions.some((i) => i.kind === 'merge'),
+        );
       if (!active.length) {
         clearInterval(this.timer);
         this.timer = undefined;
@@ -60,8 +73,12 @@ export class MergeCardRefresh {
         if (!card || card.kind !== 'merge' || !run.run.branch) continue;
         const context = this.hooks.project(run.projectId);
         try {
+          if (this.hooks.refreshCard) {
+            await this.hooks.refreshCard(run, card);
+            continue;
+          }
           const artifacts = await context.load();
-          if (artifacts.tasks.find((task) => task.id === run.taskId)?.status === 'done') {
+          if (subjectOf(artifacts, run.taskId)?.status === 'done') {
             closeMergeCards(run, this.hooks);
             continue;
           }
@@ -69,8 +86,10 @@ export class MergeCardRefresh {
           const check = await context.git.checkMerge(base, run.run.branch);
           const next = mergeInteraction(card.id, run.run.branch, base, check);
           if (card.message) next.message = card.message;
+          withStage(next, card.stage);
           if (
             !this.closed &&
+            !run.switching &&
             !this.busy.has(run.projectId) &&
             run.timeline.state.interactions.includes(card) &&
             JSON.stringify(next) !== JSON.stringify(card)

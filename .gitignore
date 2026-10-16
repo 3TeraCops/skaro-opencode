@@ -3,6 +3,7 @@ node_modules/
 out/
 dist/
 release/
+output/
 *.tsbuildinfo
 /apps/desktop/build/skaro-bundle.json
 .eslintcache

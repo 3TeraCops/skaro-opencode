@@ -1,6 +1,6 @@
 // Small formatting helpers for the feed.
 
-import type { AgentModel } from '@skaro/timeline';
+import { selectedEffort, type AgentModel } from '@skaro/timeline';
 import { t } from '@skaro/ui';
 
 /** 0:05, 4:36, 1:02:03 */
@@ -77,10 +77,7 @@ export function modelEffort(
     (!id || id === 'default' ? models.find((m) => m.isDefault) : undefined);
   if (!model) return { efforts: [] };
   const efforts = model.efforts.map((e) => e.id);
-  const chosen =
-    (effort && efforts.includes(effort) ? effort : undefined) ??
-    model.defaultEffort ??
-    efforts[Math.floor(efforts.length / 2)];
+  const chosen = selectedEffort(model, effort);
   return { ...(chosen ? { effort: chosen } : {}), efforts };
 }
 

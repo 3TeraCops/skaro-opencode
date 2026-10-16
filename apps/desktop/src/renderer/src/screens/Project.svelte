@@ -1,14 +1,13 @@
 <script lang="ts">
   import ProjectSection from './ProjectSection.svelte';
-  import { NavPanel, t, tn, type NavItem, type NavTask } from '@skaro/ui';
+  import ProjectNavigation from './ProjectNavigation.svelte';
   import { onDestroy } from 'svelte';
   import type { ProjectInfo } from '../../../shared/ipc';
   import { agents } from '../agents.svelte';
   import { ProjectTasks } from '../tasks/data.svelte';
   import '../tasks/i18n';
-  import { activeTasks, needsYou, statusLabel } from '../tasks/model';
   import ImportModal from '../import/ImportModal.svelte';
-  import { NavigationWidth } from './navigation-width.svelte';
+  import LimitsModal from '../limits/LimitsModal.svelte';
 
   /** A project tab: the sections panel on the left and the current section beside it. */
   let {
@@ -35,8 +34,7 @@
 
   /** A document to open when "Документы" shows next (a task's specification). */
   let doc = $state<string | undefined>();
-  const navigation = new NavigationWidth();
-  onDestroy(() => navigation.dispose());
+  let limitsOpen = $state(false);
 
   function openDoc(path: string): void {
     doc = path;
@@ -54,45 +52,23 @@
   const data = new ProjectTasks(project.id);
   onDestroy(() => data.dispose());
 
-  const attention = $derived(data.tasks.filter((x) => !x.archived && needsYou(x)).length);
-
-  const items = $derived<NavItem[]>([
-    {
-      id: 'tasks',
-      label: t('nav.tasks'),
-      tip: t('nav.tasks.tip'),
-      icon: 'tasks',
-      count: attention,
-      countTip: t('board.attention.tip'),
-      railTip: tn('board.attention.rail', attention),
-    },
-    { id: 'docs', label: t('nav.docs'), tip: t('nav.docs.tip'), icon: 'docs' },
-    { id: 'plan', label: t('nav.plan'), tip: t('nav.plan.tip'), icon: 'plan' },
-    { id: 'chat', label: t('nav.chat'), tip: t('nav.chat.tip'), icon: 'chat', separated: true },
-    { id: 'params', label: t('nav.params'), tip: t('nav.params.tip'), icon: 'params' },
-  ]);
-  const current = $derived(items.find((i) => i.id === section) ?? items[0]!);
-
-  const navTasks = $derived<NavTask[]>(
-    activeTasks(data.tasks).map(({ task, kind }) => ({
-      id: task.id,
-      title: task.title,
-      tip: `${task.id.replace(/^T-0*(\d+)$/, 'T$1')} · ${task.title}`,
-      sub: `${statusLabel(task.status)} · ${
-        task.milestone ? `${task.milestone.id} · ${task.milestone.title}` : t('board.loose')
-      }`,
-      kind,
-    })),
+  const current = $derived(
+    ['tasks', 'docs', 'plan', 'chat', 'params'].includes(section) ? section : 'tasks',
   );
 
+  /** The open task names a milestone: it is the screen of a stage, shown under "План". */
+  const stageOpen = $derived(task !== undefined && data.milestones.some((m) => m.id === task));
+
   function go(id: string): void {
-    if (id === 'tasks') task = undefined;
+    if (id === 'tasks' || stageOpen) task = undefined;
     section = id;
   }
 
+  /** Opens a task, or the stage of a milestone. */
   function openTask(id: string): void {
-    task = id;
-    section = 'tasks';
+    const milestone = data.milestones.some((m) => m.id === id);
+    task = milestone ? undefined : id;
+    section = milestone ? 'plan' : 'tasks';
   }
 
   /** Tasks and plans are made with the agent, in a new chat ("Новая задача", "Перепланировать"). */
@@ -103,25 +79,23 @@
 </script>
 
 <div class="project">
-  <NavPanel
-    title={project.name}
-    logo={project.logo}
-    {items}
-    active={current.id}
+  <ProjectNavigation
+    {project}
+    {data}
+    section={current}
     bind:collapsed
-    bind:width={navigation.width}
-    onresize={() => navigation.save()}
-    tasks={navTasks}
     ontask={openTask}
+    onlimits={() => (limitsOpen = true)}
     onselect={(id) => {
-      if (id === 'tasks' && section === 'tasks') task = undefined;
+      if ((id === 'tasks' && section === 'tasks') || stageOpen) task = undefined;
       section = id;
     }}
   />
   <ProjectSection
     {project}
-    section={current.id}
+    section={current}
     {task}
+    stage={stageOpen}
     bind:chat
     {doc}
     {data}
@@ -136,6 +110,10 @@
     onimport={() => (importing = true)}
   />
 </div>
+
+{#if limitsOpen}
+  <LimitsModal projectId={project.id} agents={agents.list} bind:open={limitsOpen} />
+{/if}
 
 {#if importing}
   <ImportModal

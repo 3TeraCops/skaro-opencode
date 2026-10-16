@@ -16,21 +16,29 @@
   let {
     open = $bindable(false),
     kind = 'task',
+    title,
+    subtitle,
+    actionLabel,
     projectId,
     settings,
     agents,
     locked,
+    isolationLocked = locked,
     branch,
     sandboxHolds,
     onsave,
   }: {
     open?: boolean;
-    kind?: 'task' | 'chat';
+    kind?: 'task' | 'chat' | 'launch';
+    title?: string;
+    subtitle?: string;
+    actionLabel?: string;
     projectId: string;
     settings: AgentSettings;
     agents: AgentInfo[];
-    /** A started task keeps its agent (sessions are not compatible). */
+    /** A working turn must stop before its agent can change. */
     locked: boolean;
+    isolationLocked?: boolean;
     branch?: string;
     sandboxHolds?: boolean;
     onsave: (settings: AgentSettings) => Promise<void> | void;
@@ -85,14 +93,15 @@
   bind:open
   flush
   width={480}
-  title={kind === 'chat' ? t('chat.agent.title') : t('agent.modal.title')}
-  subtitle={kind === 'chat'
-    ? locked
-      ? t('chat.agent.locked')
-      : t('chat.agent.subtitle')
-    : locked
-      ? t('agent.modal.locked')
-      : t('agent.modal.subtitle')}
+  title={title ?? (kind === 'chat' ? t('chat.agent.title') : t('agent.modal.title'))}
+  subtitle={subtitle ??
+    (kind === 'chat'
+      ? locked
+        ? t('chat.agent.locked')
+        : t('chat.agent.subtitle')
+      : locked
+        ? t('agent.modal.locked')
+        : t('agent.modal.subtitle'))}
 >
   <div class="body agent-settings">
     <div class="section">
@@ -102,7 +111,7 @@
 
     <AgentModelFields {controller} />
 
-    {#if kind === 'task'}
+    {#if kind !== 'chat'}
       <div class="section">
         <span class="sk-label">{t('agent.perm')}</span>
         <RadioCards
@@ -111,8 +120,10 @@
           label={t('agent.perm')}
         />
       </div>
+    {/if}
 
-      <div class="section">
+    {#if kind === 'task'}
+      <div class="section" inert={isolationLocked}>
         <span class="sk-label">{t('agent.iso')}</span>
         <RadioCards
           options={isoOptions}
@@ -134,7 +145,7 @@
     <span class="agent-summary">{summary}</span>
     <Button onclick={() => (open = false)}>{t('agent.cancel')}</Button>
     <Button variant="primary" disabled={controller.saving} onclick={() => void controller.save()}
-      >{t('agent.save')}</Button
+      >{actionLabel ?? t('agent.save')}</Button
     >
   {/snippet}
 </Modal>

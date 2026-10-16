@@ -1,4 +1,4 @@
-import type { AgentModel } from '@skaro/timeline';
+import { selectedEffort, type AgentModel } from '@skaro/timeline';
 import { t, tn } from '@skaro/ui';
 import type { AgentSettings, ChatSettings, ImportSource } from '../../../shared/ipc';
 import type { ImportProps } from './import-props';
@@ -46,11 +46,7 @@ export function createImportController(p: ImportProps) {
   const model = $derived(
     models.find((m) => m.id === settings?.model) ?? models.find((m) => m.isDefault),
   );
-  const effort = $derived(
-    settings?.effort ??
-      model?.defaultEffort ??
-      model?.efforts[Math.floor(model.efforts.length / 2)]?.id,
-  );
+  const effort = $derived(selectedEffort(model, settings?.effort));
   const missing = $derived(sources.filter((s) => s.missing));
   const read = $derived(sources.reduce((n, s) => n + (s.missing ? 0 : s.readable), 0));
   const unsupported = $derived(sources.reduce((n, s) => n + (s.missing ? 0 : s.unsupported), 0));

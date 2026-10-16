@@ -50,7 +50,12 @@
     class="title"
     class:muted={kind === 'blocked' || kind === 'done' || kind === 'cancelled'}>{task.title}</span
   >
-  <StatusLabel status={task.status} />
+  <StatusLabel
+    status={task.status}
+    after={task.after}
+    merge={task.merge}
+    mergeAfter={task.mergeAfter}
+  />
   <span data-task-list class="agent">
     {#if task.agent}<AgentLogo agent={task.agent} size={10} />{/if}
     <span data-task-list class="agent-name">{agentLine(task)}</span>

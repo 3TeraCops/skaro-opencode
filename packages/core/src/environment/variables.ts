@@ -46,9 +46,9 @@ export function environmentVariables(
   return {
     COMPOSE_PROJECT_NAME: identity.name,
     SKARO_ENV_NAME: identity.name,
-    ...Object.fromEntries(Object.entries(identity.ports).map(([k, v]) => [k, String(v)])),
     ...Object.fromEntries(
       Object.entries(config?.env ?? {}).map(([k, v]) => [k, expand(v, identity)]),
     ),
+    ...Object.fromEntries(Object.entries(identity.ports).map(([k, v]) => [k, String(v)])),
   };
 }

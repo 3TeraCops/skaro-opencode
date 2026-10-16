@@ -98,7 +98,8 @@
         "type": "contextCompaction",
         "ref": "01a0d510-167b-7192-bbb9-65f899b310a2"
       },
-      "startedAt": 14609
+      "startedAt": 14609,
+      "endedAt": 19791
     },
     {
       "id": "01a0d510-2c6e-7451-8fd8-4be5a269f451",

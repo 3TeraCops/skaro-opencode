@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { feedRows, type Interaction, type TimelineState } from '@skaro/timeline';
+  import {
+    feedRows,
+    liveActivity,
+    startingEnvironment as hasStartingEnvironment,
+    type Interaction,
+    type TimelineState,
+  } from '@skaro/timeline';
   import { Icon, t } from '@skaro/ui';
   import { FeedScroll } from './scroll.svelte';
   import './feed-layout.css';
@@ -42,29 +48,22 @@
   );
   const firstApproval = $derived(approvals[0]?.id);
   // Skaro's start_environment runs for minutes: the agent waits for it, not for the model.
-  const startingEnvironment = $derived(
-    timeline.items.some(
-      (i) =>
-        i.kind === 'tool' &&
-        i.server === 'skaro' &&
-        i.name === 'start_environment' &&
-        i.status === 'running',
-    ),
-  );
+  const startingEnvironment = $derived(hasStartingEnvironment(timeline));
+  const activity = $derived(liveActivity(timeline));
   // A running reasoning row already says "Думает…".
   const showLive = $derived(
     timeline.status !== 'idle' &&
       (startingEnvironment ||
-        (timeline.activity !== undefined &&
+        (activity !== undefined &&
           !(
-            timeline.activity.state === 'thinking' &&
+            activity.state === 'thinking' &&
             timeline.items.some((i) => i.kind === 'reasoning' && i.status === 'running')
           ))),
   );
 
   $effect(() => {
-    void timeline.activity?.state;
-    void timeline.activity?.target;
+    void activity?.state;
+    void activity?.target;
     void startingEnvironment;
     activitySince = Date.now();
   });
@@ -86,12 +85,7 @@
     <div class="fd-feed" bind:this={scroll.content}>
       <FeedRows {rows} {waiting} />
       {#if showLive}
-        <LiveLine
-          activity={timeline.activity}
-          environment={startingEnvironment}
-          since={activitySince}
-          {cwd}
-        />
+        <LiveLine {activity} environment={startingEnvironment} since={activitySince} {cwd} />
       {/if}
       {#if approvals.length}
         <div class="fd-block" style="gap: 8px">

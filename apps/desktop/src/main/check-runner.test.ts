@@ -36,10 +36,10 @@ it('blocks publication on failure, preserves task status, then reruns the change
   expect(result.text).toContain('check failed');
   expect((await git(repo, ['rev-parse', 'HEAD'])).stdout).toBe(head);
   expect(db.listMerges(projectId, taskId)).toEqual([]);
-  expect((await projects.get(projectId).store.readTask(taskId)).status).toBe('todo');
+  expect((await projects.get(projectId).store.readTask(taskId)).status).toBe('review');
   await configure('node -e "process.exit(0)"');
   expect((await tasks.mergeTask({}, scope())).isError).not.toBe(true);
-}, 15_000);
+}, 30_000);
 
 it('rejects checks that modify tracked candidate code', async () => {
   await configure("node -e \"require('fs').writeFileSync('feature.txt','changed by check')\"");

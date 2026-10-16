@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import {
   agentPackage,
   type AgentId,
@@ -7,8 +8,8 @@ import {
 } from '@skaro/core';
 import type { UpdateComponent } from '../shared/updates';
 
-export const RELEASE_ROOT = 'https://github.com/skarodev/skaro/releases';
-export const RELEASE_API = 'https://api.github.com/repos/skarodev/skaro/releases/latest';
+export const RELEASE_ROOT = 'https://github.com/dartdavros/skaro/releases';
+export const RELEASE_API = 'https://api.github.com/repos/dartdavros/skaro/releases/latest';
 export const AGENT_IDS: AgentId[] = ['codex', 'claude-code'];
 export const PLATFORM_KEYS = [
   'win32-x64',
@@ -27,12 +28,19 @@ export function updateFeedName(os: string, arch: string): string {
     : `latest-${arch}${os === 'darwin' ? '-mac' : ''}.yml`;
 }
 
+/** AppImage uses x86_64 in filenames while Electron calls that architecture x64. */
+export function releasePayloadSuffix(os: string, arch: string): string {
+  const artifactArch = os === 'linux' && arch === 'x64' ? 'x86_64' : arch;
+  const extension = os === 'darwin' ? '.dmg' : os === 'linux' ? '.AppImage' : '.exe';
+  return `-${artifactArch}${extension}`;
+}
+
 export interface ReleaseAgent {
   version: string;
   shownVersion: string;
 }
 export interface ReleasePlatform {
-  /** electron-builder channel feed in the same immutable GitHub release. */
+  /** Channel metadata published separately from the public installers. */
   feed: string;
   payload: { name: string; sha512: string; size: number };
   agents: Record<AgentId, AgentPackage & AgentArtifact>;
@@ -91,7 +99,7 @@ export function parseRelease(value: unknown): ReleaseManifest {
     const expectedFeed = updateFeedName(os!, arch!);
     if (platform.feed !== expectedFeed) fail();
     const payload = platform.payload;
-    const extension = os === 'darwin' ? '.zip' : os === 'linux' ? '.AppImage' : '.exe';
+    const extension = os === 'darwin' ? '.dmg' : os === 'linux' ? '.AppImage' : '.exe';
     if (
       !payload ||
       !/^[\w .-]+$/.test(payload.name) ||
@@ -142,6 +150,27 @@ export function releasePlatform(m: ReleaseManifest, p: Platform): ReleasePlatfor
   const platform = m.platforms[key];
   if (!platform) throw new Error(`Skaro update is not available for ${key}`);
   return platform;
+}
+
+/** Assemble only a complete, consistent set of independently built platforms. */
+export function mergeReleaseParts(
+  bundle: Omit<ReleaseManifest, 'schema' | 'platforms'>,
+  parts: ReleaseManifest[],
+): ReleaseManifest {
+  const expected = { schema: 1 as const, ...bundle };
+  const manifest: ReleaseManifest = { ...expected, platforms: {} };
+  for (const value of parts) {
+    const { platforms, ...metadata } = parseRelease(value);
+    if (!isDeepStrictEqual(metadata, expected))
+      throw new Error('Release parts have different pinned bundles');
+    const keys = Object.keys(platforms);
+    if (keys.length !== 1 || manifest.platforms[keys[0]!])
+      throw new Error('Expected one unique platform per release part');
+    Object.assign(manifest.platforms, platforms);
+  }
+  if (PLATFORM_KEYS.some((key) => !manifest.platforms[key]))
+    throw new Error('All six supported release platforms must pass before publication');
+  return parseRelease(manifest);
 }
 
 export function changedComponents(

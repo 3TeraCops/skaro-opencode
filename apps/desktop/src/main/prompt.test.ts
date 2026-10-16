@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { DEFAULT_CONFIG, type ProjectArtifacts, type Task } from '@skaro/core';
 import { describe, expect, it } from 'vitest';
 import { chatInstructions, importInstructions, taskInstructions } from './prompt';
+import { PROJECT_CHAT_WORKFLOW } from './chat-workflow';
 
 const task: Task = {
   id: 'T-001',
@@ -49,12 +50,15 @@ describe('task instructions', () => {
   });
 
   it('forbids calling the task done without a full report', () => {
-    expect(text).toMatch(/done only when submit_result reports every criterion met/);
+    expect(text).toContain(
+      'acceptance as verified only when submit_result reports every criterion met',
+    );
+    expect(text).toContain('done only when Skaro confirms its done status or publication');
   });
 
   it('explains both merge modes and forbids reconfirming an already merged result', () => {
-    expect(text).toContain('in automatic mode it merges immediately when unblocked');
-    expect(text).toContain('in manual mode it shows a confirmation card');
+    expect(text).toContain('automatic mode merges a ready completion group');
+    expect(text).toContain('manual mode shows a confirmation card in a real task chat');
     expect(text).toContain('do not call merge_task again to confirm it');
     expect(text).not.toContain('merges after the user confirms');
   });
@@ -79,7 +83,10 @@ describe('task instructions', () => {
     });
     expect(managed).toContain('Call the start_environment tool');
     expect(managed).toContain('Do not start, recreate or re-point services yourself');
-    expect(managed).toContain('The environment holds nothing unique');
+    expect(managed).toContain("Skaro retains this task's data through review and fixes");
+    expect(managed).toContain('configure_environment with no arguments');
+    expect(managed).toContain('do not ask the owner to edit settings by hand');
+    expect(managed).toContain('Call start_environment afterwards');
     expect(managed).not.toContain('Take free ports');
   });
 
@@ -114,6 +121,7 @@ it('separates runtime approvals from owner decisions in tasks, chats and imports
     expect(text).toContain('submit_result does not create a question card');
     expect(text).toContain('without a successful tool invocation');
     expect(text).toContain('wait for its answer before completing dependent work');
+    expect(text).toContain('A selected answer does not itself change settings or start services');
   }
 });
 
@@ -124,5 +132,32 @@ describe('chat instructions', () => {
   it('names milestones «этапы» in Russian, as the interface does', () => {
     expect(chat('ru')).toContain('a milestone is «этап» (never «веха»)');
     expect(chat('en')).not.toContain('«этап»');
+  });
+
+  it('keeps coherent work together in new chats, continued chats and imports', () => {
+    const prompts = [
+      chat('en'),
+      PROJECT_CHAT_WORKFLOW,
+      importInstructions({
+        projectName: 'Магазин',
+        root: '/work/project',
+        artifacts,
+        locale: 'en',
+        dir: '/data/imports/1',
+        hasCode: true,
+      }),
+    ];
+    for (const text of prompts) {
+      expect(text).toContain('Default to one task for a small, coherent change');
+      expect(text).toContain(
+        'Keep related implementation, necessary tests, documentation and verification',
+      );
+      expect(text).toContain('explain the concrete reason for each remaining split in task notes');
+      expect(text).toContain(
+        'grouping tasks into a milestone does not share their checkout or environment',
+      );
+      expect(text).toContain('Do not silently regroup already created or accepted tasks');
+      expect(text).not.toMatch(/small implementation tasks|small enough for one agent run|2–6/);
+    }
   });
 });

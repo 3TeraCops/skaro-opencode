@@ -1,6 +1,8 @@
 import { copyFile, mkdtemp, open, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { git } from './command.ts';
+import { GitBaseChangedError } from './git.ts';
 import {
   captureFiles,
   fileImage,
@@ -10,6 +12,7 @@ import {
   type FileImages,
 } from './merge-files.ts';
 import { localMergeObstacles } from './merge-safety.ts';
+import { identicalUntrackedAdditions } from './merge-identical.ts';
 export { captureFiles } from './merge-files.ts';
 
 /** Keep the real index locked, while read-tree carries unrelated staged and unstaged work forward. */
@@ -20,6 +23,7 @@ export async function publishMerge(
   commit: string,
   base: string,
   managed: FileImages,
+  guards: FileImages = new Map(),
 ): Promise<void> {
   const index = (
     await git(repo, ['rev-parse', '--path-format=absolute', '--git-path', 'index'])
@@ -27,6 +31,7 @@ export async function publishMerge(
   const gitDir = (await git(repo, ['rev-parse', '--absolute-git-dir'])).stdout.trim();
   const lock = `${index}.lock`;
   const handle = await open(lock, 'wx');
+  const lockOwner = `Skaro publication ${process.pid} ${randomUUID()}`;
   const dir = await mkdtemp(join(gitDir, 'skaro-merge-recovery-')).catch(async (error) => {
     await handle.close();
     await rm(lock, { force: true });
@@ -40,13 +45,14 @@ export async function publishMerge(
   let original: FileImages = new Map();
   let planned: FileImages = new Map();
   try {
+    await handle.writeFile(lockOwner);
     await handle.close();
     if (
       (await git(repo, ['symbolic-ref', '--short', 'HEAD'])).stdout.trim() !== base ||
       (await git(repo, ['rev-parse', 'HEAD'])).stdout.trim() !== before
     )
-      throw new Error('The base branch changed; merge must be checked again');
-    for (const [path, image] of managed)
+      throw new GitBaseChangedError();
+    for (const [path, image] of [...managed, ...guards])
       if (!sameImage(image, await fileImage(join(repo, path))))
         throw new Error(`Merge metadata changed during preparation: ${path}`);
     const obstacles = await localMergeObstacles(repo, before, commit, [...managed.keys()]);
@@ -63,12 +69,31 @@ export async function publishMerge(
     await copyFile(index, join(dir, 'original-index'));
     await writeFile(
       join(dir, 'journal.json'),
-      JSON.stringify({ base, before, commit, original: [...original], planned: [...planned] }),
+      JSON.stringify({
+        base,
+        before,
+        commit,
+        ownerPid: process.pid,
+        lockOwner,
+        original: [...original],
+        planned: [...planned],
+      }),
     );
     // Managed metadata is explicitly part of this commit. Other .skaro files retain their staging.
     const metadata = [...managed.keys()].filter((path) => paths.includes(path));
     if (metadata.length)
       await git(repo, ['restore', `--source=${commit}`, '--staged', '--', ...metadata], { env });
+    const untracked = (await git(repo, ['ls-files', '--others', '-z'])).stdout
+      .split('\0')
+      .filter((path) => paths.includes(path));
+    const identical = await identicalUntrackedAdditions(repo, before, commit, untracked);
+    // Adopt matching additions only in the private index. Their working files need no write.
+    if (identical.length)
+      await git(
+        repo,
+        ['--literal-pathspecs', 'restore', `--source=${commit}`, '--staged', '--', ...identical],
+        { env },
+      );
     // Dry run checks Git's own index/worktree rules before touching any files.
     // Managed files will match the staged target when the actual update runs.
     touched = true;

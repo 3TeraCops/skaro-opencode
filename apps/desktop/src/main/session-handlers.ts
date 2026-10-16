@@ -19,6 +19,9 @@ export function sessionHandlers({
   | 'tasks.cancel'
   | 'tasks.merge'
   | 'tasks.assign'
+  | 'stages.list'
+  | 'stages.run'
+  | 'stages.stop'
   | 'docs.list'
   | 'docs.read'
   | 'docs.write'
@@ -65,6 +68,9 @@ export function sessionHandlers({
     'tasks.assign': async (projectId, ids, assignment) => {
       for (const id of ids) await runs.assign(projectId, id, assignment);
     },
+    'stages.list': (projectId) => runs.stages(projectId),
+    'stages.run': (projectId, stageId, message) => runs.runStage(projectId, stageId, message),
+    'stages.stop': (projectId, stageId) => runs.stopStage(projectId, stageId),
     'docs.list': (projectId) => docs.list(projectId),
     'docs.read': (projectId, path) => docs.read(projectId, path),
     'docs.write': (projectId, path, text) => docs.write(projectId, path, text),

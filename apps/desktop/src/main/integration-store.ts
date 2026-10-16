@@ -1,0 +1,109 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { join } from 'node:path';
+import type { AppDb } from '@skaro/core';
+import type { IntegrationOperation, IntegrationRequest } from './integration-model';
+import type { CompletionOperation } from './completion-store';
+import type { MessageInput } from '../shared/ipc';
+
+export function integrationFingerprint(request: IntegrationRequest, baseHead: string): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        project: request.projectId,
+        task: request.taskId,
+        purpose: request.purpose,
+        baseHead,
+        results: request.results.map((r) => [r.taskId, r.head, r.criteria, r.verification]),
+        checks: request.checks,
+      }),
+    )
+    .digest('hex');
+}
+
+/** Durable operation ownership and immutable inputs; no state is inferred from agent prose. */
+export class IntegrationStore {
+  private readonly db: Pick<AppDb, 'getSetting' | 'setSetting'>;
+  readonly dataDir: string;
+  constructor(db: Pick<AppDb, 'getSetting' | 'setSetting'>, dataDir: string) {
+    this.db = db;
+    this.dataDir = dataDir;
+  }
+
+  all(projectId: string): IntegrationOperation[] {
+    return this.db.getSetting(`integration.${projectId}.operations`, []);
+  }
+
+  find(projectId: string, id: string): IntegrationOperation | undefined {
+    return this.all(projectId).find((op) => op.id === id);
+  }
+
+  publications(projectId: string): CompletionOperation[] {
+    return this.db.getSetting(`completion.${projectId}.operations`, []);
+  }
+
+  inputs(id: string): MessageInput[] {
+    return this.db.getSetting(`integration.${id}.inputs`, []);
+  }
+
+  appendInput(id: string, input: MessageInput): void {
+    this.db.setSetting(`integration.${id}.inputs`, [...this.inputs(id), input]);
+  }
+
+  delivered(id: string, count: number): void {
+    this.db.setSetting(`integration.${id}.inputs`, this.inputs(id).slice(count));
+  }
+
+  publish(
+    op: IntegrationOperation,
+    request: Pick<IntegrationRequest, 'target' | 'partial' | 'message'>,
+  ): void {
+    const intent = {
+      publish: true,
+      target: request.target,
+      partial: request.partial,
+      message: request.message,
+    };
+    this.db.setSetting(`integration.${op.id}.publication`, intent);
+    Object.assign(op, intent);
+    this.save(op);
+  }
+
+  save(op: IntegrationOperation): void {
+    const saved = this.find(op.projectId, op.id);
+    const intent = this.db.getSetting(`integration.${op.id}.publication`, null);
+    if (intent) Object.assign(op, intent);
+    else if (saved?.publish && !op.publish) {
+      op.publish = saved.publish;
+      op.target = saved.target;
+      op.partial = saved.partial;
+      op.message = saved.message;
+    }
+    op.updatedAt = Date.now();
+    this.db.setSetting(`integration.${op.projectId}.operations`, [
+      ...this.all(op.projectId).filter((item) => item.id !== op.id),
+      op,
+    ]);
+  }
+
+  create(request: IntegrationRequest, baseHead: string): IntegrationOperation {
+    const id = randomUUID();
+    const op: IntegrationOperation = {
+      ...request,
+      id,
+      baseHead,
+      fingerprint: integrationFingerprint(request, baseHead),
+      worktree: join(this.dataDir, 'integrations', request.projectId, id, 'checkout'),
+      head: baseHead,
+      cursor: 0,
+      state: 'preparing',
+      conflicts: [],
+      needsVerification: false,
+      attempts: 0,
+      sequence: 0,
+      updatedAt: Date.now(),
+    };
+    if (request.publish) this.publish(op, request);
+    else this.save(op);
+    return op;
+  }
+}

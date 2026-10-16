@@ -14,6 +14,11 @@ import { ChatPlans } from './chat-plans';
 import { ChatContext } from './chat-context';
 import { ChatSessions } from './chat-sessions';
 import { ChatHistory } from './chat-history';
+import { ChatPlanning } from './chat-planning';
+import { ChatPlanningContinuation } from './chat-planning-continuation';
+import { ChatPlanDecisions } from './chat-plan-decisions';
+import { ChatPlanReview } from './chat-plan-review';
+import { ChatTaskReplans } from './chat-task-replans';
 export class ChatEngine {
   readonly live = new Map<string, LiveChat>();
   readonly views = new ChatViews(this);
@@ -29,6 +34,11 @@ export class ChatEngine {
   readonly context = new ChatContext(this);
   readonly sessions = new ChatSessions(this);
   readonly history = new ChatHistory(this);
+  readonly planning = new ChatPlanning(this);
+  readonly planningContinuation = new ChatPlanningContinuation(this);
+  readonly planDecisions = new ChatPlanDecisions(this);
+  readonly planReview = new ChatPlanReview(this);
+  readonly replans = new ChatTaskReplans(this);
   readonly deps: Deps;
   constructor(deps: Deps) {
     this.deps = deps;

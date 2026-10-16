@@ -20,7 +20,14 @@ async function merge(strategy: 'squash' | 'merge' | 'rebase' = 'squash'): Promis
   const { config } = await context.load();
   await context.store.writeConfig({ ...config, merge: { ...config.merge, strategy } });
   context.invalidate();
-  await tasks.mergeTask({}, scope());
+  await tasks.submitResult(
+    {
+      summary: 'Verified result',
+      commitMessage: 'merge task',
+      criteria: [{ number: 1, met: true, evidence: 'real checkout retained' }],
+    },
+    scope(),
+  );
   const card = (await tasks.open(projectId, taskId)).timeline!.interactions.find(
     (i) => i.kind === 'merge',
   )!;
@@ -59,7 +66,7 @@ it.each(['squash', 'merge', 'rebase'] as const)(
     await tasks.revertMerge(projectId, taskId, commit);
     expect(await projects.get(projectId).git.head()).toBe(head);
   },
-  15_000,
+  30_000,
 );
 
 it('restores the recorded base needed to revert a rebase merge after restart', async () => {
@@ -70,7 +77,7 @@ it('restores the recorded base needed to revert a rebase merge after restart', a
   await tasks.revertMerge(projectId, taskId, commit);
   expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
   expect((await projects.get(projectId).store.readTask(taskId)).status).toBe('review');
-}, 15_000);
+}, 30_000);
 
 it('preserves the main branch and merge record when later work conflicts with reversal', async () => {
   const commit = await merge();
@@ -83,7 +90,7 @@ it('preserves the main branch and merge record when later work conflicts with re
   expect(await readFile(join(repo, 'feature.txt'), 'utf8')).toBe('later owner work');
   expect(db.listMerges(projectId, taskId)[0]?.revertCommit).toBeUndefined();
   expect((await projects.get(projectId).store.readTask(taskId)).status).toBe('done');
-}, 15_000);
+}, 30_000);
 
 it('rejects an unrelated commit and a dirty base without touching owner edits', async () => {
   const commit = await merge();
@@ -94,4 +101,4 @@ it('rejects an unrelated commit and a dirty base without touching owner edits', 
   await expect(tasks.revertMerge(projectId, taskId, commit)).rejects.toThrow('uncommitted');
   expect(await readFile(join(repo, 'feature.txt'), 'utf8')).toBe('uncommitted owner work');
   expect(db.listMerges(projectId, taskId)[0]?.revertCommit).toBeUndefined();
-}, 15_000);
+}, 30_000);

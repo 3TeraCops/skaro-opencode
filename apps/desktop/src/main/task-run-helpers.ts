@@ -2,13 +2,16 @@ import {
   displayStatus,
   indexTasks,
   isBlocked,
-  pendingDependencies,
+  unmergedDependencies,
   type ProjectArtifacts,
   type Task,
   type TaskRuntime,
+  type RunRecord,
 } from '@skaro/core';
 import type { AgentId, RunInfo, TaskDetail, TaskRef, TaskSummary } from '../shared/ipc';
 import { taskSections } from './task-body';
+import { stageIdOf } from './task-stage';
+import { subjectOf } from './task-subject';
 
 import type { ActiveRun } from './task-run-model';
 
@@ -26,8 +29,9 @@ export function settingsKey(projectId: string, taskId: string): string {
   return `task.${projectId}.${taskId}.agent`;
 }
 
+/** The task of a run, or the acceptance of a stage when the run is named after a milestone. */
 export function findTask(artifacts: ProjectArtifacts, taskId: string): Task {
-  const task = artifacts.tasks.find((t) => t.id === taskId);
+  const task = subjectOf(artifacts, taskId);
   if (!task) throw new Error(`unknown task ${taskId}`);
   return task;
 }
@@ -60,8 +64,11 @@ export function summary(
 ): TaskSummary {
   const milestone = artifacts.milestones.find((m) => m.id === task.milestone);
   const spec = task.spec ? artifacts.specs.find((s) => s.id === task.spec) : undefined;
+  const base = ref(task, index, runtime);
+  const waitsFor = isBlocked(task, index) ? unmergedDependencies(task, index) : [];
   return {
-    ...ref(task, index, runtime),
+    ...base,
+    ...(base.status === 'blocked' && !waitsFor.length ? { status: 'todo' as const } : {}),
     stage: task.status,
     ...(milestone ? { milestone: { id: milestone.id, title: milestone.title } } : {}),
     ...(spec ? { spec: { id: spec.id, title: spec.title, path: spec.path } } : {}),
@@ -69,7 +76,7 @@ export function summary(
     ...extra,
     deps: task.dependsOn,
     ...(task.order !== undefined ? { order: task.order } : {}),
-    waitsFor: isBlocked(task, index) ? pendingDependencies(task, index) : [],
+    waitsFor,
   };
 }
 
@@ -77,6 +84,7 @@ export function detail(
   task: Task,
   artifacts: ProjectArtifacts,
   runtime: Map<string, { state: TaskRuntime }>,
+  run?: RunRecord,
 ): TaskDetail {
   const index = indexTasks(artifacts.tasks);
   const refOf = (t: Task) => ref(t, index, runtime.get(t.id)?.state);
@@ -86,7 +94,8 @@ export function detail(
       (id) => (index.get(id) && refOf(index.get(id)!)) ?? { id, title: id, status: 'todo' },
     ),
     blocks: artifacts.tasks.filter((t) => t.dependsOn.includes(task.id)).map(refOf),
-    ...(task.branch ? { branch: task.branch } : {}),
+    ...((task.branch ?? run?.branch) ? { branch: task.branch ?? run?.branch } : {}),
+    ...(run && stageIdOf(run) ? { sharedCheckout: true } : {}),
     ...taskSections(task.body),
     ...requirementsOf(artifacts.specs.find((s) => s.id === task.spec)?.body),
   };

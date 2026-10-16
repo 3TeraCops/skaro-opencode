@@ -20,12 +20,17 @@ export function readChecks(raw: unknown, problems: ArtifactProblem[]): ProjectCh
       typeof entry.name !== 'string' ||
       !entry.name.trim() ||
       typeof entry.run !== 'string' ||
-      !entry.run.trim()
+      !entry.run.trim() ||
+      (entry.shell !== undefined && entry.shell !== 'system' && entry.shell !== 'powershell')
     ) {
       fail();
       continue;
     }
-    checks.push({ name: entry.name, run: entry.run });
+    checks.push({
+      name: entry.name,
+      run: entry.run,
+      ...(entry.shell ? { shell: entry.shell } : {}),
+    });
   }
   return checks;
 }

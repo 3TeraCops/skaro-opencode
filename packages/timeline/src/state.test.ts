@@ -61,6 +61,38 @@ describe('Timeline', () => {
     expect(timeline.state.status).toBe('working');
   });
 
+  it('leaves no live reasoning or agent text in a turn that ended without the agent', () => {
+    const base = { turnId: 't1', status: 'running', startedAt: 0 } as const;
+    const native = { agent: 'test', type: 'x', ref: 'x' };
+    const timeline = Timeline.from([
+      { t: 'turn.started', turnId: 't1' },
+      { t: 'item.upsert', item: { ...base, id: 'r1', kind: 'reasoning', native } },
+      {
+        t: 'item.upsert',
+        item: { ...base, id: 'm1', kind: 'message', role: 'agent', text: 'Hel', native },
+      },
+      {
+        t: 'item.upsert',
+        item: {
+          ...base,
+          id: 'c1',
+          kind: 'command',
+          command: 'pnpm dev',
+          output: '',
+          outputLive: true,
+          background: { taskId: 'bg', state: 'running' },
+          native,
+        },
+      },
+      { t: 'turn.completed', turnId: 't1', outcome: 'failed' },
+    ]);
+    expect(timeline.state.items.map((i) => [i.id, i.status])).toEqual([
+      ['r1', 'interrupted'],
+      ['m1', 'interrupted'],
+      ['c1', 'running'],
+    ]);
+  });
+
   it('continues from a snapshot as if it had seen every event', () => {
     const events: TimelineEvent[] = [
       { t: 'turn.started', turnId: 't1' },

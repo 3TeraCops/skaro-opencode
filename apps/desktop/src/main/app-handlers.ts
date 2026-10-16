@@ -69,6 +69,7 @@ export function appHandlers(
   | 'agents.config'
   | 'agents.openConfigDir'
   | 'agents.commands'
+  | 'agents.limits'
 > {
   return {
     'window.minimize': () => window()?.minimize(),
@@ -164,7 +165,13 @@ export function appHandlers(
       if (failed) shell.showItemInFolder(path);
     },
     'project.saveSettings': async (projectId, settings) => {
-      await saveProjectSettings(projects, projectId, settings, appState.getLocale(app.getLocale()));
+      const changed = await saveProjectSettings(
+        projects,
+        projectId,
+        settings,
+        appState.getLocale(app.getLocale()),
+      );
+      if (changed) await runs.followProjectDefaults(projectId);
       emit('project.changed', { projectId });
     },
     'projects.relocate': async (id, path) => {
@@ -196,6 +203,10 @@ export function appHandlers(
     'agents.models': (agent, projectId) =>
       agents.listModels(agent, projectId ? projects.get(projectId).root : app.getPath('home')),
     'agents.config': (agent) => agents.userConfig(agent, app.getPath('home')),
+    'agents.limits': async (agent) => {
+      await agents.requireReady(agent);
+      return agents.adapter(agent).limits(app.getPath('home'));
+    },
     'agents.openConfigDir': async (agent) => {
       const error = await shell.openPath(agents.configDir(agent));
       if (error) throw new Error(error);

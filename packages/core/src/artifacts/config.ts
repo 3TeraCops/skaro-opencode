@@ -45,7 +45,7 @@ export async function readConfig(
     checks: readChecks(raw['checks'], problems),
     defaultAgent: str(raw['default_agent']) ?? DEFAULT_CONFIG.defaultAgent,
     defaultModel: str(raw['default_model']),
-    defaultEffort: str(raw['default_effort']),
+    defaultEffort: str(raw['default_effort']) ?? DEFAULT_CONFIG.defaultEffort,
     permissionMode: permission === 'ask' || permission === 'full' ? permission : 'auto',
     baseBranch: str(raw['base_branch']) ?? app.baseBranch ?? DEFAULT_CONFIG.baseBranch,
     branchTemplate:

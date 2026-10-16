@@ -22,6 +22,8 @@ import {
 import { CODEX_ADAPTER_VERSION } from './projector.ts';
 import { AppServer, type AppServerOptions, type CodexBinary } from './rpc.ts';
 import { CodexSession } from './session.ts';
+import { readCodexLimits } from './limits.ts';
+import { CodexAuthRevision } from './session-auth.ts';
 
 export interface CodexAdapterConfig {
   /** Installed pinned binary, or undefined when not installed yet. */
@@ -36,6 +38,7 @@ export class CodexAdapter implements AgentAdapter {
   readonly id = 'codex' as const;
   readonly adapterVersion = CODEX_ADAPTER_VERSION;
   private readonly config: CodexAdapterConfig;
+  private readonly authRevision = new CodexAuthRevision();
 
   constructor(config: CodexAdapterConfig) {
     this.config = config;
@@ -81,6 +84,7 @@ export class CodexAdapter implements AgentAdapter {
       if (!url) throw new Error('Codex did not return a sign-in URL');
       this.config.openUrl(url);
       await finished;
+      this.authRevision.signedIn();
     } finally {
       await server.close();
     }
@@ -120,6 +124,10 @@ export class CodexAdapter implements AgentAdapter {
           kind: 'skill' as const,
         }));
     });
+  }
+
+  async limits(cwd: string) {
+    return this.withServer(cwd, readCodexLimits, [], 30_000);
   }
 
   /** MCP servers with their tools and sign-in, enabled skills and hooks, from the app-server. */
@@ -175,6 +183,7 @@ export class CodexAdapter implements AgentAdapter {
     const binary = await this.requireBinary();
     const session = new CodexSession(options, {
       ...binary,
+      authRevision: this.authRevision,
       ...(this.config.config ? { config: this.config.config } : {}),
       ...(this.config.codexHome ? { codexHome: this.config.codexHome } : {}),
     });
@@ -240,8 +249,13 @@ export class CodexAdapter implements AgentAdapter {
     cwd: string | undefined,
     fn: (server: AppServer) => Promise<T>,
     config: string[] = [],
+    initializeTimeoutMs?: number,
   ): Promise<T> {
-    const server = await AppServer.start(await this.serverOptions(cwd, undefined, config));
+    const server = await AppServer.start(
+      await this.serverOptions(cwd, undefined, config),
+      true,
+      initializeTimeoutMs,
+    );
     try {
       return await fn(server);
     } finally {

@@ -18,12 +18,15 @@ asarUnpack:
 win:
   icon: build/icon.ico
   target: nsis
+  signExecutable: false
 mac:
   icon: build/icon.icns
-  target: [dmg, zip]
+  target: dmg
   category: public.app-category.developer-tools
-  # Ad-hoc signing until real signing and notarization (stage 8).
+  # No publisher certificate; ad-hoc signing keeps Apple Silicon binaries runnable.
   identity: '-'
+  hardenedRuntime: false
+  notarize: false
 linux:
   icon: build/icon.png
   target: AppImage
@@ -32,6 +35,6 @@ linux:
 artifactName: '${productName}-${version}-${os}-${arch}.${ext}'
 publish:
   provider: github
-  owner: skarodev
+  owner: dartdavros
   repo: skaro
   releaseType: release

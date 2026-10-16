@@ -24,6 +24,9 @@ export class ClaudeSystemProjection {
         for (const server of arr(msg['mcp_servers'])) {
           const s = obj(server);
           const status = str(s?.['status']);
+          // Connectors of the owner's claude.ai account are not part of the task: an unsigned
+          // one is not a failure of the session.
+          if (status === 'needs-auth' && str(s?.['name'])?.startsWith('claude.ai ')) continue;
           if (status === 'failed' || status === 'needs-auth') {
             this.state.notice(
               `mcp-${str(s?.['name'])}`,
@@ -71,10 +74,11 @@ export class ClaudeSystemProjection {
             'running',
           );
         } else if (str(msg['compact_result']) === 'failed' && this.state.compactionNoticeId) {
+          // Nothing was compacted: the line becomes a warning with the reason, not the divider.
           this.state.notice(
             this.state.compactionNoticeId,
             'warning',
-            'compaction',
+            'other',
             str(msg['compact_error']) ?? 'failed',
             undefined,
             'failed',

@@ -25,6 +25,12 @@
   padding: 34px 26px 30px;
 }
 
+.feed-wrap > .scroller > .fd-feed {
+  width: 100%;
+  max-width: 720px;
+  margin-inline: auto;
+}
+
 /* Retain DOM, selection and fold state; skip layout/paint of distant replies/actions.
    Subagents may contain interactive cards/dialogs, so their expanded lists stay uncontained. */
 .feed-wrap > .scroller > .fd-feed > .fd-text,

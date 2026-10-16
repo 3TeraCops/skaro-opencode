@@ -1,9 +1,14 @@
 // Canonical agent timeline model and projection from the raw agent stream.
 export type * from './model.ts';
+export type * from './task-replan-model.ts';
 export * from './projection.ts';
 export * from './replay.ts';
+export * from './run-history.ts';
 export * from './state.ts';
 export * from './agent.ts';
+export * from './limits.ts';
+export * from './activity.ts';
+export * from './effort.ts';
 export * from './feed.ts';
 export * from './feed-groups.ts';
 export * from './feed-action-summary.ts';

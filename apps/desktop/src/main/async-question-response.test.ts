@@ -21,7 +21,7 @@ it.each(['task', 'chat'] as const)(
       { t: 'interaction.opened', interaction: question },
       { t: 'turn.completed', turnId: 't1', outcome: 'done' },
     ]);
-    const context = { timeline };
+    const context = { timeline, operations: new Set<Promise<unknown>>() };
     const sent: unknown[] = [];
     const events: TimelineEvent[] = [];
     const base = {
@@ -34,7 +34,11 @@ it.each(['task', 'chat'] as const)(
     const host =
       kind === 'task'
         ? {
-            ctx: { history: base, active: new Map() },
+            ctx: {
+              history: base,
+              active: new Map(),
+              integrations: { controls: { respond: async () => false } },
+            },
             // The answer starts a turn of its own: it takes a slot like any other message.
             turn: async (_active: unknown, input: unknown) => {
               sent.push(input);
@@ -48,6 +52,10 @@ it.each(['task', 'chat'] as const)(
           };
     const method =
       kind === 'task' ? TaskRunMessages.prototype.respond : ChatConversation.prototype.respond;
+    Object.setPrototypeOf(
+      host,
+      kind === 'task' ? TaskRunMessages.prototype : ChatConversation.prototype,
+    );
     await method.call(host as never, 'project', 'conversation', question.id, {
       kind: 'question',
       answers: { '0': ['Штатный контур'] },

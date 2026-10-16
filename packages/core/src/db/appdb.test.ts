@@ -16,7 +16,7 @@ afterEach(() => db.close());
 
 describe('AppDb', () => {
   it('migrates a new database', () => {
-    expect(db.schemaVersion).toBe(3);
+    expect(db.schemaVersion).toBe(5);
   });
 
   it('keeps projects, most recently opened first', () => {
@@ -190,9 +190,12 @@ describe('AppDb', () => {
       first.addProject({ name: 'P', path: '/p' });
       first.close();
       const second = AppDb.open(path);
-      expect(second.schemaVersion).toBe(3);
-      expect(second.listProjects().map((p) => p.name)).toEqual(['P']);
-      second.close();
+      try {
+        expect(second.schemaVersion).toBe(5);
+        expect(second.listProjects().map((p) => p.name)).toEqual(['P']);
+      } finally {
+        second.close();
+      }
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

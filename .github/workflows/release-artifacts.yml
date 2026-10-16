@@ -1,4 +1,4 @@
-name: Prepare verified update bundle
+name: Build and publish release
 on:
   workflow_dispatch:
     inputs:
@@ -19,6 +19,14 @@ on:
         required: true
         default: false
         type: boolean
+      publish_release:
+        description: Publish the complete unsigned bundle to GitHub Releases
+        required: true
+        default: false
+        type: boolean
+concurrency:
+  group: release-${{ inputs.bundle_version }}
+  cancel-in-progress: false
 permissions:
   contents: read
 env:
@@ -26,9 +34,22 @@ env:
   SKARO_PRODUCT_VERSION: ${{ inputs.skaro_version }}
 jobs:
   check:
-    if: inputs.agents_verified && inputs.test_fixtures_allowed
     runs-on: ubuntu-24.04
     steps:
+      - name: Require agent verification and permission for release tests
+        env:
+          AGENTS_VERIFIED: ${{ inputs.agents_verified }}
+          TEST_FIXTURES_ALLOWED: ${{ inputs.test_fixtures_allowed }}
+          PUBLISH_RELEASE: ${{ inputs.publish_release }}
+        run: |
+          if [ "$AGENTS_VERIFIED" != 'true' ] || [ "$TEST_FIXTURES_ALLOWED" != 'true' ]; then
+            echo 'Real agent verification and explicit permission for fixture/HTTP tests are required.' >&2
+            exit 1
+          fi
+          if [ "$PUBLISH_RELEASE" = 'true' ] && [ "$GITHUB_REF" != 'refs/heads/main' ]; then
+            echo 'Published releases must be built from main.' >&2
+            exit 1
+          fi
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
@@ -62,12 +83,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       SKARO_RELEASE_ARCH: ${{ matrix.arch }}
-      CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CSC_LINK || secrets.WIN_CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CSC_KEY_PASSWORD || secrets.WIN_CSC_KEY_PASSWORD }}
-      MAC_IDENTITY: ${{ secrets.MAC_IDENTITY }}
-      APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
-      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -78,18 +94,10 @@ jobs:
       - run: pnpm install --frozen-lockfile --filter '!@skaro/agent-probe'
       - name: Build application
         run: pnpm build
-      - name: Create signed installers and feeds (never publish)
+      - name: Create installers without publisher signatures (never publish)
         shell: pwsh
         run: |
           $arguments = @('exec', 'electron-builder', '--publish', 'never', "--$env:SKARO_RELEASE_ARCH", "--config.extraMetadata.version=$env:SKARO_BUNDLE_VERSION")
-          if ('${{ runner.os }}' -eq 'macOS') {
-            if (-not $env:CSC_LINK -or -not $env:MAC_IDENTITY -or -not $env:APPLE_API_KEY_CONTENT -or -not $env:APPLE_API_KEY_ID -or -not $env:APPLE_API_ISSUER) { throw 'Apple signing and notarization credentials are required' }
-            $env:APPLE_API_KEY = Join-Path $env:RUNNER_TEMP "AuthKey_$($env:APPLE_API_KEY_ID).p8"
-            [System.IO.File]::WriteAllText($env:APPLE_API_KEY, $env:APPLE_API_KEY_CONTENT)
-            $arguments += "--config.mac.identity=$env:MAC_IDENTITY"
-            $arguments += '--config.mac.notarize=true'
-          }
-          if ('${{ runner.os }}' -eq 'Windows' -and -not $env:CSC_LINK) { throw 'Windows signing certificate is required for release artifacts' }
           pnpm @arguments
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         working-directory: apps/desktop
@@ -100,14 +108,18 @@ jobs:
           path: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.dmg
-            apps/desktop/release/*.zip
             apps/desktop/release/*.AppImage
-            apps/desktop/release/*.blockmap
-            apps/desktop/release/latest*.yml
+            apps/desktop/release/latest-x64.yml
+            apps/desktop/release/latest-arm64.yml
+            apps/desktop/release/latest-x64-mac.yml
+            apps/desktop/release/latest-arm64-mac.yml
+            apps/desktop/release/latest-linux*.yml
             apps/desktop/release/skaro-release-*.json
   assemble:
     needs: build
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -126,3 +138,9 @@ jobs:
         with:
           name: skaro-update-bundle-${{ inputs.bundle_version }}
           path: apps/desktop/release/
+      - name: Publish complete release through a draft
+        if: inputs.publish_release && github.repository == 'dartdavros/skaro'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SKARO_PUBLISH_RELEASE: 'true'
+        run: node apps/desktop/scripts/publish-release.mjs

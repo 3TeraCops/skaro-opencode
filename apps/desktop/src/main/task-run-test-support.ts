@@ -1,10 +1,10 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { AppDb, ArtifactStore, AttachmentStore, git } from '@skaro/core';
-import type { McpHttpServer, SkaroScope } from '@skaro/mcp-server';
+import { McpHttpServer, type SkaroScope } from '@skaro/mcp-server';
 import { afterEach, beforeEach, expect } from 'vitest';
-import type { AgentManager } from './agents';
+import { AgentManager } from './agents';
 import { Projects } from './projects';
 import { TaskRuns, type TaskRunDeps } from './tasks';
 
@@ -68,19 +68,20 @@ export function taskRunDeps(): TaskRunDeps {
     db,
     dataDir: dir,
     projects,
-    agents: { defaults: () => ({}), readyAgent: (id: string) => id } as unknown as AgentManager,
+    agents: new AgentManager({
+      agentsDir: join(dir, 'agents'),
+      scratchDir: join(dir, 'scratch'),
+      store: {
+        getSetting: (key) => db.getSetting(key, null),
+        setSetting: (key, value) => db.setSetting(key, value),
+      },
+      openUrl: () => undefined,
+      onChange: () => undefined,
+    }),
     attachments: new AttachmentStore(join(dir, 'attachments')),
-    mcp: {} as McpHttpServer<SkaroScope>,
+    mcp: new McpHttpServer<SkaroScope>({ name: 'skaro', version: 'test', tools: [] }),
     emit: () => undefined,
     locale: () => 'ru',
-    // The machine's real Docker is never inspected or changed by these tests.
-    docker: {
-      inspect: async () => [],
-      stop: async () => undefined,
-      remove: async () => [],
-      hasData: async () => false,
-      ports: async (count) => Array.from({ length: count }, (_, i) => 20_000 + i),
-    },
   };
 }
 
@@ -101,7 +102,16 @@ afterEach(async () => {
   await tasks?.close();
   projects?.close();
   db?.close();
-  await rm(dir, { recursive: true, force: true, maxRetries: 3 });
+  const cleanup = resolve(dir);
+  const inside = relative(resolve(tmpdir()), cleanup);
+  if (
+    !inside ||
+    isAbsolute(inside) ||
+    inside.startsWith('..') ||
+    !inside.startsWith('skaro-task-retention-')
+  )
+    throw new Error(`Refuse fixture cleanup outside its temporary root: ${cleanup}`);
+  await rm(cleanup, { recursive: true, force: true, maxRetries: 3 });
 });
 
 export function resetTaskRuns(): void {

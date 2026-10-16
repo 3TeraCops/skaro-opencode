@@ -23,6 +23,7 @@ export interface AppServerOptions extends CodexBinary {
   /** Messages from the server (after onRaw). */
   onMessage?: (msg: Record<string, unknown>) => void;
   onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
+  onSpawn?: (pid: number) => void;
 }
 
 /** Notifications Skaro does not need (agent-output.md 1.2). */
@@ -62,6 +63,7 @@ export class AppServer {
     { method: string; resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
   private exited = false;
+  private closed = false;
 
   private constructor(options: AppServerOptions) {
     this.options = options;
@@ -72,7 +74,20 @@ export class AppServer {
       ...(options.codexHome ? { CODEX_HOME: options.codexHome } : {}),
     };
     const args = ['app-server', ...(options.config ?? []).flatMap((kv) => ['-c', kv])];
-    this.child = spawn(options.binary, args, { cwd: options.cwd, env, windowsHide: true });
+    this.child = spawn(options.binary, args, {
+      cwd: options.cwd,
+      env,
+      windowsHide: true,
+      detached: !!options.onSpawn && process.platform !== 'win32',
+    });
+    if (this.child.pid) {
+      try {
+        options.onSpawn?.(this.child.pid);
+      } catch (error) {
+        this.child.kill();
+        throw error;
+      }
+    }
     this.child.stdout.on(
       'data',
       lines((line) => this.onLine(line)),
@@ -92,12 +107,19 @@ export class AppServer {
       for (const w of this.waiting.values()) w.reject(error);
       this.waiting.clear();
     });
+    this.child.on('close', () => {
+      this.closed = true;
+    });
   }
 
   /** Starts the server and completes the initialize handshake. */
-  static async start(options: AppServerOptions, experimentalApi = true): Promise<AppServer> {
+  static async start(
+    options: AppServerOptions,
+    experimentalApi = true,
+    initializeTimeoutMs?: number,
+  ): Promise<AppServer> {
     const server = new AppServer(options);
-    await server.request('initialize', {
+    const initialized = server.request('initialize', {
       clientInfo: { name: 'skaro', title: 'Skaro', version: '0.0.0' },
       capabilities: {
         experimentalApi,
@@ -105,6 +127,25 @@ export class AppServer {
         optOutNotificationMethods: OPT_OUT_NOTIFICATIONS,
       },
     });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await (initializeTimeoutMs === undefined
+        ? initialized
+        : Promise.race([
+            initialized,
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(
+                () => reject(new Error('Codex initialize timed out')),
+                initializeTimeoutMs,
+              );
+            }),
+          ]));
+    } catch (error) {
+      await server.close();
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
     server.notify('initialized');
     return server;
   }
@@ -130,13 +171,17 @@ export class AppServer {
 
   /** Stops the server and waits for the process to exit (Windows keeps its cwd locked until then). */
   close(): Promise<void> {
-    if (this.exited) return Promise.resolve();
-    const exited = new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, 5000);
-      this.child.once('exit', () => {
+    if (this.closed) return Promise.resolve();
+    const exited = new Promise<void>((resolve, reject) => {
+      const done = () => {
         clearTimeout(timer);
         resolve();
-      });
+      };
+      const timer = setTimeout(() => {
+        this.child.off('close', done);
+        reject(new Error('Codex did not stop. The working folder has not been handed over.'));
+      }, 10000);
+      this.child.once('close', done);
     });
     this.child.stdin.end();
     this.child.kill();

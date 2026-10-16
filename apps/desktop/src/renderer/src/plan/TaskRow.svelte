@@ -3,7 +3,7 @@
   import { AgentLogo, Icon, t } from '@skaro/ui';
   import type { TaskSummary } from '../../../shared/ipc';
   import { agoOrDate } from '../ago';
-  import { agentLine } from '../tasks/model';
+  import { agentLine, mergeWords } from '../tasks/model';
   import { doneLike, rowStatus } from './model';
 
   /**
@@ -45,10 +45,28 @@
   } = $props();
 
   const st = $derived(rowStatus(task.status));
+  // The merge of its accepted result at work or failed: the row says it with that mark.
+  const merge = $derived(mergeWords(task));
+  const mergeNote = $derived(
+    merge && task.mergeAfter
+      ? `${merge.note} · ${t('plan.row.after')} ${task.mergeAfter}`
+      : merge?.note,
+  );
+  const mergeMark = $derived(
+    task.merge === 'running'
+      ? 'working'
+      : task.merge === 'needs_answer'
+        ? 'need'
+        : task.merge === 'failed'
+          ? 'error'
+          : undefined,
+  );
   const tip = $derived(
-    st === 'blocked'
-      ? t('plan.st.blocked', { deps: task.waitsFor.join(', ') })
-      : t(`plan.st.${st}`),
+    merge
+      ? merge.tip
+      : st === 'blocked'
+        ? t('plan.st.blocked', { deps: task.waitsFor.join(', ') })
+        : t(`plan.st.${st}`),
   );
   const time = $derived(st === 'todo' || st === 'blocked' ? '' : agoOrDate(task.updatedAt, now));
 </script>
@@ -84,7 +102,9 @@
     >
   {/if}
   <span data-plan-task class="st" data-tip={tip}>
-    {#if st === 'working' || st === 'need' || st === 'review' || st === 'error'}
+    {#if mergeMark}
+      <span data-plan-task class="dot {mergeMark}" class:pulse={mergeMark === 'working'}></span>
+    {:else if st === 'working' || st === 'need' || st === 'review' || st === 'error'}
       <span data-plan-task class="dot {st}" class:pulse={task.status === 'in_progress'}></span>
     {:else if st === 'blocked'}
       <Icon name="lock" size={13} stroke={2} color="var(--sk-text-20)" />
@@ -104,6 +124,13 @@
     {#if relation === 'up' || relation === 'down'}
       <span data-plan-task class="rel"
         >{relation === 'up' ? t('plan.rel.up') : t('plan.rel.down')}</span
+      >
+    {/if}
+    {#if merge}
+      <span data-plan-task class="stage-note">{mergeNote}</span>
+    {:else if task.after}
+      <span data-plan-task class="stage-note"
+        >{t('plan.row.after')} <span data-plan-task class="mono">{task.after}</span></span
       >
     {/if}
     {#each task.deps as dep (dep)}

@@ -1,5 +1,6 @@
 import { watch, type FSWatcher } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile, rename, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { dirname, join, sep } from 'node:path';
 import { str } from './conversion.ts';
 import type { ArtifactProblem, Doc } from './model.ts';
@@ -13,9 +14,11 @@ export class ArtifactFiles {
   readonly dir: string;
   readonly ownWrites = new Map<string, string>();
   readonly root: string;
-  constructor(root: string) {
+  readonly reservedTaskIds: () => string[];
+  constructor(root: string, reservedTaskIds: () => string[] = () => []) {
     this.root = root;
     this.dir = join(root, SKARO_DIR);
+    this.reservedTaskIds = reservedTaskIds;
   }
 
   watch(onChange: (paths: string[]) => void, debounceMs = 150): () => void {
@@ -59,6 +62,20 @@ export class ArtifactFiles {
     await mkdir(dirname(abs), { recursive: true });
     this.ownWrites.set(abs, content);
     await writeFile(abs, content);
+  }
+
+  /** A journalled creation must expose either a complete file or no file after a crash. */
+  async writeCreatedFile(path: string, content: string): Promise<void> {
+    const abs = join(this.dir, path);
+    await mkdir(dirname(abs), { recursive: true });
+    const temporary = `${abs}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, content, { flag: 'wx' });
+      this.ownWrites.set(abs, content);
+      await rename(temporary, abs);
+    } finally {
+      await rm(temporary, { force: true });
+    }
   }
 
   async list(sub: string): Promise<string[]> {

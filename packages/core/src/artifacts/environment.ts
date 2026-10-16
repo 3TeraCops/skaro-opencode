@@ -25,6 +25,7 @@ export function readEnvironment(
   const ports = section['ports'] ?? [];
   if (!Array.isArray(ports) || ports.some((p) => typeof p !== 'string' || !VARIABLE.test(p)))
     return fail('ports must be a list of variable names');
+  if (new Set(ports).size !== ports.length) return fail('ports must be unique');
   const map = (key: string): Record<string, string> | undefined => {
     const value = section[key] ?? {};
     if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
@@ -36,6 +37,8 @@ export function readEnvironment(
   const env = map('env');
   const urls = map('urls');
   if (!env) return fail('env must map variable names to strings');
+  if (ports.some((name) => Object.hasOwn(env, name)))
+    return fail('env must not override a port allocated by Skaro');
   if (!urls) return fail('urls must map names to addresses');
   const reserved = [...ports, ...Object.keys(env)].find((name) => RESERVED.includes(name));
   if (reserved) return fail(`${reserved} is set by Skaro`);

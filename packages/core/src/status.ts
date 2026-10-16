@@ -5,9 +5,17 @@ import type { Milestone, Task, TaskStatus } from './artifacts/model.ts';
 
 /**
  * Operational state of a task, kept in AppDb (not in git). "failed": the last turn ended in an
- * error and the agent is not working; the task keeps its stage (in progress, in review).
+ * error and the agent is not working; the task keeps its stage.
  */
 export type TaskRuntime = 'idle' | 'queued' | 'running' | 'waiting' | 'failed';
+
+/**
+ * The task failed: its last turn broke and no result was accepted. A task in review has an
+ * accepted result: what broke after it (a limit, a merge) is in the feed, the task is no error.
+ */
+export function hasFailed(task: Pick<Task, 'status'>, runtime: TaskRuntime | undefined): boolean {
+  return runtime === 'failed' && task.status !== 'review' && task.status !== 'done';
+}
 
 /** An agent works on the task or the task waits in line for one. */
 export function isAgentBusy(runtime: TaskRuntime | undefined): boolean {
@@ -23,14 +31,27 @@ export function indexTasks(tasks: readonly Task[]): TaskIndex {
   return new Map(tasks.map((t) => [t.id, t]));
 }
 
-/** Dependencies that are not done yet. Unknown ids count as unfinished. */
+/**
+ * Unknown ids count as unfinished. Work that is already under way goes on over a dependency in
+ * review: its exact accepted result was integrated into the checkout of the task.
+ */
 export function pendingDependencies(task: Task, index: TaskIndex): string[] {
+  return task.dependsOn.filter((id) => {
+    const dep = index.get(id);
+    if (!dep) return true;
+    if (dep.status === 'done') return false;
+    return dep.status !== 'review';
+  });
+}
+
+/** Dependencies not merged yet: a task is started from the base branch that has them all. */
+export function unmergedDependencies(task: Task, index: TaskIndex): string[] {
   return task.dependsOn.filter((id) => index.get(id)?.status !== 'done');
 }
 
-/** A not-started task waits for unfinished dependencies unless the user unblocked it. */
+/** A not-started task waits for the merge of its dependencies unless the user unblocked it. */
 export function isBlocked(task: Task, index: TaskIndex): boolean {
-  return task.status === 'todo' && !task.unblocked && pendingDependencies(task, index).length > 0;
+  return task.status === 'todo' && !task.unblocked && unmergedDependencies(task, index).length > 0;
 }
 
 export function displayStatus(
@@ -39,7 +60,7 @@ export function displayStatus(
   runtime: TaskRuntime = 'idle',
 ): DisplayStatus {
   if (task.status === 'done') return 'done';
-  if (runtime === 'failed') return 'failed';
+  if (hasFailed(task, runtime)) return 'failed';
   if (runtime === 'waiting') return 'needs_answer';
   if (runtime === 'queued') return 'queued';
   if (runtime === 'running') return 'in_progress';

@@ -1,39 +1,66 @@
-import type { TaskRuntime } from '@skaro/core';
-import { Timeline } from '@skaro/timeline';
-import { expect, it, vi } from 'vitest';
-import { ActiveRun } from './tasks';
-import { TaskRunEvents } from './task-run-events';
+import { expect, it } from 'vitest';
+import type { IntegrationOperation } from './integration-model';
+import { recoverIntegrationStarts } from './integration-recovery';
+import { TaskRunEngine } from './task-run-engine';
+import { db, projectId, taskId, projects, taskRunDeps } from './task-run-test-support';
 
-it('keeps a task on its stage after a failed turn and holds the error until the agent works', async () => {
-  const runtime = new Map<string, { state: TaskRuntime }>();
-  const updateTask = vi.fn();
-  const runs = Object.create(TaskRunEvents.prototype) as TaskRunEvents;
-  Object.assign(runs, {
-    ctx: {
-      deps: { db: { getTaskRuntime: () => runtime, addEvent: vi.fn() } },
-      setRuntime: (_p: string, taskId: string, state: TaskRuntime) =>
-        state === 'idle' ? runtime.delete(taskId) : runtime.set(taskId, { state }),
-      project: () => ({
-        store: {
-          readTask: async () => ({ id: 'T-1', title: 'Task', status: 'review' }),
-          updateTask,
-        },
-      }),
-      results: { statusChanged: vi.fn() },
-      limitEnvironments: vi.fn(),
-      changed: vi.fn(),
-    },
-  });
-  const active = new ActiveRun('project', 'T-1', { id: 'run' } as ActiveRun['run'], new Timeline());
+/** Closing the sessions alone takes close to the default five seconds of a test. */
+const CLOSING = 20_000;
 
-  await runs.onTurnCompleted(active, 'failed');
-  expect(updateTask).not.toHaveBeenCalled();
-  expect(runtime.get('T-1')?.state).toBe('failed');
+/** An idle task has no runtime row. */
+const runtime = () => db.getTaskRuntime(projectId).get(taskId)?.state ?? 'idle';
 
-  // A late event of the failed turn does not clear the error; the next turn does.
-  runs.settleRuntime(active);
-  expect(runtime.get('T-1')?.state).toBe('failed');
-  runs.onEvent(active, { t: 'turn.started', turnId: 'next' });
-  clearTimeout(active.flushTimer);
-  expect(runtime.get('T-1')?.state).toBe('running');
-});
+it(
+  'keeps task status after a failed turn and holds the error until the agent works',
+  async () => {
+    const ctx = new TaskRunEngine(taskRunDeps());
+    try {
+      const before = await projects.get(projectId).store.readTask(taskId);
+      const active = (await ctx.history.restore(projectId, taskId))!;
+      await ctx.events.onTurnCompleted(active, 'failed');
+      expect((await projects.get(projectId).store.readTask(taskId)).status).toBe(before.status);
+      expect(runtime()).toBe('failed');
+      ctx.events.settleRuntime(active);
+      expect(runtime()).toBe('failed');
+      ctx.events.onEvent(active, { t: 'turn.started', turnId: 'next' });
+      expect(runtime()).toBe('running');
+    } finally {
+      await ctx.sessions.close();
+    }
+  },
+  CLOSING,
+);
+
+it(
+  'never marks an accepted result as failed: not by a broken turn, not by its merge',
+  async () => {
+    const ctx = new TaskRunEngine(taskRunDeps());
+    try {
+      await projects.get(projectId).store.updateTask(taskId, { status: 'review' });
+      projects.get(projectId).invalidate();
+      const active = (await ctx.history.restore(projectId, taskId))!;
+      // The agent hit its limit after the result was accepted.
+      await ctx.events.onTurnCompleted(active, 'failed');
+      expect(runtime()).toBe('idle');
+
+      const merge = { projectId, taskId, purpose: 'publication' } as IntegrationOperation;
+      for (const state of ['queued', 'running', 'failed'] as const) {
+        ctx.integrations.setRuntime(merge, state);
+        expect(runtime()).toBe('idle');
+      }
+      // A question of the merge is asked in the chat of the task: it waits for the answer.
+      ctx.integrations.setRuntime(merge, 'waiting');
+      expect(runtime()).toBe('waiting');
+      // Preparing a task is its own work: a failure there is the task's.
+      ctx.integrations.setRuntime({ ...merge, purpose: 'dependencies' }, 'failed');
+      expect(runtime()).toBe('failed');
+
+      // What an earlier version left on a task in review goes away on the next start.
+      await recoverIntegrationStarts(ctx);
+      expect(runtime()).toBe('idle');
+    } finally {
+      await ctx.sessions.close();
+    }
+  },
+  CLOSING,
+);

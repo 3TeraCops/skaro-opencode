@@ -1,0 +1,103 @@
+/* Fixed soft pink, as requested by the owner; independent of OS theme colours. */
+.agent-activity {
+  flex: none;
+  display: inline-block;
+  color: #ee9cbd;
+  line-height: 0;
+}
+
+.agent-activity > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform-origin: center;
+}
+
+.activity-thinking > svg,
+.activity-writing > svg {
+  animation: sk-brain-pulse 1.8s ease-in-out infinite;
+}
+
+.activity-preparing_edit > svg {
+  transform-origin: 20% 85%;
+  animation: sk-hammer-tap 1s infinite;
+}
+
+.activity-starting_environment > svg > * {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.activity-starting_environment > svg > path {
+  animation: sk-shape-spin 4.2s linear infinite;
+}
+
+.activity-starting_environment > svg > rect {
+  animation: sk-shape-spin 3.3s linear -0.8s infinite reverse;
+}
+
+.activity-starting_environment > svg > circle {
+  animation: sk-shape-pulse 2.7s ease-in-out -0.4s infinite;
+}
+
+@keyframes sk-brain-pulse {
+  0%,
+  100% {
+    transform: scale(0.94);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+@keyframes sk-hammer-tap {
+  0%,
+  65%,
+  100% {
+    transform: rotate(0);
+    animation-timing-function: ease-out;
+  }
+  35% {
+    transform: rotate(-28deg);
+    animation-timing-function: ease-in;
+  }
+  48% {
+    transform: rotate(5deg);
+    animation-timing-function: ease-out;
+  }
+  57% {
+    transform: rotate(-4deg);
+  }
+}
+
+@keyframes sk-shape-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes sk-shape-pulse {
+  0%,
+  100% {
+    transform: scale(0.95);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-thinking > svg > g[clip-path],
+  .activity-writing > svg > g[clip-path] {
+    display: none;
+  }
+
+  .agent-activity > svg,
+  .activity-starting_environment > svg > * {
+    animation: none;
+  }
+}

@@ -31,7 +31,9 @@ export function nextNumber(ids: string[], pattern: RegExp): number {
   return max + 1;
 }
 
-export function findCycle(tasks: ProposedTaskArgs[]): string[] | undefined {
+export function findCycle(
+  tasks: Pick<ProposedTaskArgs, 'ref' | 'dependsOn'>[],
+): string[] | undefined {
   const deps = new Map(tasks.map((t) => [t.ref, t.dependsOn]));
   const state = new Map<string, 'open' | 'done'>();
   const path: string[] = [];
@@ -86,5 +88,7 @@ export function describe(proposal: Proposal): string {
         : `the ${proposal.tasks.length} proposed tasks (${proposal.tasks.map((t) => `"${t.title}"`).join(', ')})`;
     case 'task':
       return `the change to ${proposal.id} "${proposal.title}"`;
+    case 'task_replan':
+      return `the task replan "${proposal.title}"`;
   }
 }

@@ -1,5 +1,6 @@
 import type { PermissionMode, TimelineState } from '@skaro/timeline';
-import type { AgentId, AgentSettings, TaskRef, TaskSummary } from './ipc-entities';
+import type { AgentId, AgentSettings, StageInfo, TaskRef, TaskSummary } from './ipc-entities';
+import type { IntegrationTimeline } from './task-timeline';
 
 /** Parallel run slots (architecture.md 7.1). */
 export interface RunSlots {
@@ -32,9 +33,26 @@ export interface RunInfo {
 }
 
 /** Everything the task screen needs to open. */
+/** The acceptance of a stage: the run is named after the milestone, these are its tasks. */
+export interface StageView {
+  info: StageInfo;
+  tasks: TaskRef[];
+}
+
 export interface TaskView {
+  /** Diagnostic of preparation, including failures before an agent run was created. */
+  error?: string;
+  /** Services explicitly requested by the owner through a link in the task feed. */
+  environmentReview?: 'queued' | 'starting' | 'running';
+  /** Integration events are persisted outside the native task session log. */
+  timelineRevision?: string;
+  timelineSources?: { base?: TimelineState; integrations: IntegrationTimeline[] };
+  /** Live service-owned candidate used by the integration feed's file actions. */
+  executionWorktree?: string;
   projectId: string;
   task: TaskDetail;
+  /** Set when the run is the acceptance of a stage ("Экран этапа"). */
+  stage?: StageView;
   settings: AgentSettings;
   run?: RunInfo;
   timeline?: TimelineState;
@@ -42,8 +60,12 @@ export interface TaskView {
   seq: number;
   /** Waiting for a free slot (architecture.md 7.1). */
   queued: boolean;
+  /** A task of a stage: the task of the stage that works now; this one starts after it. */
+  after?: string;
   /** A new run would start now rather than wait in the queue. */
   slotsFree: boolean;
+  /** The current turn must stop, or an in-flight handoff must finish, before changing agents. */
+  agentSwitchBlocked?: boolean;
   /** Command status line under the composer: sandbox note (D-28). */
   sandboxHolds?: boolean;
 }
@@ -55,7 +77,12 @@ export interface MessageInput {
 }
 
 export type MergeAction =
-  | { action: 'confirm'; message: string }
+  | {
+      action: 'confirm';
+      message: string;
+      /** A stage merge: the commit message of each task, by task id. */
+      messages?: Record<string, string>;
+    }
   | { action: 'cancel' }
   | { action: 'update_branch' }
   | { action: 'resolve_with_agent' };

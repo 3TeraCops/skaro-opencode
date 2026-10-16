@@ -27,6 +27,7 @@ import { InputQueue } from './session-queue.ts';
 import { imageType } from './session-helpers.ts';
 import { queryOptions } from './session-options.ts';
 import { spawnTapped } from './session-tap.ts';
+import { SessionProcesses } from './session-processes.ts';
 export { nativeMode } from './session-config.ts';
 export type { ClaudeSessionConfig } from './session-config.ts';
 export { lines } from './session-helpers.ts';
@@ -54,6 +55,7 @@ export class ClaudeSession implements AgentSession {
   private mode: PermissionMode;
   private planFirst: boolean;
   private closed = false;
+  private readonly processes = new SessionProcesses();
 
   constructor(options: SessionOptions, config: ClaudeSessionConfig) {
     this.options = options;
@@ -76,7 +78,13 @@ export class ClaudeSession implements AgentSession {
       canUseTool: this.canUseTool,
       onElicitation: this.onElicitation,
       spawnClaudeCodeProcess: (spawnOptions) =>
-        spawnTapped(spawnOptions, this.options, this.projector, (line) => this.track(line)),
+        spawnTapped(
+          spawnOptions,
+          this.options,
+          this.projector,
+          (line) => this.track(line),
+          (child) => this.processes.track(child),
+        ),
     });
     const resumeFrom = resume ?? (o.resume ? { sessionId: o.resume } : undefined);
     if (resumeFrom) {
@@ -163,12 +171,13 @@ export class ClaudeSession implements AgentSession {
   }
 
   async close(): Promise<void> {
-    if (this.closed) return;
+    if (this.closed) return this.processes.stopped();
     this.closed = true;
     this.stopQuery();
     for (const pending of this.pending.values())
       pending.resolve({ kind: 'approval', choice: 'deny', message: 'Session closed' });
     this.events.close();
+    await this.processes.stopped();
   }
 
   private stopQuery(): void {

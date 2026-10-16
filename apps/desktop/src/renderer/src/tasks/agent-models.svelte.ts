@@ -1,6 +1,6 @@
 // Models of an agent for the board's dialogs, with the model and effort a task starts with.
 
-import type { AgentModel } from '@skaro/timeline';
+import { selectedEffort, type AgentModel } from '@skaro/timeline';
 import { t } from '@skaro/ui';
 import { agentDefaultsKey, type AgentId } from '../../../shared/ipc';
 
@@ -41,11 +41,9 @@ export class AgentModels {
   effort(model: AgentModel | undefined, id?: string): string | undefined {
     if (!model) return undefined;
     const has = (e?: string) => (e && model.efforts.some((x) => x.id === e) ? e : undefined);
-    return (
-      has(id) ??
-      (model.id === this.preset.model ? has(this.preset.effort) : undefined) ??
-      model.defaultEffort ??
-      model.efforts[Math.floor(model.efforts.length / 2)]?.id
+    return selectedEffort(
+      model,
+      has(id) ?? (model.id === this.preset.model ? has(this.preset.effort) : undefined),
     );
   }
 }

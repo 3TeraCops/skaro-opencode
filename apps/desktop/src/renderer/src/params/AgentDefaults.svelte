@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { modelEffortDefault } from '@skaro/timeline';
   import { AgentLogo, EffortSlider, Select, t } from '@skaro/ui';
   import { AGENT_NAMES } from '../tasks/model';
   import type { AgentDefaultsProps } from './agent-defaults-props';
@@ -74,7 +75,7 @@
         bind:value={
           () => state.effort, (e) => onchange({ defaultModel: state.model?.id, defaultEffort: e })
         }
-        defaultValue={state.model?.defaultEffort}
+        defaultValue={modelEffortDefault(state.model)}
       />
     </div>
   {/if}

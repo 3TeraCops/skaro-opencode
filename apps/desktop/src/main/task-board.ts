@@ -4,6 +4,7 @@
 import type { Events, EventName } from '../shared/ipc';
 import type { Projects } from './projects';
 import type { TaskRuns } from './tasks';
+import { serializeTaskMutation } from './project-task-mutations';
 
 interface Deps {
   projects: Projects;
@@ -22,45 +23,54 @@ export class TaskBoard {
 
   /** "Архивировать": the task leaves the board, its history stays. */
   async archive(projectId: string, taskIds: string[], archived: boolean): Promise<void> {
-    const { store } = this.deps.projects.get(projectId);
-    for (const id of taskIds) await store.updateTask(id, { archived });
-    this.done(projectId, taskIds);
+    return serializeTaskMutation(this.deps.projects.get(projectId), async () => {
+      const { store } = this.deps.projects.get(projectId);
+      for (const id of taskIds) await store.updateTask(id, { archived });
+      this.done(projectId, taskIds);
+    });
   }
 
   /** "Удалить безвозвратно": the task file, its branches and worktrees. Merged code stays. */
   async delete(projectId: string, taskIds: string[]): Promise<void> {
-    const { store } = this.deps.projects.get(projectId);
-    for (const id of taskIds) {
-      const task = await store.readTask(id);
-      await this.deps.runs.forget(projectId, id);
-      await store.deleteTask(id);
-      this.deps.event(projectId, 'task_deleted', { task: id, title: task.title });
-    }
-    this.done(projectId, taskIds);
+    return serializeTaskMutation(this.deps.projects.get(projectId), async () => {
+      const { store } = this.deps.projects.get(projectId);
+      for (const id of taskIds) {
+        const task = await store.readTask(id);
+        await this.deps.runs.forget(projectId, id);
+        await store.deleteTask(id);
+        this.deps.runs.retireHistory(projectId, id);
+        this.deps.event(projectId, 'task_deleted', { task: id, title: task.title });
+      }
+      this.done(projectId, taskIds);
+    });
   }
 
   /** "Перенести в этап": moved tasks go to the end, keeping their order. */
   async move(projectId: string, taskIds: string[], milestoneId: string): Promise<void> {
-    const context = this.deps.projects.get(projectId);
-    const { tasks } = await context.load();
-    const moved = tasks
-      .filter((t) => taskIds.includes(t.id) && t.milestone !== milestoneId)
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    let order = Math.max(
-      0,
-      ...tasks.filter((t) => t.milestone === milestoneId).map((t) => t.order ?? 0),
-    );
-    for (const task of moved) {
-      await context.store.updateTask(task.id, { milestone: milestoneId, order: ++order });
-    }
-    this.done(projectId, taskIds);
+    return serializeTaskMutation(this.deps.projects.get(projectId), async () => {
+      const context = this.deps.projects.get(projectId);
+      const { tasks } = await context.load();
+      const moved = tasks
+        .filter((t) => taskIds.includes(t.id) && t.milestone !== milestoneId)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      let order = Math.max(
+        0,
+        ...tasks.filter((t) => t.milestone === milestoneId).map((t) => t.order ?? 0),
+      );
+      for (const task of moved) {
+        await context.store.updateTask(task.id, { milestone: milestoneId, order: ++order });
+      }
+      this.done(projectId, taskIds);
+    });
   }
 
   /** "Разблокировать": the task stops waiting for its dependencies. */
   async unblock(projectId: string, taskIds: string[]): Promise<void> {
-    const { store } = this.deps.projects.get(projectId);
-    for (const id of taskIds) await store.updateTask(id, { unblocked: true });
-    this.done(projectId, taskIds);
+    return serializeTaskMutation(this.deps.projects.get(projectId), async () => {
+      const { store } = this.deps.projects.get(projectId);
+      for (const id of taskIds) await store.updateTask(id, { unblocked: true });
+      this.done(projectId, taskIds);
+    });
   }
 
   private done(projectId: string, taskIds: string[]): void {

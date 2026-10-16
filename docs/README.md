@@ -15,7 +15,12 @@
 | [agent-output.md](agent-output.md) | Протоколы агентов, каноническая модель, отображение и результаты прототипа |
 | [sidebar-layout.md](sidebar-layout.md) | Согласованное расположение, размеры и поведение панелей |
 | [task-environments.md](task-environments.md) | Сохранение worktree, защита окружений и реальная browser-проверка |
+| [task-replanning.md](task-replanning.md) | Перекомпоновка не начатых задач одним пакетом из общего чата |
+| [completion-process.md](completion-process.md) | Единый процесс завершения, параллельные задачи, восстановление и CI |
 | [task-merging.md](task-merging.md) | Слияния с сохранением локальных правок, очередь и ограничения восстановления |
+| [agent-handoff.md](agent-handoff.md) | Смена агента задачи/приёмки с сохранением рабочей копии, контекста и истории |
+| [agent-limits.md](agent-limits.md) | Остаток пятичасового и недельного лимита подписки агентов |
+| [project-planning.md](project-planning.md) | Сохранённая декомпозиция, проверка полноты и продолжение планирования |
 | [updates.md](updates.md) | Обновления Skaro/агентов, release-контракт и границы выполненных проверок |
 | [decisions.md](decisions.md) | Журнал принятых и предложенных решений |
 

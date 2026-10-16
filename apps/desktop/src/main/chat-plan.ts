@@ -5,6 +5,8 @@ import type { ProjectContext } from './projects';
 import { taskBody } from './task-body';
 import { type PlanProposal, LiveChat } from './chat-model';
 import { adrId, findCycle } from './chat-proposal-helpers';
+import { applyChatPlan } from './chat-plan-apply';
+import { planSpecProblem } from './chat-plan-specs';
 
 import type { ChatEngine } from './chat-engine';
 
@@ -29,80 +31,15 @@ export class ChatPlan {
     proposal: PlanProposal,
     picked: string[] | undefined,
   ): Promise<{ result: ProposalResult; note: string }> {
-    const chosen = proposal.tasks.filter((t) => !picked || picked.includes(t.ref));
-    if (!chosen.length) throw new Error('No tasks are selected');
-    const { store } = context;
-    const artifacts = await context.load();
-    const result: ProposalResult = {};
-    let milestone =
-      proposal.milestone && !proposal.milestone.isNew ? proposal.milestone.id : undefined;
-    if (milestone && !artifacts.milestones.some((m) => m.id === milestone)) {
-      throw new Error(`Milestone ${milestone} no longer exists`);
-    }
-    if (proposal.milestone?.isNew) {
-      const created = await store.createMilestone({
-        title: proposal.milestone.title,
-        ...(proposal.milestone.body ? { body: proposal.milestone.body } : {}),
-      });
-      milestone = created.id;
-      result.milestone = { id: created.id, title: created.title };
-    }
-
-    // Refs of tasks earlier cards of this chat created, then the ones created now.
-    const known = new Map<string, string>();
-    for (const item of live.timeline.state.items) {
-      if (item.kind === 'proposal')
-        for (const t of item.result?.tasks ?? []) known.set(t.ref, t.id);
-    }
-    const existing = new Set(artifacts.tasks.map((t) => t.id));
-    const specs = new Set(artifacts.specs.map((s) => s.id));
-    let order =
-      Math.max(
-        0,
-        ...artifacts.tasks.filter((t) => t.milestone === milestone).map((t) => t.order ?? 0),
-      ) + 1;
-    const created: { id: string; title: string; ref: string }[] = [];
-    for (const task of chosen) {
-      const t = await store.createTask({
-        title: task.title,
-        body: task.body,
-        order: order++,
-        ...(milestone ? { milestone } : {}),
-        ...(task.spec && specs.has(task.spec) ? { spec: task.spec } : {}),
-      });
-      known.set(task.ref, t.id);
-      created.push({ id: t.id, title: t.title, ref: task.ref });
-    }
-    const dropped: string[] = [];
-    for (const [i, task] of chosen.entries()) {
-      const ids: string[] = [];
-      task.dependsOn.forEach((dep, d) => {
-        const id = known.get(dep) ?? (existing.has(dep) ? dep : undefined);
-        if (id) ids.push(id);
-        else dropped.push(`"${task.title}" → "${task.dependsOnTitles[d] ?? dep}"`);
-      });
-      if (ids.length) await store.updateTask(created[i]!.id, { dependsOn: ids });
-    }
-    result.tasks = created;
-    this.ctx.deps.db.addEvent(live.projectId, 'tasks_created', {
-      count: created.length,
-      ...(milestone ? { milestone } : {}),
+    return applyChatPlan({
+      store: context.store,
+      artifacts: await context.load(),
+      db: this.ctx.deps.db,
+      projectId: live.projectId,
+      items: live.timeline.state.items,
+      proposal,
+      ...(picked !== undefined ? { picked } : {}),
     });
-
-    const skipped = proposal.tasks.filter((t) => !chosen.includes(t));
-    const note = [
-      result.milestone
-        ? `The user created milestone ${result.milestone.id} "${result.milestone.title}" with tasks:`
-        : `The user created tasks${milestone ? ` in ${milestone}` : ''}:`,
-      created.map((t) => `${t.id} "${t.title}"`).join(', ') + '.',
-      skipped.length ? `Not taken: ${skipped.map((t) => `"${t.title}"`).join(', ')}.` : '',
-      dropped.length
-        ? `Dependencies left out because the task was not created: ${dropped.join(', ')}.`
-        : '',
-    ]
-      .filter(Boolean)
-      .join(' ');
-    return { result, note };
   }
 
   /** Refs of tasks earlier cards of this chat proposed. */
@@ -158,14 +95,8 @@ export class ChatPlan {
         'call or of earlier cards, or ids of existing tasks.'
       );
     }
-    const specs = new Set(artifacts.specs.map((s) => s.id));
-    const noSpec = tasks.filter((t) => t.spec && !specs.has(adrId(t.spec)));
-    if (noSpec.length) {
-      return (
-        `Unknown specifications: ${[...new Set(noSpec.map((t) => t.spec))].join(', ')}. ` +
-        'Link tasks only to accepted specifications (get_project_context lists them).'
-      );
-    }
+    const specProblem = planSpecProblem(tasks, artifacts.specs);
+    if (specProblem) return specProblem;
     const self = tasks.filter((t) => t.dependsOn.includes(t.ref));
     if (self.length) return `A task cannot depend on itself: ${self.map((t) => t.ref).join(', ')}.`;
     const cycle = findCycle(tasks);

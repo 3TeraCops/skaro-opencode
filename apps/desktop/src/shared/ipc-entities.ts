@@ -1,4 +1,4 @@
-import type { PermissionMode } from '@skaro/timeline';
+import type { AgentActivity, PermissionMode } from '@skaro/timeline';
 
 export type Locale = 'ru' | 'en';
 
@@ -62,19 +62,37 @@ export interface TaskRef {
   status: TaskStatus;
 }
 
+/** How the merge of an accepted task goes; it stays in review and says it on its card. */
+export type MergeProgress = 'running' | 'queued' | 'needs_answer' | 'failed' | 'conflict';
+
 /** Where the task is in its lifecycle (the task file); `status` adds what happens right now. */
 export type TaskStage = 'todo' | 'in_progress' | 'review' | 'done' | 'failed' | 'cancelled';
 
 export interface TaskSummary extends TaskRef {
   stage: TaskStage;
+  /** Current native agent activity; only present while the task is running. */
+  activity?: AgentActivity;
   milestone?: { id: string; title: string };
   archived: boolean;
   /** Assigned agent, else the agent of the last run; undefined — not assigned. */
   agent?: AgentId;
   model?: string;
   deps: string[];
-  /** Dependencies not done yet (a blocked task waits for them). */
+  /**
+   * Dependencies whose accepted results are not available yet; including those in this stage.
+   */
   waitsFor: string[];
+  /** A retained legacy run actually uses a shared milestone checkout. */
+  sharedCheckout?: boolean;
+  /** Waiting its turn in the stage: the same preceding task as on the task screen. */
+  after?: string;
+  /**
+   * How its merge stands: merged now, in line for the automatic merge, stopped by an error, or
+   * back with its agent over a conflict. Absent when the merge waits for the owner's card.
+   */
+  merge?: MergeProgress;
+  /** In line for the merge behind this task: its dependency, or the one merged or resolved now. */
+  mergeAfter?: string;
   /** Last change: the task file or its latest run. */
   updatedAt: number;
   /** Position inside its milestone. */
@@ -91,6 +109,38 @@ export interface MilestoneInfo {
   /** "Цель" and "Критерий готовности" sections of the milestone file. */
   goal?: string;
   criteria?: string;
+}
+
+/**
+ * Where a stage stands: a milestone is the unit of execution, its tasks run one after another
+ * in its branch, then comes its acceptance and its merge. Nothing of it is stored.
+ */
+export type StageState =
+  | 'idle'
+  | 'queued'
+  | 'running'
+  | 'needs_answer'
+  | 'stopped'
+  | 'error'
+  | 'acceptance'
+  | 'acceptance_needs_answer'
+  | 'awaiting_merge'
+  | 'done';
+
+export interface StageInfo {
+  /** The milestone. */
+  id: string;
+  state: StageState;
+  /** The task the state is about: it runs, waits for an answer, failed or waits in line. */
+  task?: string;
+  /** Tasks in review or merged, of all that count (not cancelled, not archived). */
+  finished: number;
+  total: number;
+  /** Finished and not merged yet. */
+  mergeable: number;
+  branch?: string;
+  /** Not started and cannot be: its first task waits for a task of another stage. */
+  waitsFor?: { task: string; stage?: string };
 }
 
 /** A source of an import as the import modal shows it (architecture.md 12.1). */

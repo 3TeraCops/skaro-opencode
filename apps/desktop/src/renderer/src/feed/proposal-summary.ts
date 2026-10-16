@@ -1,5 +1,6 @@
 import type { Item } from '@skaro/timeline';
 import { t, tn } from '@skaro/ui';
+import '../chat/plan-decisions-i18n';
 export function proposalSummary(item: Extract<Item, { kind: 'proposal' }>):
   | {
       text: string;
@@ -11,9 +12,18 @@ export function proposalSummary(item: Extract<Item, { kind: 'proposal' }>):
     }
   | undefined {
   const proposal = item.proposal;
-  if (item.state === 'pending') return undefined;
+  if (item.state === 'pending' || item.state === 'accepted') return undefined;
   if (proposal.type === 'plan') {
     if (item.state === 'rejected') {
+      if (item.result?.tasks?.length || item.result?.milestone)
+        return {
+          ok: false,
+          text: t(
+            item.result.milestone ? 'proposal.plan.cancelledMilestone' : 'proposal.plan.cancelled',
+            { done: item.result.tasks?.length ?? 0, id: item.result.milestone?.id ?? '' },
+          ),
+          open: item.result.milestone ? 'plan' : 'tasks',
+        };
       return {
         ok: false,
         text: proposal.milestone?.isNew
@@ -31,7 +41,7 @@ export function proposalSummary(item: Extract<Item, { kind: 'proposal' }>):
     if (milestone) {
       return {
         ok: true,
-        text: t('proposal.done.plan', {
+        text: t(created === 0 ? 'proposal.done.milestone' : 'proposal.done.plan', {
           id: milestone.id,
           title: milestone.title,
           tasks: tn('proposal.tasks', created),

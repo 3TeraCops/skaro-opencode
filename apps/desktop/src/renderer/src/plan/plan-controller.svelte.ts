@@ -13,6 +13,8 @@ export function createPlanController(getProps: () => PlanProps) {
   let modal = $state<{ kind: 'delete'; milestone: MilestoneInfo }>();
   let root = $state<HTMLElement | undefined>();
   let now = $state(Date.now());
+  /** Why the last order to a stage was refused; the plan says it until it is closed. */
+  let error = $state<string | undefined>();
 
   const plan = $derived(stages(p.data.milestones, p.data.tasks, t('plan.loose')));
   const archived = $derived(archive(p.data.milestones, p.data.tasks, t('plan.loose')));
@@ -76,6 +78,26 @@ export function createPlanController(getProps: () => PlanProps) {
     void window.skaro.invoke('tasks.archive', p.projectId, ids, value);
   }
 
+  /** Where the stage of a milestone stands. */
+  function info(id: string) {
+    return p.data.stages.find((s) => s.id === id);
+  }
+
+  /** «Запустить» and «Продолжить» start the tasks of the stage in order; «Остановить» ends it. */
+  function run(id: string, action: 'run' | 'stop'): void {
+    error = undefined;
+    const order =
+      action === 'stop'
+        ? window.skaro.invoke('stages.stop', p.projectId, id)
+        : window.skaro.invoke('stages.run', p.projectId, id, t('task.start.message'));
+    void order.catch((reason: unknown) => refused(id, reason));
+  }
+
+  function refused(id: string, reason: unknown): void {
+    const text = reason instanceof Error ? reason.message : String(reason);
+    error = `${id}: ${text.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`;
+  }
+
   function restoreTask(id: string): void {
     void window.skaro.invoke('tasks.archive', p.projectId, [id], false);
   }
@@ -122,6 +144,12 @@ export function createPlanController(getProps: () => PlanProps) {
     get now() {
       return now;
     },
+    get error() {
+      return error;
+    },
+    set error(value: string | undefined) {
+      error = value;
+    },
     get plan() {
       return plan;
     },
@@ -150,6 +178,8 @@ export function createPlanController(getProps: () => PlanProps) {
       return archiveTip;
     },
     dnd,
+    info,
+    run,
     toggle,
     setArchived,
     restoreTask,

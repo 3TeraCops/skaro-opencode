@@ -10,6 +10,8 @@ import { diffStats, worktreeStats } from './diff.ts';
 import { merge } from './merge.ts';
 import { revert, type RevertOptions } from './revert.ts';
 import { localMergeObstacles } from './merge-safety.ts';
+import { recoverPublications } from './merge-recovery.ts';
+import { serializedMerge, serializedWorktree } from './merge-queue.ts';
 export { git, GitError, type GitResult } from './command.ts';
 export { WorktreeRemovalBlocked } from './worktree-safety.ts';
 
@@ -37,6 +39,8 @@ export interface DiffStats {
 
 export interface MergeOptions {
   base: string;
+  /** Durable integration was verified against this exact base before publication. */
+  expectedBaseHead?: string;
   branch: string;
   strategy: 'squash' | 'merge' | 'rebase';
   message: string;
@@ -44,10 +48,16 @@ export interface MergeOptions {
   worktree?: string;
   /** Metadata paths Skaro is allowed to update; checked before publishing. */
   managedPaths?: string[];
+  /** Read-only verification inputs: reject publication if they change during preparation. */
+  guardPaths?: string[];
   /** Runs only in the isolated merge checkout, never in the user's working copy. */
   beforeCommit?: (checkout: string) => Promise<string[]>;
   /** Checks the prepared candidate after metadata is staged and before publication. */
   verify?: (checkout: string) => Promise<void>;
+  /** Persist the verified candidate before updating the base ref. Must be durable on return. */
+  prepared?: (candidate: { before: string; commit: string }) => Promise<void>;
+  /** An accepted result can require only publishing its task metadata. */
+  allowMetadataOnly?: boolean;
 }
 
 export class MergeBlockedError extends Error {
@@ -56,6 +66,12 @@ export class MergeBlockedError extends Error {
   constructor(check: MergeCheck) {
     super(`merge blocked: ${check.blockers.join(', ')}`);
     this.check = check;
+  }
+}
+
+export class GitBaseChangedError extends Error {
+  constructor() {
+    super('The base branch changed; integration must be prepared again');
   }
 }
 
@@ -109,11 +125,26 @@ export class GitService {
 
   /** Worktree for a task: reuses the branch if it exists, otherwise branches from `base`. */
   async createWorktree(options: { path: string; branch: string; base: string }): Promise<void> {
-    if (await this.branchExists(options.branch)) {
-      await git(this.repo, ['worktree', 'add', options.path, options.branch]);
-    } else {
-      await git(this.repo, ['worktree', 'add', '-b', options.branch, options.path, options.base]);
-    }
+    return serializedWorktree(this.repo, async () => {
+      if (await this.branchExists(options.branch)) {
+        await git(this.repo, ['worktree', 'add', options.path, options.branch]);
+      } else {
+        await git(this.repo, ['worktree', 'add', '-b', options.branch, options.path, options.base]);
+      }
+    });
+  }
+
+  /** Service-owned checkouts only; never used for agent or owner worktrees. */
+  createDetachedWorktree(path: string, base: string): Promise<void> {
+    return serializedWorktree(this.repo, async () => {
+      await git(this.repo, ['worktree', 'add', '--detach', path, base]);
+    });
+  }
+
+  removeDetachedWorktree(path: string): Promise<void> {
+    return serializedWorktree(this.repo, async () => {
+      await git(this.repo, ['worktree', 'remove', '--force', path]);
+    });
   }
 
   /** Preflight before ending any task sessions or removing task records. */
@@ -123,10 +154,12 @@ export class GitService {
 
   /** Never force or swallow a failed removal: ignored data is not recoverable from Git. */
   async removeWorktree(path: string, options: { deleteBranch?: string } = {}): Promise<void> {
-    await this.assertRemovableWorktree(path);
-    if (existsSync(path)) await git(this.repo, ['worktree', 'remove', path]);
-    await git(this.repo, ['worktree', 'prune']);
-    if (options.deleteBranch) await this.deleteBranch(options.deleteBranch);
+    return serializedWorktree(this.repo, async () => {
+      await this.assertRemovableWorktree(path);
+      if (existsSync(path)) await git(this.repo, ['worktree', 'remove', path]);
+      await git(this.repo, ['worktree', 'prune']);
+      if (options.deleteBranch) await this.deleteBranch(options.deleteBranch);
+    });
   }
 
   /** Deletes a local branch; a missing one is fine. */
@@ -193,6 +226,10 @@ export class GitService {
   /** Merge implementation stays separate from worktree lifecycle and checks. */
   merge(options: MergeOptions): Promise<{ commit: string; check: MergeCheck; before: string }> {
     return merge(this, options);
+  }
+
+  recoverPublication(): Promise<void> {
+    return serializedMerge(this.repo, () => recoverPublications(this.repo));
   }
 
   /** Brings the task branch up to date with the base ("Обновить ветку задачи"). */

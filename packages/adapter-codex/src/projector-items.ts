@@ -17,7 +17,7 @@ export class CodexItems {
   constructor(state: CodexProjectionState) {
     this.state = state;
   }
-  onItem(item: Obj, turnId: string, parentId?: string): void {
+  onItem(item: Obj, turnId: string, completed: boolean, parentId?: string): void {
     const type = str(item['type']) ?? '';
     if (
       type === 'userMessage' &&
@@ -35,6 +35,8 @@ export class CodexItems {
     const id = str(item['id']) ?? '';
     const native = { agent: AGENT, type, ref: id };
     const body = this.state.itemsProjection.itemBody(type, item);
+    // The item carries no status: a compaction that failed never gets its item/completed.
+    if (type === 'contextCompaction' && !completed) body.status = 'running';
     const existing = this.state.items.get(id);
     if (parentId && body.kind === 'message' && body.role === 'agent') {
       // A subagent's own answers are commentary inside its task; the last one is its summary.

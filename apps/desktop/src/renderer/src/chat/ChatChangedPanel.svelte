@@ -1,10 +1,12 @@
 <script lang="ts">
-  import type { Item } from '@skaro/timeline';
+  import type { TimelineState } from '@skaro/timeline';
   import { Icon, t } from '@skaro/ui';
   import { changedRows, type ProposalItem } from './changed-rows';
   import './chat-changed-panel.css';
-  let { items }: { items: Item[] } = $props();
-  const rows = $derived(changedRows(items.filter((i): i is ProposalItem => i.kind === 'proposal')));
+  let { timeline }: { timeline: TimelineState | undefined } = $props();
+  const rows = $derived(
+    changedRows((timeline?.items ?? []).filter((i): i is ProposalItem => i.kind === 'proposal')),
+  );
   function reveal(item: ProposalItem): void {
     document
       .getElementById(`proposal-${item.id}`)

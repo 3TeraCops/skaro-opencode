@@ -13,6 +13,7 @@ import { LiveChat } from './chat-model';
 import { importKey, type ImportWords, IMPORT_RU, IMPORT_EN, fieldsOf } from './chat-import-helpers';
 
 import type { ChatEngine } from './chat-engine';
+import { serializeTaskMutation } from './project-task-mutations';
 
 export class ChatImportReview {
   private readonly ctx: ChatEngine;
@@ -71,18 +72,15 @@ export class ChatImportReview {
     if (!keys.length) throw new Error('Nothing is selected');
     let applied;
     try {
-      applied = await applyImport(
-        context.store,
-        await context.load(),
-        state.staged,
-        keys,
-        (done, total) =>
+      applied = await serializeTaskMutation(context, async () =>
+        applyImport(context.store, await context.load(), state.staged, keys, (done, total) =>
           this.ctx.deps.emit('import.progress', {
             projectId: live.projectId,
             chatId: live.chat.id,
             done,
             total,
           }),
+        ),
       );
     } catch (error) {
       if (error instanceof ChangedOnDisk)

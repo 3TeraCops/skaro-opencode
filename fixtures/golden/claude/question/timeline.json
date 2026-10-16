@@ -25,21 +25,6 @@
       "startedAt": 42
     },
     {
-      "id": "mcp-claude.ai Google Drive",
-      "kind": "notice",
-      "level": "warning",
-      "code": "mcp_failed",
-      "text": "claude.ai Google Drive: needs-auth",
-      "status": "done",
-      "native": {
-        "agent": "claude",
-        "type": "notice",
-        "ref": "mcp-claude.ai Google Drive"
-      },
-      "turnId": "turn-1",
-      "startedAt": 2375
-    },
-    {
       "id": "msg_011CfNsLCxe7bFJgu1WKUyCo-0",
       "kind": "message",
       "role": "agent",

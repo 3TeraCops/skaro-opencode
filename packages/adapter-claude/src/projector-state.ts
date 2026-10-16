@@ -33,7 +33,7 @@ export class ClaudeProjectionState {
   turnError: AgentError | undefined;
   /** Blocks seen per assistant message id, to give streamed and final blocks the same id. */
   readonly blockCount = new Map<string, number>();
-  readonly streamBlocks = new Map<number, { id: string; type: string }>();
+  readonly streamBlocks = new Map<number, { id: string; type: string; editing?: boolean }>();
   streamMessageId = '';
   /** Plan built from Task tools, by task id. */
   readonly plan = new Map<string, PlanStep>();

@@ -113,6 +113,11 @@ h1[data-plan-screen] {
   color: var(--sk-text-2);
 }
 
+.refused[data-plan-screen] {
+  flex: none;
+  padding: 0 24px 14px;
+}
+
 .stages[data-plan-screen] {
   flex: 1;
   min-height: 0;

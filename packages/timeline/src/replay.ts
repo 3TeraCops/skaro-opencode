@@ -65,12 +65,13 @@ export function replayRunLog(
   startedAt: number,
   createProjector: (ctx: ProjectionContext, emit: Emit) => Projector,
   attachImage: ProjectionContext['attachImage'],
+  scopeEvent: (event: TimelineEvent) => TimelineEvent = (event) => event,
 ): TimelineEvent[] {
   const events: TimelineEvent[] = [];
   let now = startedAt;
   const ctx: ProjectionContext = { now: () => now, attachImage };
   let segment = -1;
-  const emit: Emit = (event) => events.push(segmentTurns(segment, event));
+  const emit: Emit = (event) => events.push(scopeEvent(segmentTurns(segment, event)));
   let projector: Projector | undefined;
   for (const raw of lines) {
     now = startedAt + raw.ts;

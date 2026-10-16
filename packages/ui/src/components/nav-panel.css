@@ -82,6 +82,16 @@
   color: var(--sk-text-bright);
 }
 
+.project-nav .footer-item {
+  font-size: var(--sk-fs-4);
+}
+
+.project-nav .footer-item .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .project-nav .item.active {
   color: var(--sk-text);
   font-weight: 600;

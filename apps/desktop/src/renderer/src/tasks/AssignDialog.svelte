@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { modelEffortDefault } from '@skaro/timeline';
   import { AgentLogo, EffortSlider, Select, t, tn } from '@skaro/ui';
   import { agents } from '../agents.svelte';
   import Dialog from './Dialog.svelte';
@@ -75,7 +76,7 @@
         <EffortSlider
           levels={state.levels}
           bind:value={state.effort}
-          defaultValue={state.model?.defaultEffort}
+          defaultValue={modelEffortDefault(state.model)}
         />
         {#if state.note}<span data-task-assign-dialog class="note">{state.note}</span>{/if}
       </div>

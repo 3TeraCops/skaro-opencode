@@ -1,5 +1,5 @@
 import { type WriteStream } from 'node:fs';
-import { type AppDb, type AttachmentStore, type RunRecord } from '@skaro/core';
+import { type AppDb, type AttachmentStore, type RunRecord, type ProjectCheck } from '@skaro/core';
 import type { Grant, McpHttpServer, SkaroScope } from '@skaro/mcp-server';
 import { Timeline, type AgentSession, type TimelineEvent } from '@skaro/timeline';
 import type { Events, EventName } from '../shared/ipc';
@@ -19,7 +19,7 @@ export interface TaskRunDeps {
   emit: <E extends EventName>(event: E, payload: Events[E]) => void;
   locale: () => string;
   /** A system notification ("Настройки" → "Уведомления"). */
-  notify?: (kind: NotifyKind, text: string) => void;
+  notify?: (kind: NotifyKind, text: string, title?: string) => void;
   /** Docker operations of task environments; the system Docker unless a test replaces them. */
   docker?: EnvironmentDocker;
 }
@@ -46,12 +46,20 @@ export class ActiveRun {
   mergeSummary: string | undefined;
   /** Commit message the agent proposed for the merge (submit_result, merge_task). */
   commitMessage: string | undefined;
+  verification: ProjectCheck[] | undefined;
+  /** The merge met a conflict: what the agent of the task is told to do about it. */
+  conflictOrder: string | undefined;
   /** The automatic merge that just happened (the agent is told about it). */
   merged: { commit: string; base: string } | undefined;
   /** Serializes session start and resume. */
   attaching: Promise<AgentSession> | undefined;
   /** Work that waits for the running turn to end (cleanup after a merge). */
   afterTurn: (() => Promise<void>) | undefined;
+  /** A handoff freezes side effects from the old session until its successor is published. */
+  switching = false;
+  handoffError: string | undefined;
+  readonly operations = new Set<Promise<unknown>>();
+  pumping: Promise<void> | undefined;
 
   constructor(projectId: string, taskId: string, run: RunRecord, timeline: Timeline) {
     this.projectId = projectId;

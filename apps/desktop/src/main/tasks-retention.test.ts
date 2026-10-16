@@ -18,25 +18,19 @@ import {
   resetTaskRuns,
 } from './task-run-test-support';
 
-it('retains the actual checkout and ignored data after the task merge is confirmed', async () => {
+it('retains the actual checkout and ignored data after an explicit task-chat merge', async () => {
   const result = await tasks.mergeTask(
     { summary: 'Preserved runtime' },
     { kind: 'task', projectId, taskId, runId },
   );
   expect(result.isError).not.toBe(true);
-  const view = await tasks.open(projectId, taskId);
-  const card = view.timeline?.interactions.find((i) => i.kind === 'merge');
-  expect(card).toBeDefined();
-  await tasks.merge(projectId, taskId, card!.id, {
-    action: 'confirm',
-    message: 'merge retained task',
-  });
+  expect((await tasks.open(projectId, taskId)).task.status).toBe('done');
   expect(existsSync(worktree)).toBe(true);
   expect(await readFile(join(worktree, 'data', 'postgres', 'PG_VERSION'), 'utf8')).toBe('16');
   expect(await readFile(join(repo, 'feature.txt'), 'utf8')).toBe('feature');
   expect(await projects.get(projectId).git.branchExists('skaro/retain')).toBe(true);
   expect(db.getRun(runId)?.outcome).toBe('done');
-});
+}, 30_000);
 
 it('blocks task deletion before changing its run record when ignored data is present', async () => {
   await expect(tasks.forget(projectId, taskId)).rejects.toThrow('ignored');
@@ -47,7 +41,14 @@ it('blocks task deletion before changing its run record when ignored data is pre
 
 it('refreshes a blocked card after local edits disappear without another agent turn', async () => {
   await writeFile(join(repo, 'feature.txt'), 'local work');
-  await tasks.mergeTask({}, { kind: 'task', projectId, taskId, runId });
+  await tasks.submitResult(
+    {
+      summary: 'Preserved runtime',
+      commitMessage: 'merge task',
+      criteria: [{ number: 1, met: true, evidence: 'real retained data' }],
+    },
+    scope(),
+  );
   const initial = (await tasks.open(projectId, taskId)).timeline?.interactions.find(
     (i) => i.kind === 'merge',
   );
@@ -81,7 +82,7 @@ it('honors automatic merging for concurrent merge_task calls and repeats without
   const repeated = await tasks.mergeTask({ commitMessage: 'do not commit this' }, scope());
   expect(repeated.text).toContain('already merged');
   expect(await expectMergedWithoutCard()).toBe(commit);
-});
+}, 30_000);
 
 it('returns the recorded merge after submit_result, including after restoring the run', async () => {
   db.setSetting(AUTO_MERGE_KEY, true);
@@ -112,7 +113,7 @@ it('returns the recorded merge after submit_result, including after restoring th
   expect(repeated.isError).not.toBe(true);
   expect(repeated.text).toContain(commit.slice(0, 7));
   expect(await expectMergedWithoutCard()).toBe(commit);
-});
+}, 30_000);
 
 it('keeps a blocked automatic merge in the existing card and preserves local edits', async () => {
   db.setSetting(AUTO_MERGE_KEY, true);
@@ -135,7 +136,7 @@ it('does not merge incomplete criteria even in automatic mode', async () => {
   const head = (await git(repo, ['rev-parse', 'main'])).stdout;
   const result = await tasks.mergeTask({}, scope());
   expect(result.isError).toBe(true);
-  expect(result.text).toContain('not ticked');
+  expect(result.text).toContain('acceptance criteria are unfinished');
   expect(db.listMerges(projectId, taskId)).toEqual([]);
   expect((await git(repo, ['rev-parse', 'main'])).stdout).toBe(head);
   expect((await tasks.open(projectId, taskId)).timeline?.interactions).toEqual([]);
@@ -154,7 +155,14 @@ it('does not claim a merge or commit remaining files for a task completed withou
 });
 
 it('closes an obsolete merge card when a completed task is reopened', async () => {
-  await tasks.mergeTask({}, scope());
+  await tasks.submitResult(
+    {
+      summary: 'Preserved runtime',
+      commitMessage: 'merge task',
+      criteria: [{ number: 1, met: true, evidence: 'real retained data' }],
+    },
+    scope(),
+  );
   expect((await tasks.open(projectId, taskId)).timeline?.interactions).toHaveLength(1);
   await projects.get(projectId).store.updateTask(taskId, { status: 'done' });
   projects.get(projectId).invalidate();

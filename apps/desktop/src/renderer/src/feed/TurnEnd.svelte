@@ -8,7 +8,7 @@
 
   /**
    * End of a turn: the changed files, then "Скопировать" with the time; an error in red
-   * with "Перезапустить" (mockup 5a).
+   * with the "Перезапустить" icon.
    */
   let {
     row,
@@ -55,7 +55,8 @@
         type="button"
         class="action"
         data-tip={category === 'auth' ? t('feed.end.restart.authTip') : t('feed.end.restart.tip')}
-        onclick={() => feed.restart()}>{t('feed.end.restart')}</button
+        aria-label={t('feed.end.restart')}
+        onclick={() => feed.restart()}><Icon name="reset" size={14} stroke={2} /></button
       >
     {/if}
   </div>
@@ -65,6 +66,10 @@
 {/if}
 
 <style>
+  .action {
+    display: inline-flex;
+  }
+
   .fd-turn-meta {
     display: inline-flex;
     align-items: center;

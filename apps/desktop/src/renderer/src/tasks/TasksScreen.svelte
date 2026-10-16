@@ -47,6 +47,7 @@
       selecting={state.selecting}
       now={state.now}
       onselect={state.select}
+      onselectmany={state.selectMany}
       {onopen}
     />
   {:else}
