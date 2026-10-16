@@ -153,7 +153,8 @@ export class ChatPlanDecisions {
       ? remaining.find((t) => t.ref === decision.creating!.ref)
       : remaining.find(
           (t) =>
-            t.dependsOn.every((dep) => known.has(dep)) && !planSpecProblem([t], artifacts.specs),
+            t.dependsOn.every((dep) => known.has(dep)) &&
+            !planSpecProblem([t], artifacts.specs, artifacts),
         );
     if (!task) {
       if (remaining.length) throw new Error('The approved task graph cannot be created.');
@@ -252,7 +253,7 @@ export class ChatPlanDecisions {
     artifacts: ProjectArtifacts,
     item?: ProposalItem,
   ) {
-    const problem = planSpecProblem(tasks, artifacts.specs);
+    const problem = planSpecProblem(tasks, artifacts.specs, artifacts);
     if (problem) throw new Error(problem);
     checkedPlanDependencies(
       tasks,

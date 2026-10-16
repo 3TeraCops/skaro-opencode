@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect } from 'vitest';
 import { AgentManager } from './agents';
 import { Projects } from './projects';
 import { TaskRuns, type TaskRunDeps } from './tasks';
+import { prepareFixtureArchitecture, reviewFixtureResult } from './c4-test-support';
 
 export let dir: string;
 export let repo: string;
@@ -34,6 +35,7 @@ beforeEach(async () => {
   });
   taskId = task.id;
   await writeFile(join(repo, '.gitignore'), 'data/\n');
+  await prepareFixtureArchitecture(repo);
   await git(repo, ['add', '-A']);
   await git(repo, ['commit', '-qm', 'init']);
   db = AppDb.open(':memory:');
@@ -57,6 +59,7 @@ beforeEach(async () => {
   // No model, agent process or substitute application backend is launched by this test.
   tasks = createTaskRuns();
   await tasks.open(projectId, taskId);
+  await reviewFixtureResult(db, projects, projectId, taskId, runId);
 });
 
 function createTaskRuns(): TaskRuns {

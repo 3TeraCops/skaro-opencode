@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TurnFile } from '@skaro/timeline';
-  import { t } from '@skaro/ui';
+  import { t, ViewerModal } from '@skaro/ui';
   import type { FileDiff } from '../../../shared/ipc';
   import DiffCode from './DiffCode.svelte';
   import DiffModalHeader from './DiffModalHeader.svelte';
@@ -40,42 +40,29 @@
   );
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && (e.stopPropagation(), onclose())} />
-
-<div class="dm-backdrop" role="presentation" onclick={onclose}>
-  <div
-    class="dm-dialog"
-    class:expanded={dm.expanded}
-    role="dialog"
-    aria-modal="true"
-    aria-label={path}
-    tabindex="-1"
-    onclick={(e) => e.stopPropagation()}
-    onkeydown={() => undefined}
-  >
-    <DiffModalHeader
-      {path}
-      code={isCodePath(dm.file.movePath ?? dm.file.path)}
-      added={dm.counts.added}
-      removed={dm.counts.removed}
-      badge={dm.change === 'add' ? 'new' : dm.change === 'delete' ? 'deleted' : undefined}
-      sub={dm.sub}
-      index={dm.index}
-      count={files.length}
-      spin={dm.spin}
-      expanded={dm.expanded}
-      onprev={() => dm.go(dm.index - 1)}
-      onnext={() => dm.go(dm.index + 1)}
-      onrefresh={() => void dm.refresh()}
-      ontoggle={() => (dm.expanded = !dm.expanded)}
-      {onclose}
-    />
-    <div class="dm-body" class:dim={dm.refreshing}>
-      {#if dm.unchanged}
-        <div class="dm-empty">{t('diff.unchanged')}</div>
-      {:else}
-        <DiffCode lines={dm.lines} colors={dm.colors} />
-      {/if}
-    </div>
+<ViewerModal class="dm-dialog" expanded={dm.expanded} label={path} {onclose}>
+  <DiffModalHeader
+    {path}
+    code={isCodePath(dm.file.movePath ?? dm.file.path)}
+    added={dm.counts.added}
+    removed={dm.counts.removed}
+    badge={dm.change === 'add' ? 'new' : dm.change === 'delete' ? 'deleted' : undefined}
+    sub={dm.sub}
+    index={dm.index}
+    count={files.length}
+    spin={dm.spin}
+    expanded={dm.expanded}
+    onprev={() => dm.go(dm.index - 1)}
+    onnext={() => dm.go(dm.index + 1)}
+    onrefresh={() => void dm.refresh()}
+    ontoggle={() => (dm.expanded = !dm.expanded)}
+    {onclose}
+  />
+  <div class="dm-body" class:dim={dm.refreshing}>
+    {#if dm.unchanged}
+      <div class="dm-empty">{t('diff.unchanged')}</div>
+    {:else}
+      <DiffCode lines={dm.lines} colors={dm.colors} />
+    {/if}
   </div>
-</div>
+</ViewerModal>

@@ -17,10 +17,31 @@ import { taskBody } from './task-body';
 import { importLinks } from './chat-import-helpers';
 import { currentTurn } from './chat-settings-helpers';
 import { adrId } from './chat-proposal-helpers';
+import { readC4Model } from '@skaro/core';
+import type { ProposeC4Args } from '@skaro/mcp-server';
+import { prepareImportC4 } from './c4-import';
 
 import type { ChatEngine } from './chat-engine';
 
 export class ChatImportStage {
+  async stageC4(args: ProposeC4Args, scope: SkaroScope): Promise<ToolResult> {
+    const live = this.ctx.context.caller(scope);
+    if (!scope.importId) return { isError: true, text: 'C4 staging requires an import session.' };
+    if (args.documents.length)
+      return {
+        isError: true,
+        text: 'During import, stage all documents with stage_artifact and pass documents: [] to propose_c4.',
+      };
+    readC4Model(args.model);
+    const state = await this.ctx.importReview.importOf(live.chat.id);
+    state.c4 = args;
+    delete state.c4Package;
+    delete state.report;
+    await saveState(state);
+    return {
+      text: 'Shared C4 model staged. Stage all source architecture/specifications/ADRs, then finish_import. No project files changed.',
+    };
+  }
   private readonly ctx: ChatEngine;
   constructor(ctx: ChatEngine) {
     this.ctx = ctx;
@@ -120,6 +141,8 @@ export class ChatImportStage {
     if (staged.updates && before !== undefined) staged.before = before;
     const replaced = state.staged.some((s) => s.key === args.key);
     state.staged = [...state.staged.filter((s) => s.key !== args.key), staged];
+    delete state.c4Package;
+    delete state.report;
     await saveState(state);
     return {
       text:
@@ -137,6 +160,17 @@ export class ChatImportStage {
     const artifacts = await this.ctx.project(live.projectId).load();
     const problems = importLinks(state.staged, artifacts);
     if (problems.length) return { text: problems.join('\n'), isError: true };
+    try {
+      state.c4Package = await prepareImportC4(
+        this.ctx.project(live.projectId).root,
+        artifacts,
+        state,
+        state.staged.map((s) => s.key),
+        this.ctx.deps.locale(),
+      );
+    } catch (error) {
+      return { isError: true, text: String(error) };
+    }
     const manifest = await loadManifest(state.dir);
     const skipped = [
       ...(manifest?.files ?? [])

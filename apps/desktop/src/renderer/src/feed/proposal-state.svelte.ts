@@ -30,6 +30,7 @@ export class ProposalState {
       this.proposal.type !== 'doc' &&
       this.proposal.type !== 'task' &&
       this.proposal.type !== 'task_replan' &&
+      this.proposal.type !== 'architecture' &&
       this.proposal.type !== 'spec_change'
     )
       return undefined;

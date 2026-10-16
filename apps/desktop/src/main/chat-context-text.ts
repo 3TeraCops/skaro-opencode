@@ -1,4 +1,10 @@
-import { displayStatus, indexTasks, type ProjectArtifacts, type Task } from '@skaro/core';
+import {
+  displayStatus,
+  indexTasks,
+  authoredBody,
+  type ProjectArtifacts,
+  type Task,
+} from '@skaro/core';
 
 /** What get_project_context returns: the whole project in one Markdown text. */
 export function projectContextText(
@@ -12,7 +18,28 @@ export function projectContextText(
     lines.push(`## ${title} (.skaro/${path})`, '', body?.trim() || '(not written yet)', '');
   };
   doc('Brief', 'brief.md', artifacts.brief?.body);
-  doc('Architecture', 'architecture.md', artifacts.architecture?.body);
+  doc(
+    'Architecture',
+    'architecture.md',
+    artifacts.architecture ? authoredBody(artifacts.architecture.body) : undefined,
+  );
+  lines.push(
+    '## C4 architecture coverage',
+    '',
+    JSON.stringify({
+      revision: artifacts.c4?.revision ?? 0,
+      problems: artifacts.c4Problems ?? [],
+      specifications: artifacts.c4?.specifications.map((s) => ({
+        id: s.id,
+        impact: s.impact,
+        elements: s.elements,
+        views: s.views,
+      })),
+      instruction:
+        'Call get_c4_context for the complete model/schema, source documents, pending packages and code review fingerprint.',
+    }),
+    '',
+  );
   lines.push('## ADRs', '');
   if (!artifacts.adrs.length) lines.push('(none)');
   for (const adr of artifacts.adrs) {

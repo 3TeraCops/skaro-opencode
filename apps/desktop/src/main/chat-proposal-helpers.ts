@@ -72,6 +72,8 @@ export function taskText(task: Pick<Task, 'title' | 'milestone' | 'dependsOn' | 
 
 export function describe(proposal: Proposal): string {
   switch (proposal.type) {
+    case 'architecture':
+      return `the architecture package "${proposal.title}"`;
     case 'doc':
       return `the change to .skaro/${proposal.path}`;
     case 'adr':

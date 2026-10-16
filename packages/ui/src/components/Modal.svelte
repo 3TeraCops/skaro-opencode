@@ -32,7 +32,14 @@
   const close = () => (open = false);
 </script>
 
-<svelte:window onkeydown={(e) => open && e.key === 'Escape' && close()} />
+<svelte:window
+  onkeydown={(e) =>
+    open &&
+    e.key === 'Escape' &&
+    !document.fullscreenElement &&
+    !document.querySelector('[data-viewer-dialog]') &&
+    close()}
+/>
 
 {#if open}
   <div class="backdrop" role="presentation" onclick={close}>

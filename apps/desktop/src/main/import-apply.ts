@@ -1,4 +1,5 @@
 import type { ArtifactStore, ProjectArtifacts } from '@skaro/core';
+import { applyC4Package, type C4Package } from '@skaro/core';
 import type { Applied, StagedArtifact, StagedType } from './import-model';
 import { ChangedOnDisk, currentText, docName, pathOf, sameText } from './import-current';
 
@@ -13,6 +14,7 @@ export async function applyImport(
   staged: StagedArtifact[],
   picked: string[],
   progress: (done: number, total: number) => void = () => undefined,
+  architecture?: C4Package,
 ): Promise<Applied> {
   const chosen = staged.filter((s) => picked.includes(s.key));
   const byKey = new Map(staged.map((s) => [s.key, s]));
@@ -88,12 +90,31 @@ export async function applyImport(
   };
 
   const imported: Applied['imported'] = [];
+  if (chosen.some((s) => s.type === 'architecture' || s.type === 'spec') && !architecture)
+    throw new Error('Architecture and specification imports require a validated C4 package.');
+  if (architecture) await applyC4Package(store.root, architecture);
   const order: StagedType[] = ['brief', 'architecture', 'doc', 'adr', 'spec', 'milestone', 'task'];
   const sorted = [...chosen].sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
   let done = 0;
   for (const s of sorted) {
     progress(done++, sorted.length);
     const body = text(s.body, s);
+    if (architecture && ['brief', 'architecture', 'doc', 'adr', 'spec'].includes(s.type)) {
+      const kind = s.type as 'brief' | 'architecture' | 'doc' | 'adr' | 'spec';
+      imported.push({
+        kind,
+        ...(codes.has(s.key) ? { code: codes.get(s.key)! } : {}),
+        title: s.title,
+        update:
+          !!s.updates ||
+          (s.type === 'brief'
+            ? !!artifacts.brief
+            : s.type === 'architecture'
+              ? !!artifacts.architecture
+              : false),
+      });
+      continue;
+    }
     switch (s.type) {
       case 'brief':
       case 'architecture': {

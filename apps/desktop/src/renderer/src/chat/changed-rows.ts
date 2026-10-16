@@ -2,6 +2,7 @@ import type { Item } from '@skaro/timeline';
 import { t, tn } from '@skaro/ui';
 import './plan-decisions-i18n';
 import { replanStatus } from '../feed/proposal-replan';
+import '../c4/i18n';
 export type ProposalItem = Extract<Item, { kind: 'proposal' }>;
 /** "Изменено в чате": what each proposal is and where it stands. */
 function changed(item: ProposalItem): {
@@ -19,6 +20,17 @@ function changed(item: ProposalItem): {
         ? t('changed.reverted')
         : undefined;
   switch (p.type) {
+    case 'architecture':
+      return {
+        icon: 'file',
+        title: p.title,
+        pending: pending || item.state === 'accepted',
+        note:
+          item.result?.error ??
+          (pending
+            ? t('changed.pending')
+            : (settled ?? t(item.state === 'accepted' ? 'c4.applying' : 'c4.applied'))),
+      };
     case 'doc':
       return {
         icon: 'file',

@@ -50,6 +50,7 @@ export type { UpdateState } from './updates';
 
 /** Methods the renderer may call: name → signature. */
 export interface Methods {
+  'c4.decide': (projectId: string, itemId: string, action: 'apply' | 'reject') => void;
   'task.revertMerge': (projectId: string, taskId: string, commit: string) => void;
   'window.minimize': () => void;
   'window.toggleMaximize': () => void;

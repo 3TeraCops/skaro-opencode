@@ -129,6 +129,8 @@ export class ChatProposals {
   ): Promise<{ result?: ProposalResult; note: string }> {
     const { store } = context;
     switch (proposal.type) {
+      case 'architecture':
+        throw new Error('C4 packages require the durable architecture decision service.');
       case 'task_replan':
         throw new Error('Task replans require a durable package decision.');
       case 'doc': {

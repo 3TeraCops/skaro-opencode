@@ -7,8 +7,10 @@ export function sessionHandlers({
   docs,
   plan,
   chats,
+  c4,
 }: Services): Pick<
   Handlers,
+  | 'c4.decide'
   | 'tasks.list'
   | 'tasks.slots'
   | 'tasks.run'
@@ -55,6 +57,7 @@ export function sessionHandlers({
   | 'chat.proposal'
 > {
   return {
+    'c4.decide': (projectId, itemId, action) => c4.decide(projectId, itemId, action),
     'tasks.list': (projectId) => runs.list(projectId),
     'tasks.slots': () => runs.slots(),
     'tasks.run': (projectId, ids, message, assignment) =>
@@ -84,7 +87,10 @@ export function sessionHandlers({
     'plan.reorder': (projectId, ids) => plan.reorder(projectId, ids),
     'plan.placeTask': (projectId, taskId, milestoneId, index) =>
       plan.placeTask(projectId, taskId, milestoneId, index),
-    'task.open': (projectId, taskId) => runs.open(projectId, taskId),
+    'task.open': async (projectId, taskId) => {
+      await c4.restore({ kind: 'task', projectId, taskId });
+      return runs.open(projectId, taskId);
+    },
     'task.send': (projectId, taskId, input) => runs.send(projectId, taskId, input),
     'task.respond': (projectId, taskId, id, answer) => runs.respond(projectId, taskId, id, answer),
     'task.interrupt': (projectId, taskId) => runs.interrupt(projectId, taskId),
@@ -97,7 +103,10 @@ export function sessionHandlers({
       runs.toggleCriterion(projectId, taskId, index),
     'chats.list': (projectId) => chats.list(projectId),
     'chats.defaults': (projectId) => chats.defaults(projectId),
-    'chat.open': (projectId, chatId) => chats.open(projectId, chatId),
+    'chat.open': async (projectId, chatId) => {
+      await c4.restore({ kind: 'project_chat', projectId, chatId });
+      return chats.open(projectId, chatId);
+    },
     'chat.create': (projectId, settings, input) => chats.create(projectId, settings, input),
     'chat.send': (projectId, chatId, input) => chats.send(projectId, chatId, input),
     'chat.respond': (projectId, chatId, id, answer) => chats.respond(projectId, chatId, id, answer),
@@ -106,6 +115,8 @@ export function sessionHandlers({
       chats.setSettings(projectId, chatId, settings),
     'chat.archive': (projectId, chatId, archived) => chats.archive(projectId, chatId, archived),
     'chat.proposal': (projectId, chatId, itemId, action) =>
-      chats.proposal(projectId, chatId, itemId, action),
+      itemId.startsWith('skaro-c4-') && action.action !== 'revert'
+        ? c4.decide(projectId, itemId, action.action)
+        : chats.proposal(projectId, chatId, itemId, action),
   };
 }

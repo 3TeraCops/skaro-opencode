@@ -6,6 +6,7 @@ import { TASK_DECOMPOSITION_RULES } from '@skaro/mcp-server';
 import { join } from 'node:path';
 import { agentInteractionInstructions } from './agent-interaction-instructions';
 import { PROJECT_CHAT_WORKFLOW } from './chat-workflow';
+import { C4_INSTRUCTIONS } from './c4-instructions';
 
 import { LANGUAGES, terms, instructionsOf } from './prompt-context';
 export { LANGUAGES, terms, instructionsOf } from './prompt-context';
@@ -43,14 +44,14 @@ export function chatInstructions(options: {
       [
         '- Discuss what to build with the user, ask questions when something is unclear.',
         '- Turn what you agree on into artifacts with the tools of the skaro MCP server: ' +
-          'get_project_context, write_doc (brief.md, architecture.md, docs/<name>.md), ' +
-          'propose_adr, propose_spec, propose_milestones, propose_tasks, update_task, replan_tasks.',
+          'get_project_context, get_c4_context, propose_c4, write_doc (brief.md, docs/<name>.md), ' +
+          'propose_adr, propose_milestones, propose_tasks, update_task, replan_tasks.',
         '- Read get_project_context before writing documents or proposing milestones and tasks.',
-        '- New functionality starts with a specification (propose_spec): problem, scenarios, ' +
+        '- New functionality starts with a specification and C4 coverage (propose_c4): problem, scenarios, ' +
           'requirements R-1, R-2…, out of scope, open questions. Cut its tasks after the user ' +
           'accepts it and link them with "spec". A small fix or improvement is a task right away.',
         '- When a change alters how a specified function behaves, propose the change to its ' +
-          'specification too (propose_spec with its id).',
+          'specification and its C4 coverage in the same propose_c4 package.',
         '- The brief and the architecture are optional for an existing project; do not push ' +
           'them when the user only wants a feature or a fix. Study the code before proposing.',
         '- Give tasks checkable acceptance criteria and explicit dependencies. ' +
@@ -137,6 +138,7 @@ export function importInstructions(options: {
           'user applies it on the review screen.',
         '- When everything is staged, call finish_import once.',
       ].join('\n'),
+    C4_INSTRUCTIONS,
     '## Task boundaries\n\n' + TASK_DECOMPOSITION_RULES,
     '## Rules\n\n' +
       [

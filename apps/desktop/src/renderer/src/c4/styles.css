@@ -1,0 +1,123 @@
+.c4-node {
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  border: 1px solid var(--sk-line-strong);
+  border-radius: var(--sk-radius);
+  background: var(--sk-surface);
+  color: var(--sk-text);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.c4-node-kind {
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--sk-text-muted);
+}
+.c4-node-name {
+  font-size: 14px;
+  line-height: 19px;
+  font-weight: 700;
+  color: var(--sk-text-bright);
+}
+.c4-node-name span,
+.c4-node-description span,
+.c4-node-tech span {
+  display: block;
+}
+.c4-node-tech {
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--sk-link);
+  overflow-wrap: anywhere;
+}
+.c4-node-description {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--sk-text-secondary);
+}
+.c4-node.boundary {
+  background: transparent;
+  border-style: dashed;
+  border-radius: var(--sk-radius-card);
+}
+.c4-node.boundary .c4-node-name {
+  font-size: 14px;
+}
+.c4-node.external {
+  background: var(--sk-modal);
+}
+.c4-node.planned {
+  border-style: dashed;
+}
+.c4-node.selected {
+  border-color: var(--sk-link);
+  box-shadow: 0 0 0 1px var(--sk-link);
+}
+.c4-node .svelte-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+.c4-edge-label {
+  width: 220px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: var(--sk-bg);
+  color: var(--sk-text-secondary);
+  text-align: center;
+  font-size: 11px;
+  line-height: 15px;
+}
+.c4-edge-label span,
+.c4-edge-label small {
+  display: block;
+}
+.c4-edge-label small {
+  font: 10px/13px var(--sk-mono);
+  color: var(--sk-text-muted);
+}
+.c4-edge-label.selected {
+  color: var(--sk-link);
+}
+.c4-canvas {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--sk-bg);
+}
+.c4-canvas .svelte-flow {
+  --xy-background-color: var(--sk-bg);
+  --xy-minimap-background-color: var(--sk-modal);
+  --xy-minimap-mask-background-color: var(--sk-black-a35);
+  --xy-minimap-node-background-color: var(--sk-text-label);
+}
+.c4-canvas .svelte-flow__minimap {
+  border-radius: var(--sk-radius);
+  box-shadow: 0 0 0 1px var(--sk-white-a4);
+  overflow: hidden;
+}
+.c4-canvas .svelte-flow__attribution {
+  background: var(--sk-modal);
+  color: var(--sk-text-muted);
+  font-size: 9px;
+}
+.c4-error {
+  padding: 16px;
+  color: var(--sk-error);
+  overflow-wrap: anywhere;
+  font-size: var(--sk-fs-5);
+}
+.c4-loading {
+  padding: 22px;
+  color: var(--sk-text-secondary);
+  font-size: var(--sk-fs-5);
+}
+@media (prefers-reduced-motion: reduce) {
+  .c4-canvas * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

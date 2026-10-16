@@ -25,6 +25,7 @@ export interface ProposedTask {
 }
 
 export type Proposal =
+  | import('./architecture-proposal.ts').ArchitectureProposal
   | import('./task-replan-model.ts').TaskReplanProposal
   | {
       /** brief.md, architecture.md or docs/<name>.md, written as a whole. */

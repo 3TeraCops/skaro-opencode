@@ -2,8 +2,21 @@ import type { ArtifactFiles } from './files.ts';
 import { toTask, toMilestone, toAdr, toSpec, checkIds } from './conversion.ts';
 import { readConfig } from './config.ts';
 import type { ArtifactProblem, Doc, ProjectArtifacts, ConfigDefaults } from './model.ts';
+import { withC4Lock } from '../c4/io.ts';
+import { recoverC4Transaction } from '../c4/transaction.ts';
+import { inspectC4Project } from '../c4/project.ts';
 
 export async function load(
+  files: ArtifactFiles,
+  defaults: () => ConfigDefaults,
+): Promise<ProjectArtifacts> {
+  return withC4Lock(files.root, async () => {
+    await recoverC4Transaction(files.root);
+    return loadProject(files, defaults);
+  });
+}
+
+async function loadProject(
   files: ArtifactFiles,
   defaults: () => ConfigDefaults,
 ): Promise<ProjectArtifacts> {
@@ -44,5 +57,18 @@ export async function load(
       problems.push({ path: task.path, message: `unknown specification ${task.spec}` });
     }
   }
-  return { config, brief, architecture, docs, adrs, specs, milestones, tasks, problems };
+  const c4 = await inspectC4Project(files.root);
+  return {
+    config,
+    brief,
+    architecture,
+    docs,
+    adrs,
+    specs,
+    milestones,
+    tasks,
+    problems,
+    ...(c4.model ? { c4: c4.model } : {}),
+    c4Problems: c4.problems,
+  };
 }

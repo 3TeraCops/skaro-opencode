@@ -8,7 +8,8 @@ export type Block =
   | { kind: 'html'; html: string; hid?: string }
   | { kind: 'rules'; hid: string; title: string; items: string[] }
   | { kind: 'code'; lang: string; text: string }
-  | { kind: 'mermaid'; source: string };
+  | { kind: 'mermaid'; source: string }
+  | { kind: 'c4'; source: string };
 
 export interface Heading {
   hid: string;
@@ -101,7 +102,9 @@ export function renderDoc(src: string): { blocks: Block[]; headings: Heading[] }
     if (token.type === 'code') {
       const lang = (token.lang ?? '').trim().split(/\s+/)[0] ?? '';
       blocks.push(
-        lang === 'mermaid'
+        lang === 'skaro-c4'
+          ? { kind: 'c4', source: token.text }
+          : lang === 'mermaid'
           ? { kind: 'mermaid', source: token.text }
           : { kind: 'code', lang: lang || 'text', text: token.text },
       );

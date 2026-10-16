@@ -10,6 +10,7 @@ import { AppState } from './state';
 import { Projects } from './projects';
 import { ChatEngine } from './chat-engine';
 import { LiveChat } from './chat-model';
+import { prepareFixtureArchitecture } from './c4-test-support';
 
 /** Only real storage/services. No HTTP listener, agent process, mocked API or agent session. */
 export async function planningWorkspace() {
@@ -20,13 +21,14 @@ export async function planningWorkspace() {
   for (let i = 1; i <= 19; i++) await store.createMilestone({ title: `Этап ${i}` });
   await store.createSpec({
     title: 'Обработка диалога',
-    status: 'accepted',
+    status: 'proposed',
     body:
       '## Требования\n\n' +
       Array.from({ length: 12 }, (_, i) => `- R-${i + 1} Реализовать функцию этапа ${i + 8}.`).join(
         '\n',
       ),
   });
+  await prepareFixtureArchitecture(store.root, ['0001']);
   const project = db.addProject({ name: 'Planning verification', path: store.root });
   const chat = db.createChat({
     projectId: project.id,

@@ -74,6 +74,7 @@ it('honors automatic merging for concurrent merge_task calls and repeats without
     tasks.mergeTask({ commitMessage: ':bug: fix: preserve automatic mode' }, scope()),
     tasks.mergeTask({}, scope()),
   ]);
+  for (const result of results) expect(result.isError, result.text).not.toBe(true);
   const commit = await expectMergedWithoutCard();
   for (const result of results) {
     expect(result.isError).not.toBe(true);

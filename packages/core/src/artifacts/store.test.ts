@@ -117,18 +117,20 @@ describe('ArtifactStore', () => {
     });
   });
 
-  it('keeps specifications like ADRs and links tasks to them', async () => {
-    const old = await store.createSpec({ title: 'Оплата картой', status: 'accepted' });
+  it('keeps specification drafts linked to tasks and requires C4 before acceptance', async () => {
+    await expect(store.createSpec({ title: 'Оплата картой', status: 'accepted' })).rejects.toThrow(
+      'C4',
+    );
+    const old = await store.createSpec({ title: 'Оплата картой' });
     const next = await store.createSpec({ title: 'Возвраты по картам', replaces: old.id });
     expect([old.id, next.id, next.status]).toEqual(['0001', '0002', 'proposed']);
     expect(next.path).toBe('.skaro/specs/0002-vozvraty-po-kartam.md');
     expect(next.body).toContain('## Требования');
-    await store.setSpecStatus(next.id, 'accepted');
+    await expect(store.setSpecStatus(next.id, 'accepted')).rejects.toThrow('C4 package');
     const task = await store.createTask({ title: 'Возврат из заказа', spec: next.id });
     const project = await store.load();
     expect(project.specs.find((s) => s.id === old.id)).toMatchObject({
-      status: 'superseded',
-      replacedBy: next.id,
+      status: 'proposed',
     });
     expect(project.tasks.find((t) => t.id === task.id)?.spec).toBe(next.id);
     expect(project.problems).toEqual([]);

@@ -169,6 +169,7 @@ it('merges a finished task at once and hands a conflict to its own agent, with n
   const tool = submitResultTool((args, scope) => runs.results.submitResult(args, scope));
   const submit = async (taskId: string) => {
     const view = await runs.views.open(f.projectId, taskId);
+    await f.review(taskId);
     // The agent calls submit_result inside its own turn.
     runs.active
       .get(`${f.projectId}\n${taskId}`)!

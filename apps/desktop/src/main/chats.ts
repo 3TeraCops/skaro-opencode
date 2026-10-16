@@ -11,7 +11,7 @@ import type {
   UpdateTaskArgs,
   WriteDocArgs,
 } from '@skaro/mcp-server';
-import { type InteractionAnswer } from '@skaro/timeline';
+import { type InteractionAnswer, type Item } from '@skaro/timeline';
 import type {
   ChatSettings,
   ChatSummary,
@@ -28,6 +28,29 @@ export { titleOf } from './chat-settings-helpers';
 export { projectContextText } from './chat-context-text';
 
 export class ChatSessions implements ProjectToolHandlers {
+  async architectureEvent(
+    scope: SkaroScope,
+    item: Extract<Item, { kind: 'proposal' }>,
+  ): Promise<void> {
+    if (!scope.chatId) throw new Error('Missing architecture chat');
+    const live = await this.engine.history.restore(scope.projectId, scope.chatId);
+    const previous = live.timeline.state.items.find((i) => i.id === item.id);
+    if (
+      previous?.kind === 'proposal' &&
+      JSON.stringify({ ...previous, turnId: '' }) === JSON.stringify({ ...item, turnId: '' })
+    )
+      return;
+    this.engine.history.skaroEvent(live, {
+      t: 'item.upsert',
+      item: { ...item, turnId: previous?.turnId ?? live.timeline.state.turns.at(-1)?.id ?? '' },
+    });
+  }
+  async stageC4(
+    args: import('@skaro/mcp-server').ProposeC4Args,
+    scope: SkaroScope,
+  ): Promise<ToolResult> {
+    return this.engine.importStage.stageC4(args, scope);
+  }
   private readonly engine: ChatEngine;
   constructor(deps: Deps) {
     this.engine = new ChatEngine(deps);

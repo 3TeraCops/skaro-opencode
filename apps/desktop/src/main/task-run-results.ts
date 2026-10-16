@@ -11,6 +11,8 @@ import type { TaskRunEngine } from './task-run-engine';
 import { lastAgentText } from './task-merges';
 import { readSubject, updateSubject } from './task-subject';
 import { IntegrationPending } from './integration-model';
+import { assertC4TaskReview } from './c4-review';
+import { completeInPlaceC4 } from './c4-in-place';
 
 /** results: a focused part of the task-run controller. */
 export class TaskRunResults {
@@ -103,7 +105,7 @@ export class TaskRunResults {
       return 'open';
     }
     if (!active.run.worktree || !active.run.branch) {
-      await updateSubject(context, taskId, { status: 'done' });
+      await completeInPlaceC4(this.ctx.deps.db, context, taskId, active.run.id);
       context.invalidate();
       this.statusChanged(projectId, taskId);
       await this.ctx.stages.sync(projectId, taskId);
@@ -209,6 +211,19 @@ export class TaskRunResults {
       };
     }
     const met = criteria.map((_, i) => verdicts.get(i + 1)!.met);
+    if (met.every(Boolean)) {
+      try {
+        await assertC4TaskReview(
+          this.ctx.deps.db,
+          context,
+          task.id,
+          active.run.worktree ?? context.root,
+          active.run.id,
+        );
+      } catch (error) {
+        return { text: String(error), isError: true };
+      }
+    }
     await updateSubject(context, task.id, { body: setCriteria(task.body, met) });
     active.mergeSummary = args.summary;
     active.verification = args.verification;

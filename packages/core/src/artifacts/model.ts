@@ -169,6 +169,9 @@ export interface ArtifactProblem {
 }
 
 export interface ProjectArtifacts {
+  /** C4 is optional only until the existing project's documentation has been prepared. */
+  c4?: import('../c4/model.ts').C4Model;
+  c4Problems?: string[];
   config: ProjectConfig;
   brief?: Doc;
   architecture?: Doc;

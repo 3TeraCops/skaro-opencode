@@ -14,6 +14,9 @@ import { importKey, type ImportWords, IMPORT_RU, IMPORT_EN, fieldsOf } from './c
 
 import type { ChatEngine } from './chat-engine';
 import { serializeTaskMutation } from './project-task-mutations';
+import { prepareImportC4 } from './c4-import';
+import { saveState } from './imports';
+import { c4ImportBody, c4ImportRefs } from './c4-import-preview';
 
 export class ChatImportReview {
   private readonly ctx: ChatEngine;
@@ -40,7 +43,7 @@ export class ChatImportReview {
         title: s.title,
         update: !!s.updates,
         sources: s.sources,
-        body: s.body,
+        body: c4ImportBody(state, s, artifacts),
         ...(s.before !== undefined ? { before: s.before } : {}),
         ...(s.milestone ? { milestone: s.milestone } : {}),
         dependsOn: s.dependsOn ?? [],
@@ -53,6 +56,7 @@ export class ChatImportReview {
               s.milestone ?? '',
               s.spec ?? '',
               ...(s.dependsOn ?? []),
+              ...c4ImportRefs(state, s),
             ].filter((k) => keys.has(k) && k !== s.key),
           ),
         ],
@@ -68,18 +72,38 @@ export class ChatImportReview {
     picked: string[] | undefined,
   ): Promise<{ result: ProposalResult; note: string }> {
     const state = await this.importOf(live.chat.id);
+    if (!state.report)
+      throw new Error(
+        'Import was changed after its last preparation. Finish and review it again before applying.',
+      );
     const keys = picked ?? state.staged.map((s) => s.key);
     if (!keys.length) throw new Error('Nothing is selected');
     let applied;
     try {
+      const artifacts = await context.load();
+      const allSelected = state.staged.every((s) => keys.includes(s.key));
+      const architecture =
+        allSelected && state.c4Package
+          ? state.c4Package
+          : await prepareImportC4(context.root, artifacts, state, keys, this.ctx.deps.locale());
+      if (architecture) {
+        state.c4Package = architecture;
+        await saveState(state);
+      }
       applied = await serializeTaskMutation(context, async () =>
-        applyImport(context.store, await context.load(), state.staged, keys, (done, total) =>
-          this.ctx.deps.emit('import.progress', {
-            projectId: live.projectId,
-            chatId: live.chat.id,
-            done,
-            total,
-          }),
+        applyImport(
+          context.store,
+          await context.load(),
+          state.staged,
+          keys,
+          (done, total) =>
+            this.ctx.deps.emit('import.progress', {
+              projectId: live.projectId,
+              chatId: live.chat.id,
+              done,
+              total,
+            }),
+          architecture,
         ),
       );
     } catch (error) {

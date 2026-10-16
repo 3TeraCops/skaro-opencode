@@ -118,6 +118,7 @@ it('submit_result saves review truthfully and shows each task its own merge card
   const tool = submitResultTool((args, scope) => runs!.submitResult(args, scope));
   for (const task of [first, second]) {
     const view = await runs.open(fixture.projectId, task.id);
+    await fixture.review(task.id);
     const result = await tool.call(
       {
         summary: 'Accepted result',
