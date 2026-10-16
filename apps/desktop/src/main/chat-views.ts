@@ -1,6 +1,7 @@
 import { type ChatRecord } from '@skaro/core';
 import type { ChatSettings, ChatSummary, ChatView } from '../shared/ipc';
 import { lastKey } from './chat-settings-helpers';
+import { serializeChatMutation } from './chat-mutations';
 
 import type { ChatEngine } from './chat-engine';
 
@@ -38,6 +39,11 @@ export class ChatViews {
 
   async open(projectId: string, chatId: string): Promise<ChatView> {
     const live = await this.ctx.history.restore(projectId, chatId);
+    await serializeChatMutation(live, async () => {
+      await this.ctx.replans.recover(live);
+      await this.ctx.planReview.consolidate(live);
+      await this.ctx.planDecisions.drain(live);
+    });
     return {
       projectId,
       chat: this.summary(live.chat),

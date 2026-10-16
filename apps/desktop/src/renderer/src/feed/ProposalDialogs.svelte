@@ -6,15 +6,17 @@
   const proposal = $derived(state.proposal);
 </script>
 
-{#if proposal.type === 'doc' || proposal.type === 'task' || proposal.type === 'spec_change'}
+{#if proposal.type === 'doc' || proposal.type === 'task' || proposal.type === 'spec_change' || proposal.type === 'task_replan'}
   <Modal
     bind:open={state.viewer}
     width={760}
-    title={proposal.type === 'doc'
-      ? proposal.path
-      : proposal.type === 'spec_change'
-        ? `SPEC-${proposal.id} · ${proposal.title}`
-        : `${proposal.id} · ${proposal.title}`}
+    title={proposal.type === 'task_replan'
+      ? proposal.title
+      : proposal.type === 'doc'
+        ? proposal.path
+        : proposal.type === 'spec_change'
+          ? `SPEC-${proposal.id} · ${proposal.title}`
+          : `${proposal.id} · ${proposal.title}`}
     subtitle={t('proposal.viewer.subtitle')}
   >
     <div class="viewer"><Markdown text={proposal.after} /></div>

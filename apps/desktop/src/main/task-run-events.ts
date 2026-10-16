@@ -1,5 +1,5 @@
 import { type TaskRuntime } from '@skaro/core';
-import { persistsAfterTurn, type TimelineEvent } from '@skaro/timeline';
+import { currentActivity, persistsAfterTurn, type TimelineEvent } from '@skaro/timeline';
 import { errorText } from './session-log';
 import { FLUSH_MS } from './task-run-helpers';
 import { ActiveRun } from './task-run-model';
@@ -14,12 +14,23 @@ export class TaskRunEvents {
   }
 
   onEvent(active: ActiveRun, event: TimelineEvent): void {
+    if (this.ctx.active.get(`${active.projectId}\n${active.taskId}`) !== active) return;
+    const affectsActivity =
+      event.t === 'activity' ||
+      event.t === 'status' ||
+      event.t === 'turn.started' ||
+      event.t === 'turn.completed' ||
+      event.t === 'item.upsert';
+    const beforeActivity = affectsActivity ? currentActivity(active.timeline.state) : undefined;
     active.timeline.apply(event);
     active.seq++;
     active.pending.push(event);
     active.flushTimer ??= setTimeout(() => this.ctx.history.flush(active), FLUSH_MS);
-    const { projectId, taskId } = active;
     if (active.switching) return;
+    const { projectId, taskId } = active;
+    // Text deltas repeat the same activity; reload the board only when its icon changes.
+    if (affectsActivity && beforeActivity !== currentActivity(active.timeline.state))
+      this.ctx.changed(projectId, taskId);
     switch (event.t) {
       case 'session.started':
         if (event.nativeSessionId && event.nativeSessionId !== active.run.nativeSessionId) {
@@ -48,7 +59,17 @@ export class TaskRunEvents {
         this.settleRuntime(active);
         return;
       case 'turn.completed':
-        if (!event.continuing) void this.onTurnCompleted(active, event.outcome);
+        if (!event.continuing) {
+          const pending = this.onTurnCompleted(active, event.outcome);
+          active.operations.add(pending);
+          void pending.then(
+            () => active.operations.delete(pending),
+            (error: unknown) => {
+              active.operations.delete(pending);
+              this.ctx.history.notice(active, 'other', 'error', errorText(error));
+            },
+          );
+        }
         return;
     }
   }
@@ -58,18 +79,21 @@ export class TaskRunEvents {
     outcome: 'done' | 'interrupted' | 'failed',
   ): Promise<void> {
     this.settleRuntime(active);
-    active.release?.();
-    active.release = undefined;
-    // The slot is free: environments of idle tasks beyond the limit stop now.
-    this.ctx.limitEnvironments();
     const after = active.afterTurn;
-    if (after) {
-      active.afterTurn = undefined;
-      await after().catch((error: unknown) =>
-        this.ctx.history.notice(active, 'other', 'error', errorText(error)),
-      );
-      return;
+    try {
+      if (after)
+        await after().catch((error: unknown) =>
+          this.ctx.history.notice(active, 'other', 'error', errorText(error)),
+        );
+    } finally {
+      // Keep cleanup ownership through detach: releasing its slot may trigger another sweep.
+      if (active.afterTurn === after) active.afterTurn = undefined;
+      active.release?.();
+      active.release = undefined;
+      this.ctx.queue.poke();
+      this.ctx.limitEnvironments();
     }
+    if (after) return;
     const { projectId, taskId } = active;
     const context = this.ctx.project(projectId);
     try {
@@ -77,12 +101,15 @@ export class TaskRunEvents {
       if (task.status === 'done') return;
       const label = `${task.id} · ${task.title}`;
       if (outcome === 'failed') {
-        // An error does not move the task back: it keeps its stage, the runtime says "failed".
         this.ctx.deps.db.addEvent(projectId, 'task_failed', { task: taskId });
-        this.ctx.setRuntime(projectId, taskId, 'failed', active.run.id);
         this.ctx.deps.notify?.('error', label);
-        this.ctx.results.statusChanged(projectId, taskId);
-        return;
+        // An accepted result stays in review: the broken turn is in the feed, the task did not fail.
+        if (task.status !== 'review') {
+          // An error does not move the task back: it keeps its stage, the runtime says "failed".
+          this.ctx.setRuntime(projectId, taskId, 'failed', active.run.id);
+          this.ctx.results.statusChanged(projectId, taskId);
+          return;
+        }
       }
       // The turn ended: "На ревью" only when every criterion is ticked, else the agent waits
       // for the user ("Нужен ответ", derived from "В работе" with no agent working).
@@ -102,6 +129,7 @@ export class TaskRunEvents {
   }
 
   settleRuntime(active: ActiveRun): void {
+    if (active.switching) return;
     const s = active.timeline.state;
     const state: TaskRuntime = s.interactions.some((i) => i.kind !== 'merge')
       ? 'waiting'
@@ -115,6 +143,7 @@ export class TaskRunEvents {
   }
 
   failTurn(active: ActiveRun, error: unknown): void {
+    if (active.switching) return;
     const turn = active.timeline.state.turns.at(-1);
     if (turn && !turn.outcome) {
       for (const i of active.timeline.state.interactions) {

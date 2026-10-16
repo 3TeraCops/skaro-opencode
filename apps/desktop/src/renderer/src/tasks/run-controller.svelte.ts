@@ -1,90 +1,54 @@
-import { t } from '@skaro/ui';
-import type { AgentId, RunSlots, TaskSummary } from '../../../shared/ipc';
-import { AgentModels, effortLabel } from './agent-models.svelte';
-import { canStart, statusLabel } from './model';
+import type { AgentSettings, RunSlots } from '../../../shared/ipc';
 import type { RunProps } from './run-props';
+import { runSettings } from './run-settings';
 
 export function createRunController(p: RunProps) {
-  let choice = $state<AgentId | 'task'>('claude-code');
-  let modelId = $state('');
-  let slots = $state<RunSlots>({ total: 3, free: 3 });
-  const models = new AgentModels();
+  let settings = $state<AgentSettings>();
+  let sandboxHolds = $state<boolean>();
+  let slots = $state<RunSlots>({ total: 0, free: 0 });
 
   $effect(() => {
-    void window.skaro.invoke('tasks.slots').then((s) => (slots = s));
+    const projectId = p.projectId;
+    const taskId = p.tasks[0]?.id;
+    if (!taskId) return;
+    let cancelled = false;
+    void Promise.all([
+      window.skaro.invoke('project.settings', projectId),
+      window.skaro.invoke('task.open', projectId, taskId),
+      window.skaro.invoke('tasks.slots'),
+    ])
+      .then(([project, view, available]) => {
+        if (cancelled) return;
+        settings = runSettings(project, view.settings, !!view.run);
+        sandboxHolds = view.sandboxHolds;
+        slots = available;
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        console.error(error);
+        p.onclose();
+      });
+    return () => {
+      cancelled = true;
+    };
   });
 
-  $effect(() => {
-    const agent = choice;
-    if (agent === 'task') return;
-    void models.load(agent, p.projectId).then(() => (modelId = models.model()?.id ?? ''));
-  });
-
-  const runnable = $derived(p.tasks.filter(canStart));
-  const blocked = $derived(p.tasks.some((x) => x.status === 'blocked'));
-  const model = $derived(models.model(modelId));
-  const options = $derived(
-    models.list.map((m) => {
-      const effort = models.effort(m);
-      return {
-        value: m.id,
-        label: effort ? `${m.name} · ${effortLabel(effort).toLowerCase()}` : m.name,
-      };
-    }),
-  );
-
-  function note(task: TaskSummary): {
-    text: string;
-    tone: 'blocked' | 'now' | 'queue' | 'stage';
-  } {
-    if (task.status === 'blocked') {
-      return { text: t('board.waits', { deps: task.waitsFor.join(', ') }), tone: 'blocked' };
-    }
-    if (!canStart(task)) return { text: statusLabel(task.status), tone: 'queue' };
-    const before = task.after;
-    if (before) return { text: t('board.rd.after', { task: before }), tone: 'stage' };
-    return runnable.filter((x) => !x.after).indexOf(task) < slots.free
-      ? { text: t('board.rd.now'), tone: 'now' }
-      : { text: t('board.rd.queue'), tone: 'queue' };
-  }
-
-  function confirm(): void {
-    if (choice === 'task') return p.onconfirm();
-    const effort = models.effort(model);
-    p.onconfirm({
-      agent: choice,
-      ...(model ? { model: model.id } : {}),
-      ...(effort ? { effort } : {}),
-    });
+  async function confirm(next: AgentSettings): Promise<void> {
+    for (const task of p.tasks)
+      await window.skaro.invoke('task.setSettings', p.projectId, task.id, next);
+    await p.onconfirm();
   }
 
   return {
-    p,
-    get choice() {
-      return choice;
+    get settings() {
+      return settings;
     },
-    set choice(value: typeof choice) {
-      choice = value;
-    },
-    get modelId() {
-      return modelId;
-    },
-    set modelId(value: typeof modelId) {
-      modelId = value;
+    get sandboxHolds() {
+      return sandboxHolds;
     },
     get slots() {
       return slots;
     },
-    get runnable() {
-      return runnable;
-    },
-    get blocked() {
-      return blocked;
-    },
-    get options() {
-      return options;
-    },
-    note,
     confirm,
   };
 }

@@ -25,7 +25,7 @@ export type StageProps = {
   /** «Запустить», «Продолжить», «Остановить». */
   onrun?: (action: 'run' | 'stop') => void;
   ontoggle: () => void;
-  onmenu: (action: 'open' | 'mergeFinished' | 'discuss' | 'archive' | 'restore' | 'delete') => void;
+  onmenu: (action: 'open' | 'discuss' | 'archive' | 'restore' | 'delete') => void;
   onhover: (id: string | undefined) => void;
   onopen: (taskId: string) => void;
   onrestore?: (taskId: string) => void;

@@ -4,6 +4,7 @@
 import type { InteractionAnswer, TimelineEvent } from './model.ts';
 import type { ProjectionContext } from './projection.ts';
 import type { RawLine } from './replay.ts';
+import type { AgentLimits } from './limits.ts';
 
 /** Skaro permission modes (architecture.md 5.4). */
 export type PermissionMode = 'ask' | 'auto' | 'full';
@@ -52,6 +53,8 @@ export interface SessionOptions {
   mcpServers?: Record<string, McpServer>;
   /** Extra variables of the agent's process and of the commands it runs. */
   env?: Record<string, string>;
+  /** Records OS process ownership synchronously before admitting task work. */
+  processStarted?: (pid: number) => void;
   /** Whether the agent sandbox holds the workspace boundary (self-check, D-28). */
   sandboxVerified?: boolean;
   /** Agent-specific sandbox setting chosen by the self-check (Codex on Windows: elevated/unelevated). */
@@ -144,6 +147,8 @@ export interface AgentAdapter {
   listCommands(cwd: string): Promise<AgentCommand[]>;
   /** The user's agent settings: MCP servers (connected at start, no model call), skills, hooks. */
   userConfig(cwd: string): Promise<AgentUserConfig>;
+  /** Subscription windows from the account, without a model call. */
+  limits(cwd: string): Promise<AgentLimits>;
   /** D-28: does the sandbox hold the workspace boundary on this machine? */
   checkSandbox(scratchDir: string): Promise<SandboxCheck>;
   start(options: SessionOptions): Promise<AgentSession>;

@@ -33,21 +33,6 @@
       "startedAt": 15
     },
     {
-      "id": "mcp-claude.ai Google Drive",
-      "kind": "notice",
-      "level": "warning",
-      "code": "mcp_failed",
-      "text": "claude.ai Google Drive: needs-auth",
-      "status": "done",
-      "native": {
-        "agent": "claude",
-        "type": "notice",
-        "ref": "mcp-claude.ai Google Drive"
-      },
-      "turnId": "turn-1",
-      "startedAt": 2248
-    },
-    {
       "id": "toolu_01ViYpYcsaLsCxDP8nu325WZ",
       "kind": "explore",
       "op": "read",
@@ -113,7 +98,7 @@
       "startedAt": 6860
     },
     {
-      "id": "d37930e9-8558-4a27-9b94-fa239fd8db33-img-6",
+      "id": "d37930e9-8558-4a27-9b94-fa239fd8db33-img-5",
       "kind": "image",
       "source": "viewed",
       "image": {

@@ -1,26 +1,40 @@
 <script lang="ts">
   import { Icon, t } from '@skaro/ui';
-  import type { TaskStatus } from '../../../shared/ipc';
-  import { boardStatus, STATUS_META, statusLabel } from './model';
+  import type { MergeProgress, TaskStatus } from '../../../shared/ipc';
+  import { boardStatus, mergeKey, STATUS_META, statusLabel, type BoardStatus } from './model';
 
   /**
    * Status with its icon, in the colour of the status (list view of the Tasks mockup). A task
-   * of a stage says more: done and waiting for the merge of the stage, or waiting its turn.
+   * waiting its turn in a shared checkout says after which one; an accepted task whose merge is
+   * at work or failed says that with the mark of that state.
    */
   let {
     status,
-    stageDone = false,
     after,
-  }: { status: TaskStatus; stageDone?: boolean; after?: string | undefined } = $props();
+    merge,
+    mergeAfter,
+  }: {
+    status: TaskStatus;
+    after?: string | undefined;
+    merge?: MergeProgress | undefined;
+    /** In line for the merge behind this task. */
+    mergeAfter?: string | undefined;
+  } = $props();
 
-  const kind = $derived(boardStatus(status));
+  // A conflict is the work of the task itself: its own status says whether the agent is at it.
+  const MERGE: Record<Exclude<MergeProgress, 'conflict'>, BoardStatus> = {
+    running: 'working',
+    queued: 'working',
+    needs_answer: 'need',
+    failed: 'error',
+  };
+  const own = $derived(!merge || merge === 'conflict');
+  const kind = $derived(merge && merge !== 'conflict' ? MERGE[merge] : boardStatus(status));
+  const label = $derived(merge ? t(`board.merge.${mergeKey(merge, status)}`) : statusLabel(status));
+  const pulse = $derived(own ? status !== 'queued' : merge === 'running');
 </script>
 
-{#if stageDone}
-  <span class="status stage">
-    <Icon name="check" size={12} stroke={2.4} />{t('board.stage.done')}
-  </span>
-{:else if after}
+{#if after}
   <span class="status stage">
     <Icon name="clock" size={12} stroke={2.1} />{t('board.stage.queue')}
     <span class="mono">{after}</span>
@@ -28,7 +42,7 @@
 {:else}
   <span class="status" style="color: {STATUS_META[kind].color}">
     {#if kind === 'working'}
-      <span class="dot" class:pulse={status !== 'queued'}></span>
+      <span class="dot" class:pulse></span>
     {:else if kind === 'need'}
       <Icon name="message" size={12} stroke={2.1} />
     {:else if kind === 'review'}
@@ -49,7 +63,9 @@
         stroke-width="2"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3" /></svg
       >
     {/if}
-    {statusLabel(status)}
+    {label}{#if mergeAfter}<span class="after"
+        >· {t('board.stage.after')} <span class="mono">{mergeAfter}</span></span
+      >{/if}
   </span>
 {/if}
 
@@ -69,6 +85,10 @@
 
   .mono {
     font-family: var(--sk-mono);
+    font-weight: 400;
+  }
+
+  .after {
     font-weight: 400;
   }
 

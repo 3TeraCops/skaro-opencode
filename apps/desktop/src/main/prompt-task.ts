@@ -79,6 +79,10 @@ export function taskInstructions(options: {
     '## Working with Skaro\n\n' +
       [
         '- The user talks to you in the task chat.',
+        '- Include verification in submit_result: named executable build and affected behavior checks ' +
+          'you actually ran, so Skaro can repeat them when integrating accepted results. Use real project ' +
+          'services; do not add mock services or tests for unrelated behavior. If Skaro reports pending ' +
+          'integration, end the turn and leave the accepted checkout untouched: it continues automatically.',
         '- Skaro supplies a task-local Playwright MCP server. Use its browser tools for UI ' +
           'verification; a Codex desktop browser or personal Chrome connection is not required. ' +
           'The browser uses an isolated profile. If Chrome is missing, report the blocker.',

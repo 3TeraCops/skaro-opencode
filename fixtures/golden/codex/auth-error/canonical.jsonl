@@ -2,7 +2,9 @@
 {"t":"status","state":"working"}
 {"t":"turn.started","turnId":"01a0d50f-8493-7993-850a-9e921c112787"}
 {"t":"item.upsert","item":{"id":"01a0d50f-870b-7541-9a5e-25c4f5626fd9","turnId":"01a0d50f-8493-7993-850a-9e921c112787","kind":"message","role":"user","text":"Say hi.","status":"done","native":{"agent":"codex","type":"userMessage","ref":"01a0d50f-870b-7541-9a5e-25c4f5626fd9"},"startedAt":1330}}
+{"t":"activity","state":"waiting_model"}
 {"t":"item.upsert","item":{"id":"01a0d50f-870b-7541-9a5e-25c4f5626fd9","turnId":"01a0d50f-8493-7993-850a-9e921c112787","kind":"message","role":"user","text":"Say hi.","status":"done","native":{"agent":"codex","type":"userMessage","ref":"01a0d50f-870b-7541-9a5e-25c4f5626fd9"},"startedAt":1330}}
+{"t":"activity","state":"waiting_model"}
 {"t":"item.upsert","item":{"id":"retry-01a0d50f-8493-7993-850a-9e921c112787","kind":"notice","level":"warning","code":"retry","text":"Reconnecting... 2/5","status":"done","native":{"agent":"codex","type":"notice","ref":"retry-01a0d50f-8493-7993-850a-9e921c112787"},"turnId":"01a0d50f-8493-7993-850a-9e921c112787","startedAt":2360}}
 {"t":"item.upsert","item":{"id":"retry-01a0d50f-8493-7993-850a-9e921c112787","kind":"notice","level":"warning","code":"retry","text":"Reconnecting... 3/5","status":"done","native":{"agent":"codex","type":"notice","ref":"retry-01a0d50f-8493-7993-850a-9e921c112787"},"turnId":"01a0d50f-8493-7993-850a-9e921c112787","startedAt":2360}}
 {"t":"item.upsert","item":{"id":"retry-01a0d50f-8493-7993-850a-9e921c112787","kind":"notice","level":"warning","code":"retry","text":"Reconnecting... 4/5","status":"done","native":{"agent":"codex","type":"notice","ref":"retry-01a0d50f-8493-7993-850a-9e921c112787"},"turnId":"01a0d50f-8493-7993-850a-9e921c112787","startedAt":2360}}

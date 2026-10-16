@@ -19,10 +19,6 @@
 }
 
 /* Done in its stage and waiting for the merge of the stage. */
-.row.stage-done[data-task-list] {
-  opacity: 0.55;
-}
-
 .head[data-task-list] {
   padding: 8px 12px;
   font-size: var(--sk-fs-2);

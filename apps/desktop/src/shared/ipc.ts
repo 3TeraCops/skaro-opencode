@@ -3,6 +3,7 @@
 
 import type {
   AgentCommand,
+  AgentLimits,
   AgentModel,
   AgentUserConfig,
   InteractionAnswer,
@@ -112,6 +113,8 @@ export interface Methods {
   /** `projectId` '' lists models outside a project (Settings). */
   'agents.models': (agent: AgentId, projectId: string) => AgentModel[];
   'agents.commands': (agent: AgentId, projectId: string) => AgentCommand[];
+  /** Account quotas; no task/model is started. */
+  'agents.limits': (agent: AgentId) => AgentLimits;
   /** "Ваши настройки агента": folder, MCP servers with their state, skills, hooks. */
   'agents.config': (agent: AgentId) => AgentUserConfig;
   'agents.openConfigDir': (agent: AgentId) => void;
@@ -141,8 +144,6 @@ export interface Methods {
   'stages.run': (projectId: string, stageId: string, message: string) => void;
   /** «Остановить»: the working agent stops, the waiting tasks leave the queue. */
   'stages.stop': (projectId: string, stageId: string) => void;
-  /** «Влить готовое»: a merge card for the finished tasks in the feed of the stage. */
-  'stages.mergeFinished': (projectId: string, stageId: string) => void;
   /** Milestones in plan order. */
   'plan.milestones': (projectId: string) => MilestoneInfo[];
   /** Deletes a milestone without started tasks, together with its tasks. */
@@ -174,6 +175,8 @@ export interface Methods {
   /** "Показать в папке". */
   'docs.reveal': (projectId: string, path: string) => void;
   'task.open': (projectId: string, taskId: string) => TaskView;
+  'task.openExternal': (projectId: string, taskId: string, url: string) => void;
+  'task.stopEnvironmentReview': (projectId: string, taskId: string) => void;
   'task.send': (projectId: string, taskId: string, input: MessageInput) => void;
   'task.respond': (
     projectId: string,
@@ -222,6 +225,8 @@ export interface Methods {
   /** Current uncommitted changes of a file in the task's (or the project's) working folder. */
   'files.diff': (projectId: string, taskId: string, path: string) => FileDiff;
   'files.pick': (kind: 'images' | 'files' | 'folder') => PickedFile[];
+  /** Saves the native clipboard image to the attachment store. */
+  'files.pasteImage': () => PickedFile | undefined;
   'shell.openExternal': (url: string) => void;
 }
 
@@ -238,6 +243,14 @@ export interface Events {
     taskId: string;
     runId: string;
     /** Index of the first event in the run's timeline. */
+    seq: number;
+    events: TimelineEvent[];
+  };
+  /** Candidate history has its own cursor; text deltas never invalidate task metadata. */
+  'integration.events': {
+    projectId: string;
+    taskId: string;
+    integrationId: string;
     seq: number;
     events: TimelineEvent[];
   };

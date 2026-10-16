@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { submitResultTool, type SubmitResultArgs } from './tools.ts';
+import { verifyIntegrationTool } from './integration-tool.ts';
 
 const scope = { kind: 'task' as const, projectId: 'p', taskId: 'T-001', runId: 'r' };
 
@@ -71,4 +72,42 @@ describe('submit_result', () => {
     expect(tool.available?.(scope)).toBe(true);
     expect(tool.available?.({ kind: 'project_chat', projectId: 'p', chatId: 'c' })).toBe(false);
   });
+
+  it('preserves executable acceptance checks and rejects malformed plans', async () => {
+    let got: SubmitResultArgs | undefined;
+    const tool = submitResultTool(async (args) => {
+      got = args;
+      return { text: 'ok' };
+    });
+    const args = {
+      summary: 'accepted',
+      commit_message: 'feat: change',
+      criteria: [{ number: 1, met: true, evidence: 'actual build' }],
+      verification: [{ name: 'build and affected tests', run: 'pnpm build && pnpm test affected' }],
+    };
+    expect((await tool.call(args, scope)).isError).toBeUndefined();
+    expect(got?.verification).toEqual(args.verification);
+    expect(
+      (await tool.call({ ...args, verification: [{ name: 'build', run: ' ' }] }, scope)).isError,
+    ).toBe(true);
+  });
+});
+
+it('only the integration scope can pass a structured verification plan', async () => {
+  const integration = { ...scope, kind: 'integration' as const, integrationId: 'candidate' };
+  let runs = 0;
+  const tool = verifyIntegrationTool(async (checks) => {
+    runs++;
+    return { text: checks[0]!.run };
+  });
+  expect(tool.available?.(scope)).toBe(false);
+  expect(tool.available?.(integration)).toBe(true);
+  expect((await tool.call({ checks: [{ name: 'build', run: 'pnpm build' }] }, scope)).isError).toBe(
+    true,
+  );
+  expect((await tool.call({ checks: [] }, integration)).isError).toBe(true);
+  expect(await tool.call({ checks: [{ name: 'build', run: 'pnpm build' }] }, integration)).toEqual({
+    text: 'pnpm build',
+  });
+  expect(runs).toBe(1);
 });

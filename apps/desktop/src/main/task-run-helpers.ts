@@ -2,7 +2,7 @@ import {
   displayStatus,
   indexTasks,
   isBlocked,
-  pendingDependencies,
+  unmergedDependencies,
   type ProjectArtifacts,
   type Task,
   type TaskRuntime,
@@ -10,7 +10,7 @@ import {
 } from '@skaro/core';
 import type { AgentId, RunInfo, TaskDetail, TaskRef, TaskSummary } from '../shared/ipc';
 import { taskSections } from './task-body';
-import { stageOf, stageIdOf } from './task-stage';
+import { stageIdOf } from './task-stage';
 import { subjectOf } from './task-subject';
 
 import type { ActiveRun } from './task-run-model';
@@ -65,11 +65,10 @@ export function summary(
   const milestone = artifacts.milestones.find((m) => m.id === task.milestone);
   const spec = task.spec ? artifacts.specs.find((s) => s.id === task.spec) : undefined;
   const base = ref(task, index, runtime);
-  const waitsFor = isBlocked(task, index) ? pendingDependencies(task, index) : [];
+  const waitsFor = isBlocked(task, index) ? unmergedDependencies(task, index) : [];
   return {
     ...base,
     ...(base.status === 'blocked' && !waitsFor.length ? { status: 'todo' as const } : {}),
-    ...(stageOf(task, artifacts) ? { staged: true } : {}),
     stage: task.status,
     ...(milestone ? { milestone: { id: milestone.id, title: milestone.title } } : {}),
     ...(spec ? { spec: { id: spec.id, title: spec.title, path: spec.path } } : {}),

@@ -63,7 +63,8 @@
     {projectId}
     {settings}
     {agents}
-    locked={view.run !== undefined}
+    locked={view.agentSwitchBlocked ?? controller.timeline?.status === 'working'}
+    isolationLocked={view.run !== undefined}
     {...view.task.branch ? { branch: view.task.branch } : {}}
     {...view.sandboxHolds !== undefined ? { sandboxHolds: view.sandboxHolds } : {}}
     onsave={controller.saveSettings}

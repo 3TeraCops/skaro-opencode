@@ -3,8 +3,10 @@
   import Feed from '../feed/Feed.svelte';
   import PinnedZone from '../feed/PinnedZone.svelte';
   import Composer from './Composer.svelte';
+  import EnvironmentReviewBanner from './EnvironmentReviewBanner.svelte';
   import SessionBanners from './SessionBanners.svelte';
   import TaskCollapsedHeader from './TaskCollapsedHeader.svelte';
+  import TaskStarting from './TaskStarting.svelte';
   import type { TaskController } from './task-controller.svelte';
   import './task-conversation.css';
   let {
@@ -34,9 +36,7 @@
   const stage = $derived(view?.stage);
   const left = $derived(stage ? stage.info.total - stage.info.finished : 0);
   // A merge card of the stage («Влить готовое») shows before the acceptance wrote anything.
-  const hasFeed = $derived(
-    !!timeline && (timeline.items.length > 0 || (!!stage && timeline.interactions.length > 0)),
-  );
+  const hasFeed = $derived(controller.hasFeed);
 </script>
 
 <div class="main task-conversation">
@@ -59,6 +59,10 @@
         error={controller.actionError ?? controller.session.error}
         ondismiss={() => (controller.actionError = undefined)}
       />
+      <EnvironmentReviewBanner
+        state={view.environmentReview}
+        onfinish={controller.stopEnvironmentReview}
+      />
     </div>
 
     {#if timeline && hasFeed}
@@ -72,12 +76,12 @@
       <div class="empty">
         <Icon name="clock" size={30} stroke={1.5} color="var(--sk-text-29)" />
         <span class="empty-text"
-          >{#if stage}{t('task.stage.queued')}{:else if view.task.staged && view.after}{t(
-              'task.queued.stage',
-            )}
+          >{#if stage}{t('task.stage.queued')}{:else if view.after}{t('task.queued.stage')}
             <span class="mono">{view.after}</span>{:else}{t('task.queued')}{/if}</span
         >
       </div>
+    {:else if controller.starting}
+      <div class="empty"><TaskStarting /></div>
     {:else if controller.running}
       <div class="empty"><span class="fd-pulse"></span></div>
     {:else}
@@ -103,7 +107,11 @@
             class="start"
             data-tip={view.slotsFree ? t('task.start.tip') : t('task.start.queue.tip')}
             onclick={() =>
-              void controller.send({ text: t('task.start.message') }).catch(() => undefined)}
+              void (
+                stage || !view.slotsFree
+                  ? controller.send({ text: t('task.start.message') })
+                  : controller.start()
+              ).catch(() => undefined)}
           >
             <Icon name="play" size={13} stroke={2} />
             {view.slotsFree ? t('task.start') : t('task.start.queue')}

@@ -12,6 +12,8 @@ export class ProjectTasks {
   loaded = $state(false);
   private readonly projectId: string;
   private readonly stop: () => void;
+  private reloading?: Promise<void>;
+  private reloadAgain = false;
 
   constructor(projectId: string) {
     this.projectId = projectId;
@@ -27,7 +29,23 @@ export class ProjectTasks {
     };
   }
 
-  async reload(): Promise<void> {
+  reload(): Promise<void> {
+    if (this.reloading) {
+      this.reloadAgain = true;
+      return this.reloading;
+    }
+    this.reloading = (async () => {
+      do {
+        this.reloadAgain = false;
+        await this.load();
+      } while (this.reloadAgain);
+    })().finally(() => {
+      this.reloading = undefined;
+    });
+    return this.reloading;
+  }
+
+  private async load(): Promise<void> {
     const [tasks, milestones, stages, slots] = await Promise.all([
       window.skaro.invoke('tasks.list', this.projectId).catch(() => []),
       window.skaro.invoke('plan.milestones', this.projectId).catch(() => []),

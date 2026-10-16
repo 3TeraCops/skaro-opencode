@@ -14,7 +14,7 @@ afterEach(async () => {
 });
 
 it.each(['squash', 'merge', 'rebase'] as const)(
-  'publishes concurrent milestone results together using %s and keeps source heads immutable',
+  'publishes the accepted tasks of a milestone one by one using %s and keeps source heads immutable',
   async (strategy) => {
     const context = fixture.context;
     const stage = await context.store.createMilestone({ title: 'Parallel stage' });
@@ -32,7 +32,7 @@ it.each(['squash', 'merge', 'rebase'] as const)(
     ]);
     expect(results[0]).toEqual(results[1]);
     expect(await context.git.head()).toBe(results[0]!.commit);
-    expect(fixture.journal.operations()).toHaveLength(1);
+    expect(fixture.journal.operations()).toHaveLength(2);
     for (const [index, task] of tasks.entries()) {
       expect((await context.store.readTask(task.id)).status).toBe('done');
       expect((await git(fixture.repo, ['show', `HEAD:${task.path}`])).stdout).toContain(
@@ -47,12 +47,12 @@ it.each(['squash', 'merge', 'rebase'] as const)(
     if (strategy === 'squash')
       expect(
         Number((await git(fixture.repo, ['rev-list', '--count', `${before}..HEAD`])).stdout),
-      ).toBe(1);
+      ).toBe(2);
     const commit = results[0]!.commit;
     await fixture.restart();
     await fixture.reconcile();
     expect((await fixture.coordinator.merge(fixture.projectId, stage.id)).commit).toBe(commit);
-    expect(fixture.journal.operations()).toHaveLength(1);
+    expect(fixture.journal.operations()).toHaveLength(2);
   },
   30_000,
 );
@@ -112,7 +112,7 @@ it('preserves unrelated staged, unstaged, untracked and ignored owner data', asy
   expect(await readFile(join(fixture.repo, 'data', 'database'), 'utf8')).toBe('ignored owner data');
 }, 30_000);
 
-it('does not publish failed checks and succeeds after the owner fixes their command', async () => {
+it('runs only the configured project checks at the merge and keeps the task in review when one fails', async () => {
   const task = await fixture.task('Checked task');
   const context = fixture.context;
   const config = (await context.load()).config;
@@ -123,7 +123,9 @@ it('does not publish failed checks and succeeds after the owner fixes their comm
   await fixture.commit();
   await fixture.accept(task, await fixture.checkout(task));
   const before = await context.git.head();
-  await expect(fixture.coordinator.merge(fixture.projectId, task.id)).rejects.toThrow();
+  await expect(fixture.coordinator.merge(fixture.projectId, task.id)).rejects.toThrow('exit 7');
+  // No candidate, environment or agent stands behind a merge: it is a Git operation.
+  expect(fixture.integrations.deps.store.all(fixture.projectId)).toEqual([]);
   expect(await context.git.head()).toBe(before);
   expect((await context.store.readTask(task.id)).status).toBe('review');
   await context.store.writeConfig({

@@ -3,6 +3,7 @@ import type { AgentId, ChatSettings } from '../shared/ipc';
 import { saved, lastOf, settingsKey, lastKey } from './chat-settings-helpers';
 
 import type { ChatEngine } from './chat-engine';
+import { withAgentDefaults } from './agent-model-defaults';
 
 export class ChatConfiguration {
   private readonly ctx: ChatEngine;
@@ -45,25 +46,7 @@ export class ChatConfiguration {
 
   /** Model and effort are always explicit, never inherited (agent-output.md 9.1). */
   async withDefaults(agent: AgentId, cwd: string, settings: ChatSettings): Promise<ChatSettings> {
-    // Defaults from Settings → Agents come first, then the agent's own default.
-    const preset = this.ctx.deps.agents.defaults(agent);
-    if (!settings.model && preset.model) {
-      settings = {
-        ...settings,
-        model: preset.model,
-        ...(preset.effort && !settings.effort ? { effort: preset.effort } : {}),
-      };
-    }
-    if (settings.model && settings.effort) return settings;
-    const models = await this.ctx.deps.agents.listModels(agent, cwd).catch(() => []);
-    const model =
-      models.find((m) => m.id === settings.model) ?? models.find((m) => m.isDefault) ?? models[0];
-    if (!model) return settings;
-    const effort =
-      settings.effort ??
-      model.defaultEffort ??
-      (model.efforts.some((e) => e.id === 'medium') ? 'medium' : model.efforts[0]?.id);
-    return { ...settings, model: model.id, ...(effort ? { effort } : {}) };
+    return withAgentDefaults(this.ctx.deps.agents, agent, cwd, settings);
   }
 
   /** An absent agent is inactive: nothing starts until it is downloaded and signed in. */

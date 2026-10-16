@@ -3,6 +3,7 @@ export * from './artifacts/model.ts';
 export * from './artifacts/frontmatter.ts';
 export * from './artifacts/slug.ts';
 export * from './artifacts/store.ts';
+export { readEnvironment } from './artifacts/environment.ts';
 export * from './status.ts';
 export * from './db/appdb.ts';
 export * from './git/git.ts';

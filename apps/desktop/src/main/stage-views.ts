@@ -2,6 +2,7 @@
 // read from the task files, the runtime of the agents and the queue.
 
 import {
+  hasFailed,
   indexTasks,
   isBlocked,
   pendingDependencies,
@@ -11,6 +12,7 @@ import {
   type TaskRuntime,
 } from '@skaro/core';
 import type { StageInfo } from '../shared/ipc';
+import type { IntegrationOperation } from './integration-model';
 import { stageTasks } from './task-stage';
 
 const finished = (task: Task) => task.status === 'review' || task.status === 'done';
@@ -42,10 +44,17 @@ export function stageInfo(
     awaiting: ReadonlySet<string>;
     /** The acceptance of the stage has been started at least once. */
     accepted: boolean;
+    /** Integrations of the project: the merge of the stage is the last one of its tasks. */
+    integrations: readonly IntegrationOperation[];
   },
 ): StageInfo {
   const tasks = orderedStageTasks(stage, artifacts);
   const state = (id: string) => runtime.get(id)?.state;
+  // The merge works on accepted results: its tasks stay in review, the stage says how it goes.
+  const merge = options.integrations.findLast(
+    (op) => op.purpose === 'publication' && tasks.some((t) => t.id === op.taskId),
+  );
+  const all = indexTasks(artifacts.tasks);
   const base = {
     id: stage.id,
     finished: tasks.filter(finished).length,
@@ -55,10 +64,12 @@ export function stageInfo(
   };
   if (tasks.length && tasks.every((t) => t.status === 'done')) return { ...base, state: 'done' };
 
-  const failed = tasks.find((t) => state(t.id) === 'failed');
+  const failed = tasks.find((t) => hasFailed(t, state(t.id)));
   if (failed) return { ...base, state: 'error', task: failed.id };
+  if (merge?.state === 'failed') return { ...base, state: 'error', task: merge.taskId };
   const running = tasks.find((t) => state(t.id) === 'running');
   if (running) return { ...base, state: 'running', task: running.id };
+  if (merge?.executor) return { ...base, state: 'running', task: merge.taskId };
   const waiting = tasks.find(
     (t) => state(t.id) === 'waiting' || (t.status === 'in_progress' && state(t.id) !== 'queued'),
   );
@@ -73,11 +84,10 @@ export function stageInfo(
   if (tasks.some((t) => t.status !== 'todo')) return { ...base, state: 'stopped' };
 
   // Not started. It cannot be while its first task waits for a task of another stage.
-  const index = indexTasks(artifacts.tasks);
   const first = tasks[0];
-  if (first && tasks.every((t) => isBlocked(t, index))) {
-    const dep = pendingDependencies(first, index)
-      .map((id) => index.get(id))
+  if (first && tasks.every((t) => isBlocked(t, all))) {
+    const dep = pendingDependencies(first, all)
+      .map((id) => all.get(id))
       .find((t) => t && t.milestone !== stage.id);
     if (dep) {
       return {

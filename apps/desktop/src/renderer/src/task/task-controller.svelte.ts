@@ -5,6 +5,7 @@ import type { AgentInfo, AgentSettings, MergeAction, MessageInput } from '../../
 import { provideFeed } from '../feed/context.svelte';
 import { modelEffort, modelName } from '../feed/format';
 import { TaskSession } from './session.svelte';
+import { TaskStartState } from './task-start-state';
 
 export function createTaskController(
   projectId: string,
@@ -22,16 +23,32 @@ export function createTaskController(
   let modal = $state(false);
   let viewer = $state<string | undefined>();
   let actionError = $state<string | undefined>();
+  const startState = $state({ pending: false });
+  // svelte-ignore state_referenced_locally
+  const startRequest = new TaskStartState(startState);
 
   const view = $derived(session.view);
   const timeline = $derived(session.timeline);
+  const hasFeed = $derived(
+    !!timeline &&
+      (timeline.items.length > 0 || (!!view?.stage && timeline.interactions.length > 0)),
+  );
   const settings = $derived(view?.settings);
   const started = $derived((timeline?.items.length ?? 0) > 0 || view?.queued === true);
   const running = $derived(timeline !== undefined && timeline.status !== 'idle');
+  $effect(() => {
+    startRequest.update({
+      hasFeed,
+      queued: view?.queued === true,
+      error: !!(actionError || session.error),
+    });
+  });
+  // A live integration works in this feed with its own agent: the model shown is that agent's.
+  const live = $derived(view?.timelineSources?.integrations.findLast((s) => s.live && s.agent));
   const agentInfo = $derived(
-    getAgents().find((a) => a.id === (view?.run?.agent ?? settings?.agent)),
+    getAgents().find((a) => a.id === (live?.agent ?? view?.run?.agent ?? settings?.agent)),
   );
-  const cwd = $derived(view?.run?.worktree);
+  const cwd = $derived(view?.executionWorktree ?? view?.run?.worktree);
   const openQuestion = $derived(timeline?.interactions.find((i) => i.kind === 'question'));
   const openApproval = $derived(timeline?.interactions.find((i) => i.kind === 'approval'));
 
@@ -47,7 +64,11 @@ export function createTaskController(
   });
   const modelLabel = $derived(modelName(timeline?.session?.model || settings?.model, models));
   const effort = $derived(
-    modelEffort(timeline?.session?.model || settings?.model, settings?.effort, models),
+    modelEffort(
+      timeline?.session?.model || settings?.model,
+      live ? live.effort : settings?.effort,
+      models,
+    ),
   );
 
   // The screen of a stage: before every task is done its field is closed.
@@ -94,6 +115,16 @@ export function createTaskController(
     await guard(() => window.skaro.invoke('task.send', projectId, taskId, input));
   }
 
+  async function start(): Promise<void> {
+    if (!startRequest.begin()) return;
+    try {
+      await send({ text: t('task.start.message') });
+    } catch (error) {
+      startRequest.cancel();
+      throw error;
+    }
+  }
+
   function respond(id: string, answer: InteractionAnswer): Promise<void> {
     return guard(() => window.skaro.invoke('task.respond', projectId, taskId, id, answer));
   }
@@ -120,7 +151,10 @@ export function createTaskController(
     existing: (paths) =>
       window.skaro.invoke('files.exist', projectId, taskId, paths).catch(() => []),
     fileDiff: (path) => window.skaro.invoke('files.diff', projectId, taskId, path),
-    openExternal: (url) => void window.skaro.invoke('shell.openExternal', url),
+    openExternal: (url) =>
+      void guard(() => window.skaro.invoke('task.openExternal', projectId, taskId, url)).catch(
+        () => undefined,
+      ),
     viewImage: (src) => (viewer = src),
     stopBackground: (id) =>
       void guard(() => window.skaro.invoke('task.stopBackground', projectId, taskId, id)).catch(
@@ -138,19 +172,30 @@ export function createTaskController(
   return {
     session,
     send,
+    start,
     saveSettings,
     setPermission,
+    stopEnvironmentReview: () =>
+      void guard(() => window.skaro.invoke('task.stopEnvironmentReview', projectId, taskId)).catch(
+        () => undefined,
+      ),
     get view() {
       return view;
     },
     get timeline() {
       return timeline;
     },
+    get hasFeed() {
+      return hasFeed;
+    },
     get settings() {
       return settings;
     },
     get running() {
       return running;
+    },
+    get starting() {
+      return startState.pending;
     },
     get agentInfo() {
       return agentInfo;

@@ -1,5 +1,4 @@
-import { existsSync } from 'node:fs';
-import { segmentTurns, type AgentSession } from '@skaro/timeline';
+import { isRunLogMeta, segmentTurns, runEvent, type AgentSession } from '@skaro/timeline';
 import type { AgentId } from '../shared/ipc';
 import { taskInstructions } from './prompt';
 import { acceptanceInstructions } from './prompt-acceptance';
@@ -10,6 +9,8 @@ import { key, settingsKey, findTask } from './task-run-helpers';
 import { ActiveRun } from './task-run-model';
 import { checkoutKey, ownsCheckout, stageIdOf } from './task-stage';
 import type { TaskRunEngine } from './task-run-engine';
+import { handoffRecord } from './task-handoff-record';
+import { taskRunDirectory } from './task-run-directory';
 
 const ENVIRONMENT_TOOL_TIMEOUT_MS = 30 * 60_000;
 
@@ -21,6 +22,12 @@ export class TaskRunSessions {
   }
 
   attach(active: ActiveRun): Promise<AgentSession> {
+    if (active.switching) return Promise.reject(new Error('The agent is being changed.'));
+    if (this.ctx.deps.db.getRun(active.run.id)?.retiredAt !== undefined)
+      return Promise.reject(
+        new Error('The run belongs to a deleted task. Start the current task in a new session.'),
+      );
+    taskRunDirectory(this.ctx.project(active.projectId).root, active.run);
     if (active.session) return Promise.resolve(active.session);
     active.attaching ??= this.startSession(active).finally(() => (active.attaching = undefined));
     return active.attaching;
@@ -33,19 +40,22 @@ export class TaskRunSessions {
     if (!artifacts.tasks.some((task) => task.id === taskId))
       throw new Error('Milestones have no agent sessions. Use a task or the project chat.');
     const task = findTask(artifacts, taskId);
+    const cwd = taskRunDirectory(context.root, run);
     const agent = run.agent as AgentId;
     await this.ctx.views.ensureAgent(agent);
+    await this.ctx.processes.stop(run.id);
     const settings = await this.ctx.views.withDefaults(
       agent,
       context.root,
       this.ctx.views.settings(projectId, task, artifacts),
     );
+    // A started session keeps the exact resolved model/effort when project defaults change.
+    this.ctx.deps.db.setSetting(settingsKey(projectId, taskId), settings);
     const sandbox =
       settings.permissionMode === 'auto' ? await this.ctx.deps.agents.sandbox(agent) : undefined;
     const resume = run.nativeSessionId;
-    // Completed runs retain their worktree; old runs whose folder is gone use the main copy.
-    const inWorktree = run.worktree !== undefined && existsSync(run.worktree);
-    const cwd = inWorktree ? run.worktree! : context.root;
+    const handoff = handoffRecord(run);
+    const inWorktree = run.worktree !== undefined;
 
     const segment = active.segments++;
     this.ctx.history.writeLine(active, {
@@ -66,30 +76,35 @@ export class TaskRunSessions {
     try {
       session = await this.ctx.deps.agents.adapter(agent).start({
         cwd,
+        processStarted: (pid) => this.ctx.processes.started(run.id, pid),
         ...(settings.model ? { model: settings.model } : {}),
         ...(settings.effort ? { effort: settings.effort } : {}),
         permissionMode: settings.permissionMode,
         planFirst: settings.planFirst,
-        instructions: acceptance
-          ? acceptanceInstructions({
-              stage: acceptance,
-              artifacts,
-              root: context.root,
-              cwd,
-              branch: run.branch ?? '',
-              locale: this.ctx.deps.locale(),
-              managedEnvironment: environment?.config !== undefined,
-            })
-          : taskInstructions({
-              task,
-              artifacts,
-              root: context.root,
-              cwd,
-              ...(inWorktree && run.branch ? { branch: run.branch } : {}),
-              ...(inWorktree && stage ? { stage } : {}),
-              locale: this.ctx.deps.locale(),
-              managedEnvironment: environment?.config !== undefined,
-            }),
+        instructions:
+          (acceptance
+            ? acceptanceInstructions({
+                stage: acceptance,
+                artifacts,
+                root: context.root,
+                cwd,
+                branch: run.branch ?? '',
+                locale: this.ctx.deps.locale(),
+                managedEnvironment: environment?.config !== undefined,
+              })
+            : taskInstructions({
+                task,
+                artifacts,
+                root: context.root,
+                cwd,
+                ...(inWorktree && run.branch ? { branch: run.branch } : {}),
+                ...(inWorktree && stage ? { stage } : {}),
+                locale: this.ctx.deps.locale(),
+                managedEnvironment: environment?.config !== undefined,
+              })) +
+          (handoff
+            ? `\n\n${handoff.context}\n\nUser messages queued before handoff: ${JSON.stringify(handoff.inputs)}`
+            : ''),
         ...(environment ? { env: environment.variables } : {}),
         mcpServers: {
           playwright: await taskBrowserServer(this.ctx.deps.dataDir, run.id),
@@ -105,8 +120,18 @@ export class TaskRunSessions {
         ...(sandbox ? { sandboxVerified: sandbox.holds } : {}),
         ...(sandbox?.mode ? { sandboxMode: sandbox.mode } : {}),
         ...(resume ? { resume } : {}),
-        raw: (line) =>
-          this.ctx.history.writeLine(active, { ...line, ts: Date.now() - run.startedAt }),
+        raw: (line) => {
+          let meta = line.line;
+          if (line.dir === 'meta' && isRunLogMeta(meta) && meta.skaro === 'event') {
+            const event = segmentTurns(segment, meta.event);
+            meta = { ...meta, event: run.previousRunId ? runEvent(event, run.id) : event };
+          }
+          this.ctx.history.writeLine(active, {
+            ...line,
+            line: meta,
+            ts: Date.now() - run.startedAt,
+          });
+        },
         context: this.ctx.deps.attachments.context(),
       });
     } catch (error) {
@@ -117,7 +142,7 @@ export class TaskRunSessions {
     }
     active.session = session;
     if (resume) this.ctx.history.notice(active, 'session_restored', 'info', '');
-    void this.pump(active, session, segment);
+    active.pumping = this.pump(active, session, segment);
     this.ctx.changed(projectId, taskId);
     return session;
   }
@@ -125,12 +150,16 @@ export class TaskRunSessions {
   async pump(active: ActiveRun, session: AgentSession, segment: number): Promise<void> {
     try {
       for await (const event of session.events) {
-        this.ctx.events.onEvent(active, segmentTurns(segment, event));
+        const scoped = segmentTurns(segment, event);
+        this.ctx.events.onEvent(
+          active,
+          active.run.previousRunId ? runEvent(scoped, active.run.id) : scoped,
+        );
       }
     } catch (error) {
       this.ctx.events.failTurn(active, error);
     }
-    if (active.session === session) {
+    if (active.session === session && !active.switching) {
       active.session = undefined;
       active.grant?.revoke();
       active.grant = undefined;
@@ -143,10 +172,13 @@ export class TaskRunSessions {
   }
 
   async detach(active: ActiveRun): Promise<void> {
+    // An attachment already in flight must not publish a new process after cleanup has run.
+    await active.attaching?.catch(() => undefined);
     const session = active.session;
     active.session = undefined;
     active.grant?.revoke();
     active.grant = undefined;
+    await this.ctx.processes.stop(active.run.id);
     await session?.close().catch(() => undefined);
     this.ctx.history.flush(active);
     // A closed session ends no turn by itself: its slot must not stay taken.
@@ -154,38 +186,76 @@ export class TaskRunSessions {
     active.release = undefined;
   }
 
+  /** A handoff must prove shutdown; a timeout/error leaves the old run frozen for retry. */
+  async stopForHandoff(active: ActiveRun): Promise<void> {
+    active.grant?.revoke();
+    active.grant = undefined;
+    const session = active.session;
+    if (session) {
+      for (const item of active.timeline.state.items)
+        if (item.kind === 'command' && item.background?.state === 'running')
+          await session.stopBackground(item.background.taskId);
+      await this.ctx.processes.stop(active.run.id);
+      await session.close();
+      await active.pumping;
+      active.session = undefined;
+    } else await this.ctx.processes.stop(active.run.id);
+  }
+
   async close(): Promise<void> {
+    // Releasing a review slot during shutdown must not launch a queued agent turn.
+    for (const queued of this.ctx.queue.state().queued) this.ctx.queue.cancel(queued);
+    await this.ctx.reviews.close();
+    await this.ctx.integrations.close();
     await this.ctx.merges.close();
     await Promise.all([...this.ctx.active.values()].map((a) => this.detach(a)));
     for (const active of this.ctx.active.values()) active.log?.end();
+    await this.ctx.environments
+      .close()
+      .catch((error) => console.error('Environment shutdown:', error));
     await this.ctx.environments.idle();
   }
 
   async forget(projectId: string, taskId: string): Promise<void> {
     const k = key(projectId, taskId);
-    this.ctx.queue.cancel(k);
-    this.ctx.queuedInputs.delete(k);
+    if (
+      this.ctx.integrations.store
+        .all(projectId)
+        .some(
+          (op) =>
+            (op.taskId === taskId || op.results.some((result) => result.taskId === taskId)) &&
+            (op.worker || op.executor),
+        )
+    )
+      throw new Error('Stop the task integration before deleting its checkout.');
     const git = this.ctx.project(projectId).git;
     const runs = this.ctx.deps.db.listRuns(projectId, taskId);
     // The checkout, the branch and the environment of a stage belong to its other tasks too:
     // deleting one task leaves them alone.
     const own = runs.filter(ownsCheckout);
-    // The disposable environment goes first: its containers would hold the checkout.
-    if (own.length === runs.length) await this.ctx.removeEnvironment({ projectId, taskId });
-    // Check every retained folder before mutating sessions, records or branches.
-    for (const run of own) if (run.worktree) await git.assertRemovableWorktree(run.worktree);
+    const worktrees = new Set(own.flatMap((run) => (run.worktree ? [run.worktree] : [])));
+    const branches = new Set(own.flatMap((run) => (run.branch ? [run.branch] : [])));
     const active = this.ctx.active.get(k);
+    if (active?.switching) throw new Error('The agent is being changed; retry after the handoff.');
+    this.ctx.queue.cancel(k);
+    this.ctx.queuedInputs.delete(k);
+    await this.ctx.reviews.stop(projectId, taskId);
+    // No writer may recreate services or keep using them while deletion removes the environment.
+    if (active) await this.detach(active);
+    else for (const run of runs) await this.ctx.processes.stop(run.id);
+    // Containers retain checkout mounts even while stopped, so release them before Git's check.
+    if (own.length === runs.length) await this.ctx.removeEnvironment({ projectId, taskId });
+    // A failed preflight keeps the task, history and checkout available for recovery.
+    for (const worktree of worktrees) await git.assertRemovableWorktree(worktree);
     if (active) {
-      await this.detach(active);
       active.log?.end();
       this.ctx.active.delete(k);
     }
     for (const run of runs) {
       if (!run.endedAt) this.ctx.deps.db.finishRun(run.id, 'interrupted');
-      if (!ownsCheckout(run)) continue;
-      if (run.worktree) await git.removeWorktree(run.worktree);
-      if (run.branch) await git.deleteBranch(run.branch);
     }
+    for (const worktree of worktrees) await git.removeWorktree(worktree);
+    for (const branch of branches) await git.deleteBranch(branch);
     this.ctx.deps.db.setSetting(settingsKey(projectId, taskId), null);
     this.ctx.setRuntime(projectId, taskId, 'idle');
     await this.ctx.stages.sync(projectId, taskId);

@@ -1,7 +1,7 @@
 // "Задачи" (Tasks mockup): statuses as the board shows them, columns, filters and list groups.
 
 import { t } from '@skaro/ui';
-import type { AgentId, TaskStatus, TaskSummary } from '../../../shared/ipc';
+import type { AgentId, MergeProgress, TaskStatus, TaskSummary } from '../../../shared/ipc';
 
 /** The eight statuses of the mockup; "queued" counts as "В работе" everywhere but its label. */
 export type BoardStatus =
@@ -84,8 +84,8 @@ export interface Column {
 }
 
 /**
- * The column a task belongs to; a failed task stays where it failed (in progress, in review).
- * A cancelled task has no column.
+ * The column a task belongs to; a failed task stays in the column of its stage (the main process
+ * never shows a task in review as failed). A cancelled task has no column.
  */
 export function columnOf(task: TaskSummary): Column['key'] | undefined {
   switch (boardStatus(task.status)) {
@@ -156,13 +156,23 @@ export function groups(
 
 export { canStart } from './task-rules';
 
-/** Done in the branch of its stage: it waits for the merge of the stage, not for the user. */
-export function waitsStageMerge(task: TaskSummary): boolean {
-  return task.status === 'review' && !!task.staged;
+/** How the merge of a finished task goes: `note` after the milestone id, `tip` on its mark. */
+export function mergeWords(task: TaskSummary): { note: string; tip: string } | undefined {
+  if (!task.merge) return undefined;
+  const key = mergeKey(task.merge, task.status);
+  return { note: t(`board.stage.merge.${key}`), tip: t(`board.merge.${key}`) };
 }
 
+/** The agent of the task resolves its conflict only while it works on the task. */
+export function mergeKey(merge: MergeProgress, status: TaskStatus): string {
+  return merge === 'conflict' && status !== 'in_progress' ? 'conflict.idle' : merge;
+}
+
+/** Accepted and waiting for its merge by Skaro itself: nothing for the owner to do. */
+const mergesItself = (task: TaskSummary) => task.merge === 'queued' || task.merge === 'running';
+
 export function needsYou(task: TaskSummary): boolean {
-  return task.status === 'needs_answer' || (task.status === 'review' && !task.staged);
+  return task.status === 'needs_answer' || (task.status === 'review' && !mergesItself(task));
 }
 
 const ACTIVE_ORDER = { need: 0, review: 1, working: 2 } as const;
@@ -177,7 +187,7 @@ export function activeTasks(
   const kindOf = (task: TaskSummary): keyof typeof ACTIVE_ORDER | undefined =>
     task.status === 'needs_answer'
       ? 'need'
-      : task.status === 'review' && !task.staged
+      : task.status === 'review' && !mergesItself(task)
         ? 'review'
         : task.status === 'in_progress' || task.status === 'queued'
           ? 'working'

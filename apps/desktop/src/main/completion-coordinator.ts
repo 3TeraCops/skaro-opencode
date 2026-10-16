@@ -1,21 +1,20 @@
-import { git } from '@skaro/core';
+import type { ProjectCheck } from '@skaro/core';
 import { CompletionMonitor } from './completion-monitor';
 import type { TaskRunDeps } from './task-run-model';
-import {
-  CompletionStore,
-  criteriaRevision,
-  type CompletionOperation,
-  type TaskResult,
-} from './completion-store';
+import { CompletionStore, type CompletionOperation, type TaskResult } from './completion-store';
+import { captureResult } from './completion-capture';
 import { acceptedResult, assertResultUnchanged } from './completion-results';
-import { publishCompletion } from './completion-publication';
+import { publishCandidate, publishCompletion, retireCandidates } from './completion-publication';
+import { mergeMilestoneTasks } from './completion-milestone';
 import { finishCompletion } from './completion-projection';
 import { reconcileCompletions } from './completion-recovery';
-import { taskSections, withSummary } from './task-body';
 import type { ProjectContext } from './projects';
-import { stageIdOf } from './task-stage';
+import type { IntegrationService } from './integration-service';
+import type { IntegrationOperation } from './integration-model';
+import { assertPublicationDependencies } from './completion-dependencies';
 
 export interface CompletionHooks {
+  integrations: IntegrationService;
   deps: Pick<TaskRunDeps, 'db' | 'projects' | 'emit'>;
   busy: (projectId: string, taskId: string) => boolean;
   completed: (
@@ -24,11 +23,14 @@ export interface CompletionHooks {
     unblocked: string[],
   ) => Promise<void>;
   failed: (projectId: string, taskId: string | undefined, error: string) => void;
+  /** Hands a merge conflict to the agent of the task; false when the task has no run to ask. */
+  conflicted?: (projectId: string, taskId: string, conflicts: string[]) => Promise<boolean>;
 }
 
 /** Owns execution facts and publication. It never needs a chat, agent session or timeline. */
 export class CompletionCoordinator {
   private readonly pending = new Map<string, Promise<unknown>>();
+  private readonly mergingNow = new Map<string, string>();
   private readonly monitor: CompletionMonitor;
   private closed = false;
   private readonly hooks: CompletionHooks;
@@ -48,7 +50,7 @@ export class CompletionCoordinator {
         reconcileCompletions(context, this.hooks, (projectId, taskId, error) =>
           this.monitor.report(projectId, taskId, error),
         ),
-      merge: (projectId, target) => this.performMerge(projectId, target, false),
+      merge: (projectId, target) => this.performMerge(projectId, target),
     });
   }
 
@@ -89,59 +91,82 @@ export class CompletionCoordinator {
     worktree: string,
     message: string,
     summary?: string,
+    verification?: ProjectCheck[],
   ): Promise<void> {
-    return this.serialized(`${projectId}\n${taskId}`, async () => {
-      const context = this.hooks.deps.projects.get(projectId);
-      context.invalidate();
-      const task = await context.store.readTask(taskId);
-      if (task.status === 'done') return;
-      if (taskSections(task.body).criteria.some((criterion) => !criterion.done))
-        throw new Error(`${taskId}: acceptance criteria are unfinished`);
-      await context.git.commitAll(worktree, message);
-      const head = await context.git.head('HEAD', worktree);
-      const store = new CompletionStore(this.hooks.deps.db, projectId);
-      const result: TaskResult = {
+    return this.serialized(`${projectId}\n${taskId}`, () =>
+      captureResult(this.hooks, {
+        projectId,
         taskId,
         branch,
         worktree,
-        sharedCheckout: !!stageIdOf({ projectId, taskId, worktree }),
-        head,
         message,
-        criteria: criteriaRevision(task),
-        ...(summary ? { summary } : {}),
-        pendingReview: true,
-      };
-      await git(context.root, ['update-ref', `refs/skaro/results/${taskId}/${head}`, head]);
-      store.saveResult(result);
-      await context.store.updateTask(taskId, {
-        status: 'review',
-        ...(!task.branch && !result.sharedCheckout ? { branch } : {}),
-        ...(summary ? { body: withSummary(task.body, summary) } : {}),
-      });
-      store.saveResult({ ...result, pendingReview: false });
-      store.issue(taskId);
-      context.invalidate();
-      this.hooks.deps.emit('project.changed', { projectId });
+        summary,
+        verification,
+      }),
+    );
+  }
+
+  /** The task whose result is being merged into the base branch right now. */
+  merging(projectId: string): string | undefined {
+    return this.mergingNow.get(projectId);
+  }
+
+  /** Merges a task; a milestone id merges its accepted tasks one by one, dependencies first. */
+  merge(projectId: string, target: string, _partial = false, message?: string) {
+    return this.serialized(projectId, async () => {
+      await this.captured(projectId);
+      return this.performMerge(projectId, target, message);
     });
   }
 
-  merge(projectId: string, target: string, partial = false, message?: string) {
-    return this.serialized(projectId, async () => {
-      await Promise.all(
-        [...this.pending]
-          .filter(([key]) => key.startsWith(`${projectId}\n`))
-          .map(([, pending]) => pending),
+  /** Publishes a candidate that an integration resolved before merges went per task. */
+  publishCandidate(candidate: IntegrationOperation) {
+    return this.serialized(candidate.projectId, async () => {
+      await this.captured(candidate.projectId);
+      return this.mergeResults(
+        candidate.projectId,
+        candidate.results.map((result) => result.taskId),
+        candidate.message,
+        candidate,
       );
-      return this.performMerge(projectId, target, partial, message);
     });
+  }
+
+  private captured(projectId: string): Promise<unknown> {
+    return Promise.all(
+      [...this.pending]
+        .filter(([key]) => key.startsWith(`${projectId}\n`))
+        .map(([, pending]) => pending),
+    );
   }
 
   private async performMerge(
     projectId: string,
     target: string,
-    partial: boolean,
     message?: string,
-  ) {
+  ): Promise<{ commit: string; base: string }> {
+    const context = this.hooks.deps.projects.get(projectId);
+    context.invalidate();
+    const artifacts = await context.load();
+    if (artifacts.tasks.some((item) => item.id === target))
+      return this.mergeResults(projectId, [target], message);
+    return mergeMilestoneTasks(
+      this.hooks,
+      projectId,
+      target,
+      (taskId, text) => this.mergeResults(projectId, [taskId], text),
+      message,
+    );
+  }
+
+  /** One publication: a task, or the tasks of a candidate resolved before merges went per task. */
+  private async mergeResults(
+    projectId: string,
+    ids: string[],
+    message?: string,
+    candidate?: IntegrationOperation,
+  ): Promise<{ commit: string; base: string }> {
+    const target = ids[0]!;
     const context = this.hooks.deps.projects.get(projectId);
     await this.reconcile(context);
     context.invalidate();
@@ -151,18 +176,11 @@ export class CompletionCoordinator {
     );
     if (configProblems.length)
       throw new Error(configProblems.map((problem) => problem.message).join('\n'));
-    const task = artifacts.tasks.find((item) => item.id === target);
-    const stage = artifacts.milestones.find((item) => item.id === (task?.milestone ?? target));
-    const scope = stage
-      ? artifacts.tasks.filter(
-          (item) => item.milestone === stage.id && !item.archived && item.status !== 'cancelled',
-        )
-      : task
-        ? [task]
-        : [];
+    const scope = artifacts.tasks.filter((item) => ids.includes(item.id));
     if (!scope.length) throw new Error(`No tasks to merge: ${target}`);
-    if (!partial && scope.some((item) => !['review', 'done'].includes(item.status)))
-      throw new Error(`${target}: not every task has an accepted result`);
+    const stage = candidate
+      ? artifacts.milestones.find((item) => item.id === candidate.target)
+      : undefined;
     const tasks = scope.filter((item) => item.status === 'review');
     const store = new CompletionStore(this.hooks.deps.db, projectId);
     if (!tasks.length) {
@@ -178,34 +196,68 @@ export class CompletionCoordinator {
     }
     const results: TaskResult[] = [];
     for (const item of tasks) results.push(await acceptedResult(this.hooks.deps.db, context, item));
+    assertPublicationDependencies(artifacts, results, store);
     for (const result of results) {
       if (this.reverted(store, result))
         throw new Error(`${result.taskId}: merge was reverted; submit a revised result`);
       await assertResultUnchanged(context, result);
     }
-    const operation = store.create(
-      artifacts.config.baseBranch,
-      results,
-      artifacts.config.merge.strategy,
-    );
+    const operation =
+      store
+        .operations()
+        .findLast(
+          (op) =>
+            op.state === 'integrating' &&
+            op.base === artifacts.config.baseBranch &&
+            JSON.stringify(op.results.map((r) => r.head)) ===
+              JSON.stringify(results.map((r) => r.head)),
+        ) ?? store.create(artifacts.config.baseBranch, results, artifacts.config.merge.strategy);
+    const text =
+      message?.trim() ||
+      (stage
+        ? `${stage.id}: ${stage.title}\n\n${results.map((r) => r.message).join('\n')}`
+        : results[0]!.message);
     try {
-      await publishCompletion(
-        context,
-        artifacts,
-        store,
-        operation,
-        message?.trim() ||
-          (stage
-            ? `${stage.id}: ${stage.title}\n\n${results.map((r) => r.message).join('\n')}`
-            : results[0]!.message),
-      );
+      if (candidate) {
+        if (
+          JSON.stringify(candidate.results.map((r) => r.head)) !==
+          JSON.stringify(results.map((r) => r.head))
+        )
+          throw new Error(`${target}: accepted results changed after the candidate was resolved`);
+        operation.integrationId = candidate.id;
+        store.save(operation);
+        await publishCandidate(
+          context,
+          artifacts,
+          store,
+          operation,
+          text,
+          this.hooks.integrations,
+          candidate,
+        );
+      } else {
+        // The older candidates of the task are over: its merge is a Git operation of its own.
+        retireCandidates(this.hooks.integrations, projectId, ids);
+        this.mergingNow.set(projectId, target);
+        this.hooks.deps.emit('project.changed', { projectId });
+        try {
+          await publishCompletion(context, artifacts, store, operation, text);
+        } finally {
+          this.mergingNow.delete(projectId);
+        }
+      }
       await finishCompletion(this.hooks, context, store, operation);
+      if (candidate) {
+        candidate.state = 'applied';
+        this.hooks.integrations.save(candidate);
+      }
       return { commit: operation.commit!, base: operation.base };
     } catch (error) {
       // A published candidate must be projected even if a later notification failed.
       operation.error = String(error);
       if (operation.state !== 'completed') operation.state = 'failed';
       store.save(operation);
+      this.hooks.deps.emit('project.changed', { projectId });
       throw error;
     }
   }

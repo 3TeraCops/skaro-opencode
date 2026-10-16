@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { parse } from 'yaml';
 import { desktop, bundleMetadata } from './bundle-metadata.mjs';
 import { agentPackage } from '../../../packages/core/src/agents/pins.ts';
-import { parseRelease, updateFeedName } from '../src/main/update-release.ts';
+import { mergeReleaseParts, parseRelease, updateFeedName } from '../src/main/update-release.ts';
+import { releaseAssets } from './release-assets.mjs';
 
 const dir = join(desktop, 'release');
 const mode = process.argv[2];
@@ -72,15 +73,14 @@ if (mode === 'platform') {
   const parts = (await readdir(dir)).filter((name) =>
     /^skaro-release-(win32|darwin|linux)-(x64|arm64)\.json$/.test(name),
   );
-  const manifest = { schema: 1, ...bundle, platforms: {} };
+  const manifests = [];
   for (const name of parts) {
     const part = parseRelease(JSON.parse(await readFile(join(dir, name), 'utf8')));
-    if (JSON.stringify({ ...part, platforms: {} }) !== JSON.stringify(manifest))
-      throw new Error('Release parts have different pinned bundles');
-    Object.assign(manifest.platforms, part.platforms);
+    if (Object.keys(part.platforms).join() !== name.slice(14, -5))
+      throw new Error(`Release part platform does not match its filename: ${name}`);
+    manifests.push(part);
   }
-  if (Object.keys(manifest.platforms).length !== 6)
-    throw new Error('All six supported release platforms must pass before publication');
-  parseRelease(manifest);
+  const manifest = mergeReleaseParts(bundle, manifests);
+  await releaseAssets(dir, manifest);
   await writeFile(join(dir, 'skaro-release.json'), JSON.stringify(manifest, null, 2) + '\n');
 } else throw new Error('Usage: node scripts/release-manifest.mjs platform|merge');

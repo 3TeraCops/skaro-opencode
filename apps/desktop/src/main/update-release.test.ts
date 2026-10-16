@@ -5,6 +5,8 @@ import { recoveryDecision } from './update-recovery';
 import {
   changedComponents,
   newer,
+  mergeReleaseParts,
+  PLATFORM_KEYS,
   parseRelease,
   releasePlatform,
   updateFeedName,
@@ -128,4 +130,45 @@ describe('release compatibility', () => {
     expect(updateFeedName('darwin', 'arm64')).toBe('latest-arm64-mac.yml');
     expect(updateFeedName('win32', 'arm64')).toBe('latest-arm64.yml');
   });
+  it('merges all six platforms without comparing the already accumulated platforms', () => {
+    const { platforms: _platforms, schema: _schema, ...bundle } = manifest();
+    const parts = releaseParts();
+    const merged = mergeReleaseParts(bundle, parts);
+    expect(Object.keys(merged.platforms)).toEqual(PLATFORM_KEYS);
+    expect(parts.every((part) => Object.keys(part.platforms).length === 1)).toBe(true);
+    expect(mergeReleaseParts(bundle, parts.toReversed())).toEqual(merged);
+  });
+  it('rejects incomplete, duplicate and mismatched platform bundles before publication', () => {
+    const { platforms: _platforms, schema: _schema, ...bundle } = manifest();
+    const parts = releaseParts();
+    expect(() => mergeReleaseParts(bundle, parts.slice(1))).toThrow('All six');
+    expect(() => mergeReleaseParts(bundle, [...parts, parts[0]!])).toThrow('unique platform');
+    for (const change of [
+      { bundleVersion: '2.0.5' },
+      { skaroVersion: '2.0.5' },
+      { adapters: { ...bundle.adapters, codex: '0.0.1' } },
+    ]) {
+      expect(() =>
+        mergeReleaseParts(bundle, [{ ...parts[0]!, ...change }, ...parts.slice(1)]),
+      ).toThrow('different pinned bundles');
+    }
+  });
 });
+
+/** Pure manifest inputs: no files, binaries, HTTP servers or substituted fetch. */
+function releaseParts(): ReleaseManifest[] {
+  return PLATFORM_KEYS.map((key) => {
+    const part = manifest();
+    const [os, arch] = key.split('-') as [NodeJS.Platform, string];
+    const selected = part.platforms['win32-x64']!;
+    selected.feed = updateFeedName(os, arch);
+    selected.payload.name = `Skaro-2.0.4-${key}${os === 'win32' ? '.exe' : os === 'darwin' ? '.zip' : '.AppImage'}`;
+    for (const id of ['codex', 'claude-code'] as const)
+      selected.agents[id] = {
+        ...selected.agents[id],
+        ...agentPackage(id, { os, arch }, part.agents[id]),
+      };
+    part.platforms = { [key]: selected };
+    return part;
+  });
+}

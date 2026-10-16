@@ -1,19 +1,29 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { taskBranch } from '@skaro/core';
+import { taskBranch, indexTasks, pendingDependencies } from '@skaro/core';
 import { Timeline } from '@skaro/timeline';
 import { findTask, key } from './task-run-helpers';
 import { ActiveRun } from './task-run-model';
 import type { TaskRunEngine } from './task-run-engine';
-import { prepareTaskDependencies } from './task-dependency-checkout';
 import { updateSubject } from './task-subject';
 import { prepareTaskWorktree } from './task-worktree';
+import { serializeTaskMutation } from './project-task-mutations';
 
 /**
  * A new run of a task (or of a stage acceptance): its checkout, its record and its feed. No
  * agent works yet: a turn starts it, and the merge of a stage needs the feed alone.
  */
 export async function createTaskRun(
+  ctx: TaskRunEngine,
+  projectId: string,
+  taskId: string,
+): Promise<ActiveRun> {
+  return serializeTaskMutation(ctx.project(projectId), () =>
+    createLockedTaskRun(ctx, projectId, taskId),
+  );
+}
+
+async function createLockedTaskRun(
   ctx: TaskRunEngine,
   projectId: string,
   taskId: string,
@@ -27,12 +37,15 @@ export async function createTaskRun(
   let branch: string | undefined;
   if (!artifacts.tasks.some((item) => item.id === taskId))
     throw new Error('Milestones have no agent sessions. Open a task or the project chat.');
+  const pending = pendingDependencies(task, indexTasks(artifacts.tasks));
+  if (!task.unblocked && pending.length)
+    throw new Error(`${task.id}: dependencies are not ready: ${pending.join(', ')}`);
   if (
     settings.isolation !== 'worktree' &&
     artifacts.tasks.some((item) => task.dependsOn.includes(item.id) && item.status === 'review')
   )
     throw new Error(
-      'An in-place task must wait until its dependencies are merged. Use worktree isolation for parallel milestone tasks.',
+      'An in-place task must wait until its dependencies are merged. Use worktree isolation to integrate review dependencies.',
     );
   if (settings.isolation === 'worktree') {
     branch = task.branch ?? taskBranch(artifacts.config, task);
@@ -44,7 +57,6 @@ export async function createTaskRun(
       branch,
       base: artifacts.config.baseBranch,
     });
-    await prepareTaskDependencies(ctx, projectId, task, artifacts, worktree);
   }
   await updateSubject(context, taskId, {
     status: 'in_progress',

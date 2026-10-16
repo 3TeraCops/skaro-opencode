@@ -2,7 +2,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { TaskEnvironments } from './task-environments';
-import { db, dir, projectId, projects, repo, taskId, taskRunDeps } from './task-run-test-support';
+import { systemDocker } from './task-environment-docker';
+import { db, dir, projectId, projects, repo, taskId } from './task-run-test-support';
 
 /** Commands that record their run and the variables they got, instead of starting services. */
 const record = (step: string) =>
@@ -19,10 +20,9 @@ async function environments(config: string, hasData: () => boolean) {
     dataDir: dir,
     projects,
     busy: () => [],
-    limit: () => 3,
     finished: async () => false,
     docker: {
-      ...taskRunDeps().docker!,
+      ...systemDocker,
       hasData: async () => hasData(),
       remove: async (_containers, projects) => {
         removed.push(...projects);

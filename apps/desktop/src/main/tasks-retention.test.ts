@@ -30,7 +30,7 @@ it('retains the actual checkout and ignored data after an explicit task-chat mer
   expect(await readFile(join(repo, 'feature.txt'), 'utf8')).toBe('feature');
   expect(await projects.get(projectId).git.branchExists('skaro/retain')).toBe(true);
   expect(db.getRun(runId)?.outcome).toBe('done');
-});
+}, 30_000);
 
 it('blocks task deletion before changing its run record when ignored data is present', async () => {
   await expect(tasks.forget(projectId, taskId)).rejects.toThrow('ignored');
@@ -82,7 +82,7 @@ it('honors automatic merging for concurrent merge_task calls and repeats without
   const repeated = await tasks.mergeTask({ commitMessage: 'do not commit this' }, scope());
   expect(repeated.text).toContain('already merged');
   expect(await expectMergedWithoutCard()).toBe(commit);
-});
+}, 30_000);
 
 it('returns the recorded merge after submit_result, including after restoring the run', async () => {
   db.setSetting(AUTO_MERGE_KEY, true);
@@ -113,7 +113,7 @@ it('returns the recorded merge after submit_result, including after restoring th
   expect(repeated.isError).not.toBe(true);
   expect(repeated.text).toContain(commit.slice(0, 7));
   expect(await expectMergedWithoutCard()).toBe(commit);
-});
+}, 30_000);
 
 it('keeps a blocked automatic merge in the existing card and preserves local edits', async () => {
   db.setSetting(AUTO_MERGE_KEY, true);

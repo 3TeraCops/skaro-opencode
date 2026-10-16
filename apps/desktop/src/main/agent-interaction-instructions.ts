@@ -27,6 +27,10 @@ export function agentInteractionInstructions(): string {
       '- When progress requires an owner decision, put the concrete choice and its consequences ' +
         'in the question tool and wait for its answer before completing dependent work. Do not ' +
         'replace that call with a final answer saying that a question was sent through a card.',
+      '- Frame choices as actions you will carry out with the available tools, not promises for ' +
+        'the owner to do manual work. After a decision, perform the agreed action and check its ' +
+        'result. A selected answer does not itself change settings or start services; do not ' +
+        'claim success until the tool confirms it, or wait for the owner to do the tool work.',
     ].join('\n')
   );
 }

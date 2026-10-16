@@ -47,7 +47,6 @@
       ontoggle={() => model.toggle(stage.milestone.id)}
       onmenu={(action) => {
         if (action === 'open') model.p.onopen(stage.milestone.id);
-        else if (action === 'mergeFinished') void model.mergeFinished(stage.milestone.id);
         else if (action === 'archive') model.setArchived(stage, true);
         else if (action === 'restore') model.setArchived(stage, false);
         else if (action === 'delete') model.modal = { kind: 'delete', milestone: stage.milestone };

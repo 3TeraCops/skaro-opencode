@@ -69,23 +69,29 @@ export class TaskRunStages {
     writeLedger(this.ctx.deps.db, active.projectId, stageId, ledger);
   }
 
+  /**
+   * «Продолжить» of a stage with nothing left to start: its accepted tasks are merged one by
+   * one, dependencies first. Without the automatic merge each task waits for its own card.
+   */
   async accept(projectId: string, stageId: string): Promise<void> {
+    if (this.ctx.deps.db.getSetting<boolean | null>(AUTO_MERGE_KEY, null) !== true) return;
     const context = this.ctx.project(projectId);
     context.invalidate();
     const tasks = orderedStageTasks({ id: stageId }, await context.load());
-    if (!tasks.length || tasks.some((task) => !['review', 'done'].includes(task.status))) return;
-    if (this.ctx.deps.db.getSetting<boolean | null>(AUTO_MERGE_KEY, null) === true)
-      await this.ctx.merges.coordinator.merge(projectId, stageId);
-    else await this.mergeFinished(projectId, stageId);
+    if (!tasks.some((task) => task.status === 'review')) return;
+    await this.ctx.merges.coordinator.merge(projectId, stageId);
   }
 
   async list(projectId: string): Promise<StageInfo[]> {
     const artifacts = await this.ctx.project(projectId).load();
     const runtime = this.ctx.deps.db.getTaskRuntime(projectId);
     const awaiting = new Set(Object.keys(this.ctx.scheduling.awaiting(projectId)));
+    const integrations = this.ctx.integrations.store.all(projectId);
     return [...artifacts.milestones]
       .sort((a, b) => a.order - b.order)
-      .map((stage) => stageInfo(stage, artifacts, runtime, { awaiting, accepted: false }));
+      .map((stage) =>
+        stageInfo(stage, artifacts, runtime, { awaiting, accepted: false, integrations }),
+      );
   }
 
   async start(projectId: string, stageId: string, message: string): Promise<void> {
@@ -109,20 +115,5 @@ export class TaskRunStages {
     this.ctx.scheduling.forgetAwaiting(projectId, ids);
     for (const id of ids) await this.ctx.messages.interrupt(projectId, id);
     this.ctx.deps.emit('project.changed', { projectId });
-  }
-
-  /** The existing merge card lives in an actual task chat. */
-  async mergeFinished(projectId: string, stageId: string): Promise<void> {
-    const context = this.ctx.project(projectId);
-    const task = orderedStageTasks({ id: stageId }, await context.load()).findLast(
-      (item) => item.status === 'review',
-    );
-    if (!task) throw new Error('No accepted results awaiting merge');
-    const active =
-      this.ctx.active.get(key(projectId, task.id)) ??
-      (await this.ctx.history.restore(projectId, task.id));
-    if (!active) throw new Error(`${task.id}: no task history; merge from the project chat`);
-    await this.ctx.merges.showCard(active, context, { partial: true });
-    this.ctx.changed(projectId, task.id);
   }
 }

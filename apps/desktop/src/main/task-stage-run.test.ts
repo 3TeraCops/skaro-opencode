@@ -60,10 +60,10 @@ it('retains accepted SHA provenance in a legacy shared checkout without squashin
   const merged = await fixture.coordinator.merge(fixture.projectId, stage.id);
   expect((await fixture.context.store.readTask(first.id)).status).toBe('done');
   expect((await fixture.context.store.readTask(second.id)).status).toBe('done');
-  expect(fixture.journal.operations()[0]?.results.map((result) => result.head)).toEqual([
-    firstSha,
-    secondSha,
-  ]);
+  // One merge per task, in the order of their commits on the shared branch.
+  expect(fixture.journal.operations().map((op) => op.results.map((result) => result.head))).toEqual(
+    [[firstSha], [secondSha]],
+  );
   expect(await fixture.context.git.head(branch)).toBe(secondSha);
   expect(merged.commit).not.toBe(secondSha);
   expect(existsSync(checkout)).toBe(true);
@@ -117,13 +117,18 @@ it('shows independent own-branch tasks without an artificial stage wait and reta
   const summaries = await runs.list(fixture.projectId);
   expect(summaries.find((item) => item.id === independent.id)?.after).toBeUndefined();
   expect(summaries.find((item) => item.id === dependent.id)?.waitsFor).toContainEqual(first.id);
+  // An accepted dependency does not start the task yet: its merge does.
   await fixture.accept(first, a);
-  const artifacts = await fixture.context.load();
-  expect(
-    isBlocked(
+  const blocked = async () => {
+    fixture.context.invalidate();
+    const artifacts = await fixture.context.load();
+    return isBlocked(
       artifacts.tasks.find((item) => item.id === dependent.id)!,
       indexTasks(artifacts.tasks),
-    ),
-  ).toBe(false);
+    );
+  };
+  expect(await blocked()).toBe(true);
+  await fixture.coordinator.merge(fixture.projectId, first.id);
+  expect(await blocked()).toBe(false);
   expect(fixture.db.listRuns(fixture.projectId, stage.id)).toEqual([]);
 }, 30_000);

@@ -2,6 +2,7 @@ import { copyFile, mkdtemp, open, rename, rm, writeFile } from 'node:fs/promises
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { git } from './command.ts';
+import { GitBaseChangedError } from './git.ts';
 import {
   captureFiles,
   fileImage,
@@ -11,6 +12,7 @@ import {
   type FileImages,
 } from './merge-files.ts';
 import { localMergeObstacles } from './merge-safety.ts';
+import { identicalUntrackedAdditions } from './merge-identical.ts';
 export { captureFiles } from './merge-files.ts';
 
 /** Keep the real index locked, while read-tree carries unrelated staged and unstaged work forward. */
@@ -49,7 +51,7 @@ export async function publishMerge(
       (await git(repo, ['symbolic-ref', '--short', 'HEAD'])).stdout.trim() !== base ||
       (await git(repo, ['rev-parse', 'HEAD'])).stdout.trim() !== before
     )
-      throw new Error('The base branch changed; merge must be checked again');
+      throw new GitBaseChangedError();
     for (const [path, image] of [...managed, ...guards])
       if (!sameImage(image, await fileImage(join(repo, path))))
         throw new Error(`Merge metadata changed during preparation: ${path}`);
@@ -81,6 +83,17 @@ export async function publishMerge(
     const metadata = [...managed.keys()].filter((path) => paths.includes(path));
     if (metadata.length)
       await git(repo, ['restore', `--source=${commit}`, '--staged', '--', ...metadata], { env });
+    const untracked = (await git(repo, ['ls-files', '--others', '-z'])).stdout
+      .split('\0')
+      .filter((path) => paths.includes(path));
+    const identical = await identicalUntrackedAdditions(repo, before, commit, untracked);
+    // Adopt matching additions only in the private index. Their working files need no write.
+    if (identical.length)
+      await git(
+        repo,
+        ['--literal-pathspecs', 'restore', `--source=${commit}`, '--staged', '--', ...identical],
+        { env },
+      );
     // Dry run checks Git's own index/worktree rules before touching any files.
     // Managed files will match the staged target when the actual update runs.
     touched = true;

@@ -5,6 +5,7 @@ import type { InheritableSetting, ProjectConfig } from '@skaro/core';
 import { BUILT_IN_DEFAULTS, type ProjectDefaults, type ProjectSettings } from '../shared/ipc';
 import { syncAgentFiles } from './agent-files';
 import type { Projects } from './projects';
+import { agentDefaultsChanged } from './task-agent-preferences';
 
 export function toSettings(config: ProjectConfig): ProjectSettings {
   return {
@@ -67,7 +68,7 @@ export async function saveProjectSettings(
   projectId: string,
   settings: ProjectSettings,
   locale: string,
-): Promise<void> {
+): Promise<boolean> {
   const context = projects.get(projectId);
   const artifacts = await context.load();
   const problems = artifacts.problems.filter((problem) => problem.path === '.skaro/config.yaml');
@@ -85,6 +86,7 @@ export async function saveProjectSettings(
   if (before.agentFiles !== settings.agentFiles) {
     await syncAgentFiles(context.root, settings.agentFiles, locale);
   }
+  return agentDefaultsChanged(before, next);
 }
 
 /**

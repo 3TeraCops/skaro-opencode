@@ -11,6 +11,11 @@ import type { ProjectContext } from './projects';
 import { type ProposalItem, LiveChat } from './chat-model';
 import { notesKey, currentTurn } from './chat-settings-helpers';
 import { currentDoc, sameText, describe } from './chat-proposal-helpers';
+import { serializeChatMutation } from './chat-mutations';
+import { PlanJournal } from './chat-plan-journal';
+import { TaskReplanJournal } from './task-replan-journal';
+import { serializeTaskMutation } from './project-task-mutations';
+import { taskText } from './chat-proposal-helpers';
 
 import type { ChatEngine } from './chat-engine';
 
@@ -28,10 +33,59 @@ export class ChatProposals {
     action: ProposalAction,
   ): Promise<void> {
     const live = await this.ctx.history.restore(projectId, chatId);
+    return serializeChatMutation(live, () => this.decide(live, itemId, action));
+  }
+
+  private async decide(live: LiveChat, itemId: string, action: ProposalAction): Promise<void> {
+    const { projectId } = live;
+    const chatId = live.chat.id;
+    await this.ctx.planReview.consolidate(live);
     const item = live.timeline.state.items.find(
       (i): i is ProposalItem => i.kind === 'proposal' && i.id === itemId,
     );
     if (!item) throw new Error('The proposal is no longer in the chat');
+    if (item.proposal.type === 'task_replan') {
+      if (action.action === 'apply' || action.action === 'revert') {
+        try {
+          if (action.action === 'apply') await this.ctx.replans.accept(live, item);
+          else await this.ctx.replans.revert(live, item);
+        } catch (error) {
+          this.ctx.replans.failed(live, item, action.action, error);
+          throw error;
+        }
+      } else if (action.action === 'reject' && item.state === 'pending') {
+        if (
+          new TaskReplanJournal(this.ctx.deps.db, projectId)
+            .list()
+            .some((d) => d.item.id === item.id)
+        )
+          throw new Error(
+            'A confirmed replan must finish recovery; it cannot be rejected after writing begins.',
+          );
+        this.ctx.history.skaroEvent(live, {
+          t: 'item.upsert',
+          item: { ...item, state: 'rejected' },
+        });
+        this.addNotes(chatId, [`The user rejected the task replan "${item.proposal.title}".`]);
+        this.ctx.replans.rejected(live, item);
+      } else throw new Error('The replan is already decided or cannot be reverted.');
+      return;
+    }
+    if (item.proposal.type === 'plan' && item.proposal.tasks.length && action.action !== 'revert') {
+      if (action.action === 'apply') {
+        if (item.state === 'pending') await this.ctx.planDecisions.accept(live, item, action.tasks);
+        else if (item.state !== 'accepted') throw new Error('The proposal is already decided');
+      } else if (item.state === 'accepted') {
+        await this.ctx.planDecisions.cancel(live, item);
+      } else if (item.state === 'pending') {
+        new PlanJournal(this.ctx, live).save({ item: { ...item, state: 'rejected' } });
+        this.addNotes(chatId, [`The user rejected ${describe(item.proposal)}.`]);
+      } else throw new Error('The proposal is already decided');
+      await this.ctx.planDecisions.drain(live);
+      this.ctx.deps.emit('project.changed', { projectId });
+      this.ctx.planningContinuation.schedule(live);
+      return;
+    }
     const context = this.ctx.project(projectId);
     let next: ProposalItem;
     let note: string;
@@ -62,7 +116,9 @@ export class ChatProposals {
     }
     this.ctx.history.skaroEvent(live, { t: 'item.upsert', item: next });
     this.addNotes(chatId, [note]);
+    await this.ctx.planDecisions.drain(live);
     this.ctx.deps.emit('project.changed', { projectId });
+    this.ctx.planningContinuation.schedule(live);
   }
 
   async apply(
@@ -73,6 +129,8 @@ export class ChatProposals {
   ): Promise<{ result?: ProposalResult; note: string }> {
     const { store } = context;
     switch (proposal.type) {
+      case 'task_replan':
+        throw new Error('Task replans require a durable package decision.');
       case 'doc': {
         const current = await currentDoc(context, proposal.path);
         if (!sameText(current, proposal.before)) {
@@ -143,8 +201,12 @@ export class ChatProposals {
       case 'plan':
         return this.ctx.plan.applyPlan(live, context, proposal, action.tasks);
       case 'task': {
-        await store.readTask(proposal.id);
-        await store.updateTask(proposal.id, proposal.patch);
+        await serializeTaskMutation(context, async () => {
+          const current = await store.readTask(proposal.id);
+          if (!sameText(taskText(current), proposal.before))
+            throw new Error(`${proposal.id} changed after this proposal.`);
+          await store.updateTask(proposal.id, proposal.patch);
+        });
         this.ctx.deps.db.addEvent(live.projectId, 'task_changed', { task: proposal.id });
         return { note: `The user accepted the change to ${proposal.id} "${proposal.title}".` };
       }
@@ -164,7 +226,9 @@ export class ChatProposals {
   }
 
   proposals(live: LiveChat): ProposalItem[] {
-    return live.timeline.state.items.filter((i): i is ProposalItem => i.kind === 'proposal');
+    return live.timeline.state.items.filter(
+      (i): i is ProposalItem => i.kind === 'proposal' && i.state !== 'superseded',
+    );
   }
 
   addProposal(live: LiveChat, proposal: Proposal, state: ProposalItem['state']): void {

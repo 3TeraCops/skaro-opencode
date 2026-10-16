@@ -67,7 +67,10 @@ export type FeedRow =
 
 /** Skaro's own MCP tools are shown as cards, never as tool rows (agent-output.md 5.4). */
 function hidden(item: Item): boolean {
-  return item.kind === 'tool' && item.server === 'skaro';
+  return (
+    (item.kind === 'tool' && item.server === 'skaro') ||
+    (item.kind === 'proposal' && item.state === 'superseded')
+  );
 }
 
 /**
@@ -161,7 +164,9 @@ export function feedRows(state: TimelineState, parentId?: string): FeedRow[] {
         rows.push({ type: 'tool', id: item.id, item });
         break;
       case 'notice':
-        rows.push({ type: 'notice', id: item.id, item });
+        // «Контекст сжат» says it happened: a compaction still running or failed is no divider.
+        if (item.code !== 'compaction' || item.status === 'done')
+          rows.push({ type: 'notice', id: item.id, item });
         break;
       case 'unknown':
         rows.push({ type: 'unknown', id: item.id, item });
@@ -267,35 +272,4 @@ export function backgroundCommands(state: TimelineState): Of<'command'>[] {
   );
 }
 
-/** Explore summary counts: files read, searches, pages, listings, images viewed. */
-export function exploreCounts(items: Of<'explore'>[]): {
-  read: number;
-  images: number;
-  search: string[];
-  list: number;
-  pages: number;
-  web: string[];
-} {
-  const counts = {
-    read: 0,
-    images: 0,
-    search: [] as string[],
-    list: 0,
-    pages: 0,
-    web: [] as string[],
-  };
-  const seen = new Set<string>();
-  for (const item of items) {
-    if (item.op === 'read') {
-      if (item.image) counts.images++;
-      else if (!seen.has(item.target)) {
-        seen.add(item.target);
-        counts.read++;
-      }
-    } else if (item.op === 'search') counts.search.push(item.target);
-    else if (item.op === 'list') counts.list++;
-    else if (item.op === 'fetch') counts.pages++;
-    else counts.web.push(item.target);
-  }
-  return counts;
-}
+export { exploreCounts } from './feed-explore.ts';

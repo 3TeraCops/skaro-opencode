@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import {
   agentPackage,
   type AgentId,
@@ -7,8 +8,8 @@ import {
 } from '@skaro/core';
 import type { UpdateComponent } from '../shared/updates';
 
-export const RELEASE_ROOT = 'https://github.com/skarodev/skaro/releases';
-export const RELEASE_API = 'https://api.github.com/repos/skarodev/skaro/releases/latest';
+export const RELEASE_ROOT = 'https://github.com/dartdavros/skaro/releases';
+export const RELEASE_API = 'https://api.github.com/repos/dartdavros/skaro/releases/latest';
 export const AGENT_IDS: AgentId[] = ['codex', 'claude-code'];
 export const PLATFORM_KEYS = [
   'win32-x64',
@@ -142,6 +143,27 @@ export function releasePlatform(m: ReleaseManifest, p: Platform): ReleasePlatfor
   const platform = m.platforms[key];
   if (!platform) throw new Error(`Skaro update is not available for ${key}`);
   return platform;
+}
+
+/** Assemble only a complete, consistent set of independently built platforms. */
+export function mergeReleaseParts(
+  bundle: Omit<ReleaseManifest, 'schema' | 'platforms'>,
+  parts: ReleaseManifest[],
+): ReleaseManifest {
+  const expected = { schema: 1 as const, ...bundle };
+  const manifest: ReleaseManifest = { ...expected, platforms: {} };
+  for (const value of parts) {
+    const { platforms, ...metadata } = parseRelease(value);
+    if (!isDeepStrictEqual(metadata, expected))
+      throw new Error('Release parts have different pinned bundles');
+    const keys = Object.keys(platforms);
+    if (keys.length !== 1 || manifest.platforms[keys[0]!])
+      throw new Error('Expected one unique platform per release part');
+    Object.assign(manifest.platforms, platforms);
+  }
+  if (PLATFORM_KEYS.some((key) => !manifest.platforms[key]))
+    throw new Error('All six supported release platforms must pass before publication');
+  return parseRelease(manifest);
 }
 
 export function changedComponents(

@@ -14,8 +14,8 @@ const types = (rows: FeedRow[]) => rows.map((r) => r.type);
 describe('feedRows', () => {
   it('groups reads and searches into one line and ends the turn with a summary', () => {
     const rows = feedRows(golden('claude', 'read'));
-    expect(types(rows)).toEqual(['user', 'notice', 'explore', 'agent', 'turn_end']);
-    const explore = rows[2] as Extract<FeedRow, { type: 'explore' }>;
+    expect(types(rows)).toEqual(['user', 'explore', 'agent', 'turn_end']);
+    const explore = rows.find((row) => row.type === 'explore')!;
     expect(exploreCounts(explore.items)).toMatchObject({ read: 2, search: [expect.any(String)] });
     const end = rows.at(-1) as Extract<FeedRow, { type: 'turn_end' }>;
     expect(end.tokens).toBe(63125 + 504);

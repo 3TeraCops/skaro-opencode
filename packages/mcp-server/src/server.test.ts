@@ -51,10 +51,10 @@ describe('McpHttpServer', () => {
     ]);
     await client.close();
 
-    // A project chat does not see merge_task.
+    // Project chats can merge accepted task results through the same scoped tool.
     const chat = server.grant({ kind: 'project_chat', projectId: 'p1', chatId: 'c1' });
     const chatClient = await connect(chat.headers);
-    expect((await chatClient.listTools()).tools).toEqual([]);
+    expect((await chatClient.listTools()).tools.map((tool) => tool.name)).toEqual(['merge_task']);
     await chatClient.close();
   });
 

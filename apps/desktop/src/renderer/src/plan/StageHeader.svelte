@@ -20,18 +20,6 @@
   const pct = $derived(info ? (total ? Math.round((done / total) * 100) : 0) : model.pct);
   const slotsFree = $derived(model.p.slotsFree ?? true);
   const run = (action: 'run' | 'stop') => model.p.onrun?.(action);
-  const stageItems = $derived(
-    info
-      ? [
-          {
-            label: t('plan.menu.mergeFinished'),
-            icon: 'merge' as const,
-            ...(info.mergeable ? {} : { tip: t('plan.menu.mergeFinished.none'), disabled: true }),
-            onselect: () => model.p.onmenu('mergeFinished'),
-          },
-        ]
-      : [],
-  );
   const items = $derived(
     model.p.archived
       ? [
@@ -43,7 +31,6 @@
           },
         ]
       : [
-          ...stageItems,
           {
             label: t('plan.discuss'),
             icon: 'chat' as const,

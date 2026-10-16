@@ -1,4 +1,8 @@
 .composer {
+  width: 100%;
+  max-width: 744px;
+  box-sizing: border-box;
+  margin-inline: auto;
   position: relative;
   display: flex;
   flex-direction: column;

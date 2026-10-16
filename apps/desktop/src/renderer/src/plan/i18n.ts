@@ -32,10 +32,6 @@ addMessages('ru', {
   'plan.stop': 'Остановить',
   'plan.resume': 'Продолжить',
   'plan.menu.open': 'Открыть этап',
-  'plan.menu.mergeFinished': 'Влить готовое',
-  'plan.menu.mergeFinished.none': 'В этапе пока нет сделанных задач',
-  'plan.st.stageReview': 'Сделана · ждёт слияния этапа',
-  'plan.row.stageReview': 'ждёт слияния этапа',
   'plan.row.after': 'после',
   'plan.delete.tasks.one':
     'Вместе с этапом удалится его задача — она не начата. Действие нельзя отменить.',
@@ -128,10 +124,6 @@ addMessages('en', {
   'plan.stop': 'Stop',
   'plan.resume': 'Continue',
   'plan.menu.open': 'Open the milestone',
-  'plan.menu.mergeFinished': 'Merge what is finished',
-  'plan.menu.mergeFinished.none': 'The milestone has no finished tasks yet',
-  'plan.st.stageReview': 'Done · awaits the merge of the milestone',
-  'plan.row.stageReview': 'awaits the merge of the milestone',
   'plan.row.after': 'after',
   'plan.delete.tasks.one':
     'Its task goes with it — it has not been started. This cannot be undone.',

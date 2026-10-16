@@ -1,0 +1,45 @@
+import type { Item, TaskReplanProgress } from '@skaro/timeline';
+import { t } from '@skaro/ui';
+import type { ProposalAction } from '../../../shared/ipc';
+import './proposal-replan-i18n';
+
+type ProposalItem = Extract<Item, { kind: 'proposal' }>;
+export type ReplanOperation = TaskReplanProgress['operation'];
+
+/** The footer and changed panel report the same persisted outcome and real write counts. */
+export function replanStatus(item: ProposalItem, requested?: ReplanOperation): string {
+  if (item.proposal.type !== 'task_replan') return '';
+  const progress = item.result?.replan;
+  const operation = requested ?? progress?.operation ?? 'apply';
+  const submitting =
+    requested && (item.state === 'pending' || (requested === 'revert' && item.state === 'applied'));
+  if (item.state === 'accepted' || submitting) {
+    const label =
+      progress?.error && !requested
+        ? t(operation === 'revert' ? 'proposal.replan.revertFailed' : 'proposal.replan.applyFailed')
+        : t(operation === 'revert' ? 'proposal.replan.reverting' : 'proposal.replan.applying');
+    return progress && (progress.totalWrites > 0 || progress.totalRemoves > 0)
+      ? `${label} ${t('proposal.replan.progress', { ...progress })}`
+      : label;
+  }
+  if (item.state === 'applied' || item.state === 'reverted')
+    return t(`proposal.replan.${item.state}`, {
+      before: item.proposal.taskIds.length,
+      after: item.result?.tasks?.length ?? item.proposal.tasks.length,
+    });
+  return item.state === 'pending' ? t('changed.pending') : t(`proposal.hint.${item.state}`);
+}
+
+/** During a durable operation only an explicit retry of its failed direction is available. */
+export function replanCanDecide(item: ProposalItem, action: ProposalAction): boolean {
+  if (item.proposal.type !== 'task_replan') return true;
+  if (item.state === 'pending') return action.action === 'apply' || action.action === 'reject';
+  if (item.state === 'applied') return action.action === 'revert';
+  const progress = item.result?.replan;
+  return (
+    item.state === 'accepted' &&
+    !!progress?.error &&
+    (action.action === progress.operation ||
+      (progress.operation === 'apply' && action.action === 'revert'))
+  );
+}

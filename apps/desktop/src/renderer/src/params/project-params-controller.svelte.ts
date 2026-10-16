@@ -5,16 +5,22 @@ export function createProjectParamsController(p: ProjectParamsProps) {
   let settings = $state<ProjectSettings | undefined>();
   /** The logo could not be taken: too large or not an image. */
   let logoError = $state<string | undefined>();
+  const projectId = $derived(p.project.id);
+  let saving = Promise.resolve();
 
   $effect(() => {
-    void window.skaro.invoke('project.settings', p.project.id).then((s) => (settings = s));
+    void window.skaro.invoke('project.settings', projectId).then((s) => (settings = s));
   });
 
   function change(patch: Partial<ProjectSettings>): void {
     if (!settings) return;
     const next = { ...settings, ...patch };
     settings = next;
-    void window.skaro.invoke('project.saveSettings', p.project.id, $state.snapshot(next));
+    const snapshot = $state.snapshot(next);
+    // Slider dragging can issue several writes: persist them in their original order.
+    saving = saving
+      .then(() => window.skaro.invoke('project.saveSettings', projectId, snapshot))
+      .catch((error: unknown) => console.error(error));
   }
 
   async function rename(input: HTMLInputElement): Promise<void> {

@@ -8,7 +8,11 @@ export type PreviewMethods = Omit<
   | 'updates.download'
   | 'updates.apply'
   | 'task.revertMerge'
+  | 'task.openExternal'
+  | 'task.stopEnvironmentReview'
   | 'diagnostics.export'
+  | 'agents.limits'
+  | 'files.pasteImage'
 > & {
   'app.checkUpdate': () => { current: string };
 };
@@ -18,7 +22,11 @@ export function invokePreview(handlers: object, method: MethodName, args: unknow
     method.startsWith('updates.') ||
     method === 'app.checkUpdate' ||
     method === 'task.revertMerge' ||
-    method === 'diagnostics.export'
+    method === 'task.openExternal' ||
+    method === 'task.stopEnvironmentReview' ||
+    method === 'diagnostics.export' ||
+    method === 'files.pasteImage' ||
+    method === 'agents.limits'
   )
     throw new Error('This operation requires the real Electron application');
   return (handlers as Record<string, (...args: unknown[]) => unknown>)[method]!(...args);

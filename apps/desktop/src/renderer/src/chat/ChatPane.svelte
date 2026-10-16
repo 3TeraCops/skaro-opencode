@@ -102,7 +102,7 @@
 </div>
 
 {#if changedPanel.open}
-  <ChatChangedPanel items={controller.timeline?.items ?? []} />
+  <ChatChangedPanel timeline={controller.timeline} />
 {/if}
 
 <ImageViewer bind:src={controller.viewer} />

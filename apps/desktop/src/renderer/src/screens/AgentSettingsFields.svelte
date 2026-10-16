@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { modelEffortDefault } from '@skaro/timeline';
   import { EffortSlider, Select, t } from '@skaro/ui';
   import Row from '../settings/Row.svelte';
   import { effortLabel } from './agent-settings-presentation';
@@ -54,7 +55,7 @@
 </Row>
 <Row title={t('settings.agent.effort')}>
   {#if efforts.length > 1}
-    {@const effortDefault = model?.defaultEffort ?? efforts[Math.floor(efforts.length / 2)]!.id}
+    {@const effortDefault = modelEffortDefault(model) ?? ''}
     <div data-agents-settings class="field-width">
       <EffortSlider
         levels={efforts}

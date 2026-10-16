@@ -52,6 +52,7 @@ describe('project tools', () => {
   it('are offered to the project chat; a task run sees only the context', async () => {
     const chat = await connect({ kind: 'project_chat', projectId: 'p1', chatId: 'c1' });
     expect((await chat.listTools()).tools.map((t) => t.name)).toEqual([
+      'merge_task',
       'get_project_context',
       'write_doc',
       'propose_adr',

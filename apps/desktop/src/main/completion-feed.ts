@@ -3,10 +3,40 @@ import type { TaskMergeHooks } from './task-merge-refresh';
 import type { TaskRunDeps } from './task-run-model';
 import { closeMergeCards } from './task-merge-result';
 import { stageIdOf } from './task-stage';
+import { environmentArtifacts } from './task-environment-finished';
+
+type Hooks = TaskMergeHooks & { deps: TaskRunDeps };
+
+async function removeCompletedEnvironment(hooks: Hooks, projectId: string, taskId: string) {
+  const run = hooks.deps.db.listRuns(projectId, taskId)[0];
+  const owner = run && stageIdOf(run);
+  if (owner) {
+    const artifacts = await environmentArtifacts(hooks.project(projectId));
+    if (
+      !artifacts ||
+      artifacts.tasks.some(
+        (task) => task.milestone === owner && !['done', 'cancelled'].includes(task.status),
+      ) ||
+      hooks
+        .active()
+        .some(
+          (active) =>
+            active.projectId === projectId &&
+            stageIdOf(active.run) === owner &&
+            (active.release ||
+              active.attaching ||
+              active.switching ||
+              active.timeline.state.status === 'working'),
+        )
+    )
+      return;
+  }
+  await hooks.removeEnvironment(projectId, owner ?? taskId);
+}
 
 /** Feed and environment updates project the durable completion, they never own it. */
 export async function projectCompletion(
-  hooks: TaskMergeHooks & { deps: TaskRunDeps },
+  hooks: Hooks,
   projectId: string,
   operation: CompletionOperation,
   unblocked: string[],
@@ -16,22 +46,14 @@ export async function projectCompletion(
       .active()
       .find((run) => run.projectId === projectId && run.taskId === result.taskId);
     hooks.changed(projectId, result.taskId);
-    const run = hooks.deps.db.listRuns(projectId, result.taskId)[0];
-    const owner = run && stageIdOf(run);
-    if (!owner)
-      void hooks
-        .removeEnvironment(projectId, result.taskId)
-        .catch((error: unknown) => console.error(String(error)));
-    else {
-      const tasks = (await hooks.project(projectId).load()).tasks.filter(
-        (task) => task.milestone === owner && !task.archived,
+    const removeEnvironment = () =>
+      removeCompletedEnvironment(hooks, projectId, result.taskId).catch((error: unknown) =>
+        console.error(String(error)),
       );
-      if (tasks.every((task) => ['done', 'cancelled'].includes(task.status)))
-        void hooks
-          .removeEnvironment(projectId, owner)
-          .catch((error: unknown) => console.error(String(error)));
+    if (!active) {
+      await removeEnvironment();
+      continue;
     }
-    if (!active) continue;
     active.merged = { commit: operation.commit!, base: operation.base };
     closeMergeCards(active, hooks);
     hooks.skaroEvent(active, {
@@ -54,6 +76,7 @@ export async function projectCompletion(
     const cleanup = async () => {
       await hooks.detach(active);
       hooks.setRuntime(projectId, active.taskId, 'idle');
+      await removeEnvironment();
     };
     if (active.session && active.timeline.state.status !== 'idle') active.afterTurn = cleanup;
     else await cleanup();

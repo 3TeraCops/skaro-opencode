@@ -14,6 +14,7 @@ import {
 } from '@skaro/timeline';
 import type { ChatSettings, ChatSummary, MessageInput } from '../shared/ipc';
 import { withoutSecrets } from './session-log';
+import { PROJECT_CHAT_WORKFLOW } from './chat-workflow';
 import { LiveChat } from './chat-model';
 import { saved, lastOf, settingsKey, lastKey, currentTurn, titleOf } from './chat-settings-helpers';
 
@@ -61,13 +62,48 @@ export class ChatConversation {
 
   /** Sends a message; decisions on proposals since the last message go in front of it. */
   async deliver(live: LiveChat, input: MessageInput): Promise<void> {
+    this.ctx.planningContinuation.userMessage(live);
+    return this.queueDelivery(live, input);
+  }
+
+  private queueDelivery(live: LiveChat, input: MessageInput, revision?: number): Promise<void> {
+    const next = live.deliveryQueue
+      .catch(() => undefined)
+      .then(async () => {
+        if (revision !== undefined && revision !== live.planningRevision) return;
+        await this.deliverMessage(live, input, revision);
+      });
+    live.deliveryQueue = next;
+    return next;
+  }
+
+  async continuePlanning(live: LiveChat, input: MessageInput, revision: number): Promise<void> {
+    return this.queueDelivery(live, input, revision);
+  }
+
+  private async deliverMessage(
+    live: LiveChat,
+    input: MessageInput,
+    revision?: number,
+  ): Promise<void> {
     const session = await this.ctx.sessions.attach(live);
+    if (
+      revision !== undefined &&
+      (revision !== live.planningRevision || live.timeline.state.status !== 'idle')
+    )
+      return;
     const notes = this.ctx.proposals.takeNotes(live.chat.id);
-    const message = { ...input, text: withSkaroNote(notes.join('\n'), input.text) };
+    const workflow = this.ctx.importReview.importRecord(live.chat.id) ? '' : PROJECT_CHAT_WORKFLOW;
+    const message = {
+      ...input,
+      text: withSkaroNote([workflow, ...notes].filter(Boolean).join('\n'), input.text),
+    };
     try {
+      if (revision !== undefined) live.planningSent = true;
       if (live.timeline.state.status === 'idle') await session.send(message);
       else await session.steer(message);
     } catch (error) {
+      if (revision !== undefined) live.planningSent = false;
       this.ctx.proposals.addNotes(live.chat.id, notes);
       throw error;
     }
@@ -109,7 +145,12 @@ export class ChatConversation {
   }
 
   async interrupt(projectId: string, chatId: string): Promise<void> {
-    await (await this.ctx.history.restore(projectId, chatId)).session?.interrupt();
+    const live = await this.ctx.history.restore(projectId, chatId);
+    this.ctx.planningContinuation.stop(
+      live,
+      'Interrupted by the owner; resume only on explicit instruction.',
+    );
+    await live.session?.interrupt();
   }
 
   /** An archived chat is read-only: its agent process stops. */
@@ -117,7 +158,10 @@ export class ChatConversation {
     const live = await this.ctx.history.restore(projectId, chatId);
     this.ctx.deps.db.updateChat(chatId, { archived });
     live.chat = this.ctx.deps.db.getChat(chatId)!;
-    if (archived) await this.ctx.sessions.detach(live);
+    if (archived) {
+      this.ctx.planningContinuation.stop(live, 'Chat archived by the owner.');
+      await this.ctx.sessions.detach(live);
+    }
     this.ctx.listChanged(projectId, chatId);
   }
 }

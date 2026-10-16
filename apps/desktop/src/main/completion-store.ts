@@ -1,6 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { AppDb, Task } from '@skaro/core';
+import type { AppDb, Task, ProjectCheck } from '@skaro/core';
 import { taskSections } from './task-body';
+
+export interface ResultDependency {
+  taskId: string;
+  head: string;
+}
 
 export interface TaskResult {
   taskId: string;
@@ -11,6 +16,9 @@ export interface TaskResult {
   criteria: string;
   message: string;
   summary?: string;
+  verification?: ProjectCheck[];
+  /** Exact dependency inputs included in this accepted result, including inherited inputs. */
+  dependencies?: ResultDependency[];
   /** The accepted result is durable; its task-file projection still needs to be written. */
   pendingReview?: boolean;
 }
@@ -20,7 +28,8 @@ export interface CompletionOperation {
   base: string;
   results: TaskResult[];
   strategy: 'merge' | 'squash' | 'rebase';
-  state: 'preparing' | 'prepared' | 'completed' | 'failed' | 'reverted';
+  state: 'preparing' | 'integrating' | 'prepared' | 'completed' | 'failed' | 'reverted';
+  integrationId?: string;
   before?: string;
   commit?: string;
   error?: string;
@@ -72,6 +81,15 @@ export class CompletionStore {
     if (error) issues[key] = error;
     else delete issues[key];
     this.db.setSetting(`completion.${this.projectId}.issues`, issues);
+  }
+
+  /** Tasks sent back to their agents over a merge conflict, until they submit a result again. */
+  conflicts(): string[] {
+    return this.db.getSetting(`completion.${this.projectId}.conflicts`, []);
+  }
+  conflict(taskId: string, open: boolean): void {
+    const rest = this.conflicts().filter((id) => id !== taskId);
+    this.db.setSetting(`completion.${this.projectId}.conflicts`, open ? [...rest, taskId] : rest);
   }
 
   operations(): CompletionOperation[] {

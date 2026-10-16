@@ -48,4 +48,16 @@ describe('environment description', () => {
       'environment: COMPOSE_PROJECT_NAME is set by Skaro',
     ]);
   });
+
+  it('rejects declarations that bypass or duplicate tool-owned port allocation', () => {
+    const problems: ArtifactProblem[] = [];
+    expect(
+      readEnvironment({ ...section, ports: ['API_PORT', 'API_PORT'] }, problems),
+    ).toBeUndefined();
+    expect(readEnvironment({ ...section, env: { API_PORT: '18001' } }, problems)).toBeUndefined();
+    expect(problems.map((p) => p.message)).toEqual([
+      'environment: ports must be unique',
+      'environment: env must not override a port allocated by Skaro',
+    ]);
+  });
 });

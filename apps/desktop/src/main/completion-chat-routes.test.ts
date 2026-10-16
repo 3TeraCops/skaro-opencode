@@ -35,16 +35,21 @@ it.each(['task', 'project_chat'] as const)(
         ? { kind, projectId: fixture.projectId, taskId: first.id, runId: view.run!.id }
         : { kind, projectId: fixture.projectId };
     const tool = mergeTaskTool((args, current) => runs!.mergeTask(args, current));
-    const result = await tool.call({ milestone_id: stage.id }, scope);
+    // A task merges itself; the project chat may ask for every accepted task of a milestone.
+    const args = kind === 'task' ? {} : { milestone_id: stage.id };
+    const result = await tool.call(args, scope);
     expect(result.isError).not.toBe(true);
-    for (const task of [first, second]) {
+    const merged = kind === 'task' ? [first] : [first, second];
+    for (const task of merged) {
       expect((await fixture.context.store.readTask(task.id)).status).toBe('done');
       expect((await runs.open(fixture.projectId, task.id)).timeline?.interactions).toEqual([]);
       expect(fixture.db.listMerges(fixture.projectId, task.id)).toHaveLength(1);
     }
+    if (kind === 'task')
+      expect((await fixture.context.store.readTask(second.id)).status).toBe('review');
     expect(fixture.db.listRuns(fixture.projectId, stage.id)).toEqual([]);
     const before = await fixture.context.git.head();
-    expect((await tool.call({ milestone_id: stage.id }, scope)).isError).not.toBe(true);
+    expect((await tool.call(args, scope)).isError).not.toBe(true);
     if (kind === 'project_chat') {
       await fixture.context.store.updateTask(first.id, { archived: true });
       await fixture.context.store.updateTask(second.id, { archived: true });
@@ -52,21 +57,20 @@ it.each(['task', 'project_chat'] as const)(
       expect((await tool.call({ milestone_id: stage.id }, scope)).isError).not.toBe(true);
     }
     expect(await fixture.context.git.head()).toBe(before);
-    expect(fixture.journal.operations()).toHaveLength(1);
+    expect(fixture.journal.operations()).toHaveLength(merged.length);
   },
   30_000,
 );
 
-it('routes the milestone merge card to a real task and confirms through the same journal', async () => {
+it('shows the merge card of a milestone task in its own chat and merges that task alone', async () => {
   const stage = await fixture.context.store.createMilestone({ title: 'Task card' });
   const task = await fixture.task('Actual task', stage.id);
   await fixture.commit();
   await fixture.accept(task, await fixture.checkout(task));
   runs = completionTaskRuns(fixture);
-  await runs.mergeFinished(fixture.projectId, stage.id);
   const view = await runs.open(fixture.projectId, task.id);
   const card = view.timeline!.interactions.find((item) => item.kind === 'merge')!;
-  expect(card.kind === 'merge' && card.stage?.id).toBe(stage.id);
+  expect(card.kind === 'merge' && card.stage).toBeUndefined();
   await runs.merge(fixture.projectId, task.id, card.id, {
     action: 'confirm',
     message: 'feat: accepted stage',
@@ -76,7 +80,7 @@ it('routes the milestone merge card to a real task and confirms through the same
   expect(fixture.db.listRuns(fixture.projectId, stage.id)).toEqual([]);
 }, 30_000);
 
-it('accepts explicit partial project-chat merges and rejects ambiguous or import scope', async () => {
+it('merges the accepted tasks of a milestone for the project chat and rejects ambiguous or import scope', async () => {
   const stage = await fixture.context.store.createMilestone({ title: 'Partial merge' });
   const first = await fixture.task('First', stage.id);
   const second = await fixture.task('Second', stage.id);
@@ -92,10 +96,7 @@ it('accepts explicit partial project-chat merges and rejects ambiguous or import
   expect(
     (await tool.call({ milestone_id: stage.id }, { ...scope, importId: 'import' })).isError,
   ).toBe(true);
-  expect((await tool.call({ milestone_id: stage.id }, scope)).isError).toBe(true);
-  expect((await tool.call({ milestone_id: stage.id, partial: true }, scope)).isError).not.toBe(
-    true,
-  );
+  expect((await tool.call({ milestone_id: stage.id }, scope)).isError).not.toBe(true);
   expect((await fixture.context.store.readTask(first.id)).status).toBe('done');
   expect((await fixture.context.store.readTask(second.id)).status).toBe('in_progress');
   await fixture.accept(second, await fixture.checkout(second));
@@ -104,7 +105,7 @@ it('accepts explicit partial project-chat merges and rejects ambiguous or import
   expect(fixture.journal.operations()).toHaveLength(2);
 }, 30_000);
 
-it('submit_result saves review truthfully and shows the last result card in a real task', async () => {
+it('submit_result saves review truthfully and shows each task its own merge card', async () => {
   const stage = await fixture.context.store.createMilestone({ title: 'Submit routes' });
   const first = await fixture.task('First', stage.id);
   const second = await fixture.task('Second', stage.id);
@@ -126,13 +127,13 @@ it('submit_result saves review truthfully and shows the last result card in a re
       { kind: 'task', projectId: fixture.projectId, taskId: task.id, runId: view.run!.id },
     );
     expect(result.isError).not.toBe(true);
-    expect(result.text).toContain(task.id === first.id ? 'stays in review' : 'in review');
+    expect(result.text).toContain('in review and awaiting merge');
     expect((await fixture.context.store.readTask(task.id)).status).toBe('review');
+    expect(
+      (await runs.open(fixture.projectId, task.id)).timeline?.interactions.some(
+        (item) => item.kind === 'merge',
+      ),
+    ).toBe(true);
   }
-  expect(
-    (await runs.open(fixture.projectId, second.id)).timeline?.interactions.some(
-      (item) => item.kind === 'merge',
-    ),
-  ).toBe(true);
   expect(fixture.db.listRuns(fixture.projectId, stage.id)).toEqual([]);
 }, 30_000);

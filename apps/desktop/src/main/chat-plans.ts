@@ -9,6 +9,7 @@ import type {
 import { headings, withSections } from './task-body';
 import { nextNumber, taskText } from './chat-proposal-helpers';
 import { withRefs } from './chat-plan';
+import { planningProposalProblem } from './chat-planning-guard';
 
 import type { ChatEngine } from './chat-engine';
 
@@ -19,6 +20,12 @@ export class ChatPlans {
   }
   async proposeMilestones(args: ProposeMilestonesArgs, scope: SkaroScope): Promise<ToolResult> {
     const live = this.ctx.context.caller(scope);
+    const guard = planningProposalProblem(
+      live,
+      this.ctx.planning,
+      args.milestones.reduce((count, m) => count + m.tasks.length, 0),
+    );
+    if (guard) return { text: guard, isError: true };
     const artifacts = await this.ctx.project(live.projectId).load();
     const renames = this.ctx.plan.freshRefs(
       live,
@@ -59,6 +66,7 @@ export class ChatPlans {
       );
       return `${id} "${m.title}" (${m.tasks.length} tasks)`;
     });
+    await this.ctx.planReview.consolidate(live);
     return {
       text:
         `Shown to the user as cards: ${shown.join(', ')}. Only the tasks the user picks are ` +
@@ -70,6 +78,8 @@ export class ChatPlans {
 
   async proposeTasks(args: ProposeTasksArgs, scope: SkaroScope): Promise<ToolResult> {
     const live = this.ctx.context.caller(scope);
+    const guard = planningProposalProblem(live, this.ctx.planning, args.tasks.length);
+    if (guard) return { text: guard, isError: true };
     const artifacts = await this.ctx.project(live.projectId).load();
     const milestone = args.milestone
       ? artifacts.milestones.find((m) => m.id.toUpperCase() === args.milestone!.toUpperCase())
@@ -93,6 +103,7 @@ export class ChatPlans {
       },
       'pending',
     );
+    await this.ctx.planReview.consolidate(live);
     return {
       text:
         `${tasks.length} tasks are shown to the user as a card; only the ones the user ` +

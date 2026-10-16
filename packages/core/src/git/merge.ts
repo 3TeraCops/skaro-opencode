@@ -2,7 +2,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { git } from './command.ts';
-import { MergeBlockedError, type GitService, type MergeOptions, type MergeCheck } from './git.ts';
+import {
+  GitBaseChangedError,
+  MergeBlockedError,
+  type GitService,
+  type MergeOptions,
+  type MergeCheck,
+} from './git.ts';
 import { serializedMerge } from './merge-queue.ts';
 import { localMergeObstacles } from './merge-safety.ts';
 import { captureFiles, publishMerge } from './merge-publication.ts';
@@ -17,6 +23,8 @@ export function merge(
 
 async function prepareMerge(service: GitService, options: MergeOptions) {
   await recoverPublications(service.repo);
+  if (options.expectedBaseHead && (await service.head(options.base)) !== options.expectedBaseHead)
+    throw new GitBaseChangedError();
   const check = await service.checkMerge(options.base, options.branch);
   if (options.allowMetadataOnly && options.managedPaths?.length)
     check.blockers = check.blockers.filter((blocker) => blocker !== 'no_changes');
@@ -31,15 +39,20 @@ async function prepareMerge(service: GitService, options: MergeOptions) {
     await service.createDetachedWorktree(checkout, before);
     registered = true;
     if (options.strategy === 'rebase') {
-      if (!options.worktree) throw new Error('a rebase merge needs the task worktree');
-      const rebased = await service.rebase(options.worktree, options.base);
-      if (!rebased.ok)
-        throw new MergeBlockedError({
-          ...check,
-          blockers: ['conflicts'],
-          conflicts: rebased.conflicts,
-        });
-      await git(checkout, ['merge', '--ff-only', await service.head('HEAD', options.worktree)]);
+      if (options.expectedBaseHead) {
+        // Replay the resolved tree onto the base, without replaying conflicting source commits.
+        await git(checkout, ['read-tree', '--reset', '-u', options.branch]);
+      } else {
+        if (!options.worktree) throw new Error('a rebase merge needs the task worktree');
+        const rebased = await service.rebase(options.worktree, options.base);
+        if (!rebased.ok)
+          throw new MergeBlockedError({
+            ...check,
+            blockers: ['conflicts'],
+            conflicts: rebased.conflicts,
+          });
+        await git(checkout, ['merge', '--ff-only', await service.head('HEAD', options.worktree)]);
+      }
     } else {
       await git(checkout, [
         'merge',
@@ -76,6 +89,7 @@ async function prepareMerge(service: GitService, options: MergeOptions) {
     if (obstacles.length)
       throw new MergeBlockedError({ ...check, blockers: ['dirty_base'], localChanges: obstacles });
     await options.prepared?.({ before, commit });
+    if ((await service.head(options.base)) !== before) throw new GitBaseChangedError();
     await publishMerge(service.repo, checkout, before, commit, options.base, managed, guards);
     return { commit, check, before };
   } finally {

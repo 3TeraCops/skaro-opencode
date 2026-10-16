@@ -22,6 +22,7 @@ import type {
 } from '@skaro/timeline';
 import { CLAUDE_ADAPTER_VERSION } from './projector.ts';
 import { ClaudeSession } from './session.ts';
+import { readClaudeLimits } from './limits.ts';
 
 export interface ClaudeAdapterConfig {
   /** Path of the installed pinned binary, or undefined when not installed yet. */
@@ -110,6 +111,10 @@ export class ClaudeAdapter implements AgentAdapter {
       description: c.description,
       kind: c.builtin ? 'command' : 'skill',
     }));
+  }
+
+  async limits(cwd: string) {
+    return readClaudeLimits(await this.requireExecutable(), cwd, this.env());
   }
 
   /** MCP servers connect at start; the status is read once none is still connecting. */

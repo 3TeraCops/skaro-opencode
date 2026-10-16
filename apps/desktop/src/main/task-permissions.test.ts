@@ -4,10 +4,17 @@ import { ActiveRun } from './tasks';
 import { TaskRunEvents } from './task-run-events';
 
 it('keeps the task queue slot during a permission restart and settles a real stop normally', () => {
-  const onTurnCompleted = vi.fn();
+  const onTurnCompleted = vi.fn().mockResolvedValue(undefined);
   const runs = Object.create(TaskRunEvents.prototype) as TaskRunEvents;
-  Object.assign(runs, { onTurnCompleted, ctx: { history: { flush: () => undefined } } });
   const active = new ActiveRun('project', 'task', {} as ActiveRun['run'], new Timeline());
+  Object.assign(runs, {
+    onTurnCompleted,
+    ctx: {
+      active: new Map([['project\ntask', active]]),
+      changed: () => undefined,
+      history: { flush: () => undefined },
+    },
+  });
   const receive = runs.onEvent.bind(runs);
   try {
     receive(active, {

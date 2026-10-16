@@ -52,6 +52,11 @@
   color: var(--sk-text-21);
 }
 
+.board > .col > .head > .select-all {
+  margin-left: auto;
+  align-self: center;
+}
+
 .board > .col > .cards {
   flex: 1;
   min-height: 0;

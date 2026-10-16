@@ -17,6 +17,7 @@ import {
 import { errorText, projectorFor, readRunLog } from './session-log';
 import { LiveChat } from './chat-model';
 import { currentTurn } from './chat-settings-helpers';
+import { PlanJournal } from './chat-plan-journal';
 
 import type { ChatEngine } from './chat-engine';
 
@@ -79,6 +80,7 @@ export class ChatHistory {
     live.seq = events.length;
     live.segments = countSegments(lines);
     this.ctx.live.set(chatId, live);
+    new PlanJournal(this.ctx, live).restore();
     // A live turn cannot survive a restart; async questions still wait for a later reply.
     const turn = live.timeline.state.turns.at(-1);
     if (turn && !turn.outcome) {

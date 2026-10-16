@@ -32,6 +32,9 @@ export class ChatSessions implements ProjectToolHandlers {
   constructor(deps: Deps) {
     this.engine = new ChatEngine(deps);
   }
+  get planning(): NonNullable<ProjectToolHandlers['planning']> {
+    return this.engine.planning;
+  }
   list(projectId: string): ChatSummary[] {
     return this.engine.views.list(projectId);
   }
@@ -127,6 +130,15 @@ export class ChatSessions implements ProjectToolHandlers {
   }
   async updateTask(args: UpdateTaskArgs, scope: SkaroScope): Promise<ToolResult> {
     return this.engine.plans.updateTask(args, scope);
+  }
+  async replanTasks(
+    args: import('@skaro/mcp-server').ReplanTasksArgs,
+    scope: SkaroScope,
+  ): Promise<ToolResult> {
+    return this.engine.replans.tool(args, scope);
+  }
+  async recoverReplans(): Promise<void> {
+    return this.engine.replans.recoverAll();
   }
   async close(): Promise<void> {
     return this.engine.sessions.close();

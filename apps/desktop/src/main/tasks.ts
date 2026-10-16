@@ -12,8 +12,16 @@ import type {
   TaskView,
 } from '../shared/ipc';
 import { type TaskRunDeps } from './task-run-model';
+import type { HistoryArgs } from '@skaro/mcp-server';
+import { taskTool, trackRun } from './task-run-access';
+import { historyPage, historyText } from './task-history-context';
+import { handoffRecord } from './task-handoff-record';
+import { serializeTaskMutation } from './project-task-mutations';
 import { TaskRunEngine } from './task-run-engine';
+import { errorText } from './session-log';
 import { startTaskEnvironment } from './task-environment-tool';
+import { configureTaskEnvironment } from './task-environment-config-tool';
+import type { ConfigureEnvironmentArgs } from '@skaro/mcp-server';
 export { ActiveRun, type TaskRunDeps } from './task-run-model';
 export { requirementsOf } from './task-run-helpers';
 
@@ -44,25 +52,51 @@ export class TaskRuns {
     return this.engine.scheduling.launch(projectId, taskIds, message, assignment);
   }
   assign(projectId: string, taskId: string, assignment: TaskAssignment): Promise<void> {
-    return this.engine.views.assign(projectId, taskId, assignment);
+    return serializeTaskMutation(this.engine.project(projectId), () =>
+      this.engine.views.assign(projectId, taskId, assignment),
+    );
   }
   forget(projectId: string, taskId: string): Promise<void> {
     return this.engine.sessions.forget(projectId, taskId);
   }
+  retireHistory(projectId: string, taskId: string): void {
+    this.engine.deps.db.retireTaskRuns(projectId, taskId);
+    this.engine.scheduling.forgetAwaiting(projectId, [taskId]);
+  }
   open(projectId: string, taskId: string): Promise<TaskView> {
     return this.engine.views.open(projectId, taskId);
+  }
+  openExternal(
+    projectId: string,
+    taskId: string,
+    url: string,
+    open: (url: string) => Promise<void>,
+  ): Promise<void> {
+    return this.engine.reviews.open(projectId, taskId, url, open);
+  }
+  stopEnvironmentReview(projectId: string, taskId: string): Promise<void> {
+    return this.engine.reviews.stop(projectId, taskId);
   }
   workdir(projectId: string, taskId: string): string {
     return this.engine.views.workdir(projectId, taskId);
   }
   toggleCriterion(projectId: string, taskId: string, index: number): Promise<void> {
-    return this.engine.views.toggleCriterion(projectId, taskId, index);
+    return serializeTaskMutation(this.engine.project(projectId), () =>
+      this.engine.views.toggleCriterion(projectId, taskId, index),
+    );
   }
   settings(projectId: string, task: Task, artifacts: ProjectArtifacts): AgentSettings {
     return this.engine.views.settings(projectId, task, artifacts);
   }
   setSettings(projectId: string, taskId: string, next: AgentSettings): Promise<void> {
-    return this.engine.views.setSettings(projectId, taskId, next);
+    return serializeTaskMutation(this.engine.project(projectId), () =>
+      this.engine.views.setSettings(projectId, taskId, next),
+    );
+  }
+  followProjectDefaults(projectId: string): Promise<void> {
+    return serializeTaskMutation(this.engine.project(projectId), () =>
+      this.engine.views.followProjectDefaults(projectId),
+    );
   }
   send(projectId: string, taskId: string, input: MessageInput): Promise<void> {
     return this.engine.messages.send(projectId, taskId, input);
@@ -85,14 +119,19 @@ export class TaskRuns {
     return this.engine.stages.list(projectId);
   }
   runStage(projectId: string, stageId: string, message: string): Promise<void> {
-    return this.engine.stages.start(projectId, stageId, message);
+    return this.reported(stageId, this.engine.stages.start(projectId, stageId, message));
   }
   stopStage(projectId: string, stageId: string): Promise<void> {
     return this.engine.stages.stop(projectId, stageId);
   }
-  /** «Влить готовое» of a stage: shows the card in the feed of the stage. */
-  mergeFinished(projectId: string, stageId: string): Promise<void> {
-    return this.engine.stages.mergeFinished(projectId, stageId);
+  /** The plan shows no error of its stage buttons: a refusal comes as the usual notification. */
+  private async reported(stageId: string, action: Promise<void>): Promise<void> {
+    try {
+      await action;
+    } catch (error) {
+      this.engine.deps.notify?.('error', `${stageId}: ${errorText(error)}`);
+      throw error;
+    }
   }
   mergeFromBoard(projectId: string, taskId: string): Promise<'merged' | 'open'> {
     return this.engine.mergeActions.mergeFromBoard(projectId, taskId);
@@ -101,7 +140,8 @@ export class TaskRuns {
     return this.engine.messages.stopBackground(projectId, taskId, backgroundId);
   }
   mergeTask(args: MergeTaskArgs, scope: SkaroScope): Promise<ToolResult> {
-    return this.engine.results.mergeTask(args, scope);
+    if (scope.kind === 'project_chat') return this.engine.results.mergeTask(args, scope);
+    return taskTool(this.engine, scope, () => this.engine.results.mergeTask(args, scope));
   }
   async operationNotice(
     projectId: string,
@@ -113,10 +153,39 @@ export class TaskRuns {
     if (active) this.engine.history.notice(active, 'other', error ? 'error' : 'info', text);
   }
   submitResult(args: SubmitResultArgs, scope: SkaroScope): Promise<ToolResult> {
-    return this.engine.results.submitResult(args, scope);
+    return taskTool(this.engine, scope, () => this.engine.results.submitResult(args, scope));
   }
   startEnvironment(scope: SkaroScope): Promise<ToolResult> {
-    return startTaskEnvironment(this.engine, scope);
+    if (scope.kind === 'integration') return this.engine.integrations.environment(scope);
+    return taskTool(this.engine, scope, () => startTaskEnvironment(this.engine, scope));
+  }
+
+  configureEnvironment(args: ConfigureEnvironmentArgs, scope: SkaroScope): Promise<ToolResult> {
+    if (scope.kind === 'integration') return this.engine.integrations.environment(scope, args);
+    return taskTool(this.engine, scope, () => configureTaskEnvironment(this.engine, args, scope));
+  }
+
+  readHistory(args: HistoryArgs, scope: SkaroScope): Promise<ToolResult> {
+    return taskTool(this.engine, scope, async () => {
+      const active = this.engine.requireActive(scope.projectId, scope.taskId!);
+      const transfers: string[] = [];
+      let run = active.run;
+      while (run.previousRunId) {
+        transfers.unshift(JSON.stringify({ run: run.id, handoff: handoffRecord(run) }));
+        const previous = this.engine.deps.db.getRun(run.previousRunId);
+        if (!previous) break;
+        run = previous;
+      }
+      const text = [...transfers, historyText(active.timeline.state)].join('\n');
+      return { text: JSON.stringify(historyPage(text, args.query, args.offset, args.limit)) };
+    });
+  }
+
+  verifyIntegration(
+    checks: import('@skaro/mcp-server').IntegrationCheck[],
+    scope: SkaroScope,
+  ): Promise<ToolResult> {
+    return this.engine.integrations.verify(checks, scope);
   }
   /** After a start of the app: Docker may have brought every old environment back. */
   limitEnvironments(): void {
@@ -128,7 +197,9 @@ export class TaskRuns {
     interactionId: string,
     action: MergeAction,
   ): Promise<void> {
-    return this.engine.mergeActions.merge(projectId, taskId, interactionId, action);
+    return trackRun(this.engine.requireActive(projectId, taskId), () =>
+      this.engine.mergeActions.merge(projectId, taskId, interactionId, action),
+    );
   }
   close(): Promise<void> {
     return this.engine.sessions.close();

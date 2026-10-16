@@ -39,6 +39,8 @@ export interface DiffStats {
 
 export interface MergeOptions {
   base: string;
+  /** Durable integration was verified against this exact base before publication. */
+  expectedBaseHead?: string;
   branch: string;
   strategy: 'squash' | 'merge' | 'rebase';
   message: string;
@@ -64,6 +66,12 @@ export class MergeBlockedError extends Error {
   constructor(check: MergeCheck) {
     super(`merge blocked: ${check.blockers.join(', ')}`);
     this.check = check;
+  }
+}
+
+export class GitBaseChangedError extends Error {
+  constructor() {
+    super('The base branch changed; integration must be prepared again');
   }
 }
 

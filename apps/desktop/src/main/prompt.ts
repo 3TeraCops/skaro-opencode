@@ -2,8 +2,10 @@
 // project context is, the task itself, summaries of finished dependencies, Skaro's workflow.
 
 import type { ProjectArtifacts } from '@skaro/core';
+import { TASK_DECOMPOSITION_RULES } from '@skaro/mcp-server';
 import { join } from 'node:path';
 import { agentInteractionInstructions } from './agent-interaction-instructions';
+import { PROJECT_CHAT_WORKFLOW } from './chat-workflow';
 
 import { LANGUAGES, terms, instructionsOf } from './prompt-context';
 export { LANGUAGES, terms, instructionsOf } from './prompt-context';
@@ -42,7 +44,7 @@ export function chatInstructions(options: {
         '- Discuss what to build with the user, ask questions when something is unclear.',
         '- Turn what you agree on into artifacts with the tools of the skaro MCP server: ' +
           'get_project_context, write_doc (brief.md, architecture.md, docs/<name>.md), ' +
-          'propose_adr, propose_spec, propose_milestones, propose_tasks, update_task.',
+          'propose_adr, propose_spec, propose_milestones, propose_tasks, update_task, replan_tasks.',
         '- Read get_project_context before writing documents or proposing milestones and tasks.',
         '- New functionality starts with a specification (propose_spec): problem, scenarios, ' +
           'requirements R-1, R-2…, out of scope, open questions. Cut its tasks after the user ' +
@@ -51,9 +53,10 @@ export function chatInstructions(options: {
           'specification too (propose_spec with its id).',
         '- The brief and the architecture are optional for an existing project; do not push ' +
           'them when the user only wants a feature or a fix. Study the code before proposing.',
-        '- Tasks must be small enough for one agent run, with 2–6 checkable acceptance criteria ' +
-          'and explicit dependencies. Group them into milestones.',
+        '- Give tasks checkable acceptance criteria and explicit dependencies. ' +
+          'Use milestones when the scope needs grouping; a single local task needs no milestone.',
       ].join('\n'),
+    PROJECT_CHAT_WORKFLOW,
     '## Rules\n\n' +
       [
         '- You may change files and run commands when the user asks for it; depending on the ' +
@@ -134,6 +137,7 @@ export function importInstructions(options: {
           'user applies it on the review screen.',
         '- When everything is staged, call finish_import once.',
       ].join('\n'),
+    '## Task boundaries\n\n' + TASK_DECOMPOSITION_RULES,
     '## Rules\n\n' +
       [
         '- You may run commands and change files outside .skaro/ when the import needs it ' +

@@ -6,14 +6,14 @@
 
 ### Desktop workspace for orchestrating AI coding agents
 
-![GitHub License](https://img.shields.io/github/license/skarodev/skaro?style=flat)
-![GitHub Repo stars](https://img.shields.io/github/stars/skarodev/skaro?style=flat)
+![GitHub License](https://img.shields.io/github/license/dartdavros/skaro?style=flat)
+![GitHub Repo stars](https://img.shields.io/github/stars/dartdavros/skaro?style=flat)
 
 [Website](https://skaro.dev) · [Telegram](https://t.me/skarodev) · [Discord](https://discord.gg/zUv6AHuJwD)
 
 </div>
 
-> **Skaro v2 is in active development.** The previous version (Python CLI + web dashboard) lives in the [`legacy/v1`](https://github.com/skarodev/skaro/tree/legacy/v1) branch.
+> **Skaro v2 is in active development.** The previous version (Python CLI + web dashboard) lives in the [`legacy/v1`](https://github.com/dartdavros/skaro/tree/legacy/v1) branch.
 
 Skaro doesn't write code itself. Your coding agents — **Claude Code** and **Codex** — do. Skaro keeps the project under control:
 

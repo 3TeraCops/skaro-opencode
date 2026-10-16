@@ -2,6 +2,7 @@ import { t, tn } from '@skaro/ui';
 import type { TaskAssignment } from '../../../shared/ipc';
 import { applyFilters, needsYou, type BulkAction, type Filters } from './model';
 import type { TasksProps } from './tasks-props';
+import { selectTasks } from './selection';
 
 export function createTasksController(p: TasksProps) {
   let view = $state<'board' | 'list'>('board');
@@ -47,7 +48,11 @@ export function createTasksController(p: TasksProps) {
   }
 
   function select(id: string, on: boolean): void {
-    selected = on ? [...selected, id] : selected.filter((x) => x !== id);
+    selectMany([id], on);
+  }
+
+  function selectMany(ids: string[], on: boolean): void {
+    selected = selectTasks(selected, ids, on);
   }
 
   /** Leaving the mode drops the selection: without checkboxes there is nothing to show it. */
@@ -138,6 +143,7 @@ export function createTasksController(p: TasksProps) {
     },
     setView,
     select,
+    selectMany,
     toggleSelecting,
     action,
     bulk,

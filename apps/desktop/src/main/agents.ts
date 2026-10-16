@@ -86,6 +86,8 @@ export class AgentManager {
   /** The preferred agent if it is ready, else the first ready one (an absent agent is inactive). */
   readyAgent(preferred: AgentId): AgentId {
     const list = this.list();
+    // Installation/auth checks are still pending; requireReady waits instead of switching.
+    if (list.find((a) => a.id === preferred)?.checking) return preferred;
     if (list.some((a) => a.id === preferred && agentReady(a))) return preferred;
     return list.find(agentReady)?.id ?? preferred;
   }
@@ -96,7 +98,7 @@ export class AgentManager {
    */
   async requireReady(id: AgentId): Promise<void> {
     let info = this.info.get(id);
-    if (info?.checking) info = await (this.checks.get(id) ?? this.refreshOne(id));
+    if (!info || info.checking) info = await (this.checks.get(id) ?? this.refreshOne(id));
     const name = id === 'codex' ? 'Codex' : 'Claude Code';
     const ru = this.locale() === 'ru';
     if (!info?.installed) {

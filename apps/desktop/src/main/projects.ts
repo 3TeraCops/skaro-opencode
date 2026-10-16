@@ -10,19 +10,29 @@ import {
 
 import { PROJECT_DEFAULTS_KEY } from '../shared/ipc';
 import { watchProjectArtifacts } from './project-artifact-watch';
+import { assertTaskGraphAvailable } from './project-task-mutations';
 
 export class ProjectContext {
   readonly id: string;
   readonly root: string;
   readonly store: ArtifactStore;
   readonly git: GitService;
+  readonly assertTasksMutable: () => void;
   private artifacts: Promise<ProjectArtifacts> | undefined;
   private stopWatch: (() => void) | undefined;
 
-  constructor(id: string, root: string, onChange: () => void, defaults: () => ConfigDefaults) {
+  constructor(
+    id: string,
+    root: string,
+    onChange: () => void,
+    defaults: () => ConfigDefaults,
+    reservedTaskIds: () => string[] = () => [],
+    assertTasksMutable: () => void = () => undefined,
+  ) {
     this.id = id;
+    this.assertTasksMutable = assertTasksMutable;
     this.root = root;
-    this.store = new ArtifactStore(root, defaults);
+    this.store = new ArtifactStore(root, defaults, reservedTaskIds);
     this.git = new GitService(root);
     this.stopWatch = watchProjectArtifacts(root, this.store, () => {
       this.artifacts = undefined;
@@ -80,6 +90,8 @@ export class Projects {
       record.path,
       () => this.onChange(record.id),
       () => this.defaults(),
+      () => this.db.usedTaskIds(projectId),
+      () => assertTaskGraphAvailable(this.db, projectId),
     );
     this.contexts.set(projectId, context);
     return context;

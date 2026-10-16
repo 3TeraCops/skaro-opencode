@@ -7,6 +7,9 @@ import { key, awaitingKey, findTask } from './task-run-helpers';
 import { ActiveRun } from './task-run-model';
 import type { TaskRunEngine } from './task-run-engine';
 import { errorText } from './session-log';
+import { IntegrationPending } from './integration-model';
+import { prepareTaskDependencies } from './task-dependency-checkout';
+import { serializeTaskMutation } from './project-task-mutations';
 
 /** scheduling: a focused part of the task-run controller. */
 export class TaskRunScheduling {
@@ -31,29 +34,34 @@ export class TaskRunScheduling {
     message: string,
     assignment?: TaskAssignment,
   ): Promise<void> {
-    const artifacts = await this.ctx.project(projectId).load();
-    const index = indexTasks(artifacts.tasks);
-    const awaiting = this.awaiting(projectId);
+    // A reused legacy id can have a retired run and an obsolete in_progress flag.
+    for (const id of taskIds) await this.ctx.history.restore(projectId, id);
     for (const id of taskIds) {
-      const task = findTask(artifacts, id);
-      const blocker = startBlocker(task, index);
-      // A blocked task starts on its own once its dependencies are merged.
-      if (blocker === 'blocked') awaiting[id] = { message, ...(assignment ? { assignment } : {}) };
-      if (blocker) continue;
-      const active = this.ctx.active.has(key(projectId, id));
-      if (active && task.status !== 'todo') continue;
-      if (assignment) await this.ctx.views.assign(projectId, id, assignment);
-      // A task taken back to "Не начата" keeps its run: starting it again goes on in that session.
-      if (
-        task.status === 'todo' &&
-        (active || this.ctx.deps.db.listRuns(projectId, id).length > 0)
-      ) {
-        await this.ctx.project(projectId).store.updateTask(id, { status: 'in_progress' });
-        this.ctx.project(projectId).invalidate();
-      }
-      await this.ctx.messages.send(projectId, id, { text: message });
+      const context = this.ctx.project(projectId);
+      const send = await serializeTaskMutation(context, async () => {
+        const artifacts = await context.store.load();
+        const task = findTask(artifacts, id);
+        const blocker = startBlocker(task, indexTasks(artifacts.tasks));
+        if (blocker === 'blocked') {
+          const awaiting = this.awaiting(projectId);
+          awaiting[id] = { message, ...(assignment ? { assignment } : {}) };
+          this.ctx.deps.db.setSetting(awaitingKey(projectId), awaiting);
+        }
+        if (blocker) return false;
+        const active = this.ctx.active.has(key(projectId, id));
+        if (active && task.status !== 'todo') return false;
+        if (assignment) await this.ctx.views.assign(projectId, id, assignment);
+        if (
+          task.status === 'todo' &&
+          (active || this.ctx.deps.db.listRuns(projectId, id).length > 0)
+        ) {
+          await context.store.updateTask(id, { status: 'in_progress' });
+          context.invalidate();
+        }
+        return true;
+      });
+      if (send) await this.ctx.messages.send(projectId, id, { text: message });
     }
-    this.ctx.deps.db.setSetting(awaitingKey(projectId), awaiting);
   }
 
   /**
@@ -66,6 +74,7 @@ export class TaskRunScheduling {
     if (task.status !== 'in_progress' && task.status !== 'todo')
       throw new Error('Only a task in progress can be taken back');
     await this.ctx.messages.interrupt(projectId, taskId);
+    await this.ctx.reviews.stop(projectId, taskId);
     const awaiting = this.awaiting(projectId);
     if (awaiting[taskId]) {
       delete awaiting[taskId];
@@ -134,6 +143,18 @@ export class TaskRunScheduling {
    * stage also waits while another task of the stage works in their checkout.
    */
   async enqueue(projectId: string, taskId: string, input: MessageInput): Promise<void> {
+    return serializeTaskMutation(this.ctx.project(projectId), () =>
+      this.enqueueLocked(projectId, taskId, input),
+    );
+  }
+
+  private async enqueueLocked(
+    projectId: string,
+    taskId: string,
+    input: MessageInput,
+  ): Promise<void> {
+    // The task can have been replaced while agent setup was awaiting I/O.
+    findTask(await this.ctx.project(projectId).store.load(), taskId);
     const k = key(projectId, taskId);
     await this.ctx.stages.sync(projectId, taskId);
     this.ctx.queuedInputs.set(k, [...(this.ctx.queuedInputs.get(k) ?? []), input]);
@@ -143,20 +164,40 @@ export class TaskRunScheduling {
 
   async begin(k: string): Promise<void> {
     const [projectId, taskId] = k.split('\n') as [string, string];
-    const inputs = this.ctx.queuedInputs.get(k) ?? [{ text: '' }];
+    const inputs = this.ctx.startup.begin(projectId, taskId, this.ctx.queuedInputs.get(k) ?? []);
     this.ctx.queuedInputs.delete(k);
-    const existing = this.ctx.active.get(k);
+    const existing = await this.ctx.history.restore(projectId, taskId);
     if (existing) {
+      if (!existing.run.nativeSessionId && !(await this.prepare(existing))) return;
       this.ctx.setRuntime(projectId, taskId, 'running', existing.run.id);
       await this.ctx.stages.opened(existing);
       return this.runTurn(existing, inputs);
     }
     const active = await createTaskRun(this.ctx, projectId, taskId);
+    if (!(await this.prepare(active))) return;
     this.ctx.setRuntime(projectId, taskId, 'running', active.run.id);
     this.ctx.deps.emit('project.changed', { projectId });
     await this.ctx.stages.opened(active);
     await this.ctx.stages.sync(projectId, taskId);
     return this.runTurn(active, inputs);
+  }
+
+  private async prepare(active: ActiveRun): Promise<boolean> {
+    if (!active.run.worktree) return true;
+    const artifacts = await this.ctx.project(active.projectId).load();
+    try {
+      await prepareTaskDependencies(
+        this.ctx,
+        active.projectId,
+        findTask(artifacts, active.taskId),
+        artifacts,
+        active.run.worktree,
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof IntegrationPending) return false;
+      throw error;
+    }
   }
 
   /** Holds the slot until the turn ends; later messages of the batch join the running turn. */
@@ -165,6 +206,7 @@ export class TaskRunScheduling {
     const done = new Promise<void>((resolve) => (active.release = resolve));
     try {
       for (const input of inputs) await this.ctx.messages.deliver(active, input);
+      this.ctx.startup.delivered(active.projectId, active.taskId);
     } catch (error) {
       active.release = undefined;
       this.ctx.events.failTurn(active, error);

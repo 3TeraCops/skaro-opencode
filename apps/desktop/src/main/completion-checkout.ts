@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { git, MergeBlockedError, type GitService } from '@skaro/core';
 import type { TaskResult } from './completion-store';
 
-/** Combine immutable results in a private checkout. Never rebase an agent's branch. */
+/**
+ * The accepted result on the current base, in a private Git checkout: no environment, no agent
+ * and no second verification run here. A conflict goes back to the task and its own agent.
+ */
 export async function withCompletionCheckout<T>(
   service: GitService,
   base: string,

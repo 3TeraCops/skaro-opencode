@@ -6,6 +6,7 @@ import { CompletionFixture } from './completion-test-support';
 import { completionTaskDeps } from './completion-task-runs';
 import { TaskRunEngine } from './task-run-engine';
 import { createTaskRun } from './task-run-create';
+import { prepareTaskDependencies } from './task-dependency-checkout';
 
 let fixture: CompletionFixture;
 let engine: TaskRunEngine | undefined;
@@ -45,7 +46,7 @@ it('creates distinct branches and checkouts for milestone tasks concurrently wit
   expect(fixture.db.listRuns(fixture.projectId, stage.id)).toEqual([]);
 }, 30_000);
 
-it('the real run factory materializes the accepted dependency before registering a dependent run', async () => {
+it('registers the dependent run before preparing accepted dependencies, then materializes them before the agent starts', async () => {
   const stage = await fixture.context.store.createMilestone({ title: 'New dependent run' });
   const first = await fixture.task('First', stage.id);
   const second = await fixture.task('Second', stage.id, [first.id]);
@@ -53,6 +54,14 @@ it('the real run factory materializes the accepted dependency before registering
   await fixture.accept(first, await fixture.checkout(first));
   engine = new TaskRunEngine(completionTaskDeps(fixture));
   const active = await createTaskRun(engine, fixture.projectId, second.id);
+  expect(fixture.db.getRun(active.run.id)).toBeDefined();
+  await prepareTaskDependencies(
+    engine,
+    fixture.projectId,
+    second,
+    await fixture.context.load(),
+    active.run.worktree!,
+  );
   const accepted = fixture.journal.result(first.id)!;
   expect(
     (await git(active.run.worktree!, ['merge-base', '--is-ancestor', accepted.head, 'HEAD'])).code,

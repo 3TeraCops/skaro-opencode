@@ -18,11 +18,12 @@ export function projectorFor(agent: string): (ctx: ProjectionContext, emit: Emit
     : (ctx, emit) => new ClaudeProjector(ctx, emit);
 }
 
-export async function readRunLog(path: string): Promise<RawLine[]> {
+export async function readRunLog(path: string, required = false): Promise<RawLine[]> {
   let text: string;
   try {
     text = await readFile(path, 'utf8');
-  } catch {
+  } catch (error) {
+    if (required) throw error;
     return [];
   }
   const lines: RawLine[] = [];

@@ -1,10 +1,16 @@
 // Skaro tools for agent sessions (architecture.md 6). The descriptions are what the agent reads.
 
 import type { Tool, ToolResult } from './server.ts';
+import {
+  readVerificationPlan,
+  verificationCheckSchema,
+  type IntegrationCheck,
+} from './verification-plan.ts';
 
 /** Who is calling: the token of each agent session maps to one scope. */
 export interface SkaroScope {
-  kind: 'task' | 'project_chat';
+  kind: 'task' | 'project_chat' | 'integration';
+  integrationId?: string;
   projectId: string;
   taskId?: string;
   runId?: string;
@@ -31,6 +37,7 @@ export interface CriterionVerdict {
 }
 
 export interface SubmitResultArgs {
+  verification?: IntegrationCheck[];
   summary: string;
   criteria: CriterionVerdict[];
   commitMessage: string;
@@ -105,6 +112,16 @@ export function submitResultTool(
             additionalProperties: false,
           },
         },
+        verification: {
+          type: 'array',
+          minItems: 1,
+          description:
+            'Real build and affected behavior commands already ' +
+            'used for acceptance, runnable in this task/candidate checkout with its managed environment variables. ' +
+            'Skaro retains this plan to verify future integrations of the accepted result. No full suite unless ' +
+            'the owner requires it.',
+          items: verificationCheckSchema(),
+        },
       },
       required: ['summary', 'criteria', 'commit_message'],
       additionalProperties: false,
@@ -113,11 +130,17 @@ export function submitResultTool(
     call: async (args, scope) => {
       const criteria = verdicts(args['criteria']);
       if (typeof criteria === 'string') return { text: criteria, isError: true };
+      const verification =
+        args['verification'] === undefined ? undefined : readVerificationPlan(args['verification']);
+      if (typeof verification === 'string') return { text: verification, isError: true };
       const summary = typeof args['summary'] === 'string' ? args['summary'].trim() : '';
       if (!summary) return { text: '"summary" must not be empty.', isError: true };
       const { commitMessage: message } = commitMessage(args);
       if (!message) return { text: '"commit_message" must not be empty.', isError: true };
-      return handler({ summary, criteria, commitMessage: message }, scope);
+      return handler(
+        { summary, criteria, commitMessage: message, ...(verification ? { verification } : {}) },
+        scope,
+      );
     },
   };
 }
@@ -141,7 +164,8 @@ export function startEnvironmentTool(
       'is merged, so call it again whenever you need the services: a running environment answers ' +
       'at once. Do not start, recreate or re-point the services yourself.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    available: (scope) => scope.kind === 'task' && scope.taskId !== undefined,
+    available: (scope) =>
+      (scope.kind === 'task' || scope.kind === 'integration') && scope.taskId !== undefined,
     call: (_args, scope) => handler(scope),
   };
 }
@@ -158,12 +182,12 @@ export function mergeTaskTool(
     name: 'merge_task',
     description:
       'Merge accepted results into the base branch when the user explicitly asks to merge. ' +
-      'In a project chat specify exactly one task_id or milestone_id. In a task chat the current ' +
-      'task and its milestone are implicit. All tasks in a milestone must be ready unless the user ' +
-      'explicitly requests only completed tasks (partial=true). This executes the merge and updates task statuses. ' +
+      'Every task is merged on its own by Git. In a project chat specify exactly one task_id or ' +
+      'milestone_id; a milestone_id merges its accepted tasks one by one, dependencies first. ' +
+      'In a task chat the current task is implicit. This executes the merge and updates task statuses. ' +
       'An already merged or completed task returns its status without another card or Git changes. ' +
-      'Do not call this tool to reconfirm a merge reported by submit_result. Do not merge, push ' +
-      'or switch branches yourself. If the result reports blockers such as conflicts, tell the user.',
+      'Do not call this tool to reconfirm a merge reported by submit_result. Do not push or switch ' +
+      'branches yourself. If the result reports blockers such as conflicts, tell the user.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -174,7 +198,7 @@ export function mergeTaskTool(
         milestone_id: { type: 'string', description: 'Milestone to merge.' },
         partial: {
           type: 'boolean',
-          description: 'Merge only accepted tasks of a milestone when explicitly requested.',
+          description: 'Not needed: a milestone request always merges only its accepted tasks.',
         },
         summary: {
           type: 'string',
@@ -187,7 +211,8 @@ export function mergeTaskTool(
       additionalProperties: false,
     },
     available: (scope) =>
-      !scope.importId && (scope.kind === 'project_chat' || scope.taskId !== undefined),
+      !scope.importId &&
+      (scope.kind === 'project_chat' || (scope.kind === 'task' && scope.taskId !== undefined)),
     call: (args, scope) =>
       handler(
         {

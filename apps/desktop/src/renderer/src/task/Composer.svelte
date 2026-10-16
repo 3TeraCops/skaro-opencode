@@ -75,6 +75,7 @@
     rows="2"
     {placeholder}
     oninput={() => void controller.oninput()}
+    onpaste={controller.onpaste}
     onkeydown={controller.onkeydown}></textarea>
   <ComposerBar
     {controller}

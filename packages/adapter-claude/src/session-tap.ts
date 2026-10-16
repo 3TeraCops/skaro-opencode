@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { PassThrough } from 'node:stream';
 import { type SpawnedProcess, type SpawnOptions } from '@anthropic-ai/claude-agent-sdk';
 import { type SessionOptions } from '@skaro/timeline';
@@ -10,6 +10,7 @@ export function spawnTapped(
   optionsOfSession: SessionOptions,
   projector: ClaudeProjector,
   track: (line: unknown) => void,
+  onSpawn?: (child: ChildProcess) => void,
 ): SpawnedProcess {
   const raw = optionsOfSession.raw;
   const now = () => optionsOfSession.context.now();
@@ -18,7 +19,17 @@ export function spawnTapped(
     env: options.env,
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
+    detached: !!optionsOfSession.processStarted && process.platform !== 'win32',
   });
+  if (child.pid) {
+    try {
+      optionsOfSession.processStarted?.(child.pid);
+    } catch (error) {
+      child.kill();
+      throw error;
+    }
+  }
+  onSpawn?.(child);
 
   const stdin = new PassThrough();
   stdin.on(

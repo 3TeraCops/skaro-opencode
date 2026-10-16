@@ -6,6 +6,8 @@ import { Projects } from './projects';
 import { CompletionCoordinator, type CompletionHooks } from './completion-coordinator';
 import { CompletionStore, type CompletionOperation } from './completion-store';
 import { reconcileCompletions } from './completion-recovery';
+import { IntegrationService } from './integration-service';
+import { IntegrationStore } from './integration-store';
 
 /** Owner-authorized real Git/SQLite fixtures. No agent, HTTP server or backend replacement. */
 export class CompletionFixture {
@@ -17,6 +19,7 @@ export class CompletionFixture {
   coordinator: CompletionCoordinator;
   completed: CompletionOperation[] = [];
   errors: string[] = [];
+  integrations: IntegrationService;
 
   private constructor(root: string, db: AppDb, projectId: string) {
     this.root = root;
@@ -24,6 +27,7 @@ export class CompletionFixture {
     this.db = db;
     this.projectId = projectId;
     this.projects = new Projects(db, () => undefined);
+    this.integrations = this.integrationService();
     this.coordinator = new CompletionCoordinator(this.hooks());
   }
 
@@ -57,6 +61,7 @@ export class CompletionFixture {
 
   hooks(): CompletionHooks {
     return {
+      integrations: this.integrations,
       deps: { db: this.db, projects: this.projects, emit: () => undefined },
       busy: () => false,
       completed: async (_project, operation) => {
@@ -64,6 +69,15 @@ export class CompletionFixture {
       },
       failed: (_project, _task, error) => this.errors.push(error),
     };
+  }
+
+  private integrationService(): IntegrationService {
+    return new IntegrationService({
+      store: new IntegrationStore(this.db, this.root),
+      project: (id) => this.projects.get(id),
+      pending: () => undefined,
+      changed: () => undefined,
+    });
   }
 
   async task(title: string, milestone?: string, dependsOn: string[] = []): Promise<Task> {
@@ -126,6 +140,7 @@ export class CompletionFixture {
     this.db.close();
     this.db = AppDb.open(join(this.root, 'app.sqlite'));
     this.projects = new Projects(this.db, () => undefined);
+    this.integrations = this.integrationService();
     this.coordinator = new CompletionCoordinator(this.hooks());
   }
 

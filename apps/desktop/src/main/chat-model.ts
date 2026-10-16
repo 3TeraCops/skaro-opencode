@@ -44,6 +44,14 @@ export class LiveChat {
   flushTimer: NodeJS.Timeout | undefined;
   /** Serializes session start and resume. */
   attaching: Promise<AgentSession> | undefined;
+  proposalQueue: Promise<void> = Promise.resolve();
+  deliveryQueue: Promise<void> = Promise.resolve();
+  planningRevision = 0;
+  planningContinuations = 0;
+  planningTimer: ReturnType<typeof setTimeout> | undefined;
+  planningSending = false;
+  planningSent = false;
+  planningWake = false;
 
   constructor(projectId: string, chat: ChatRecord, timeline: Timeline) {
     this.projectId = projectId;

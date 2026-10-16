@@ -22,6 +22,9 @@
   } = $props();
 
   const line = $derived(stageLine(info));
+  // The words, the id and what follows it are separate words: a block keeps no space of its own.
+  const lead = $derived(line?.task ? `${line.lead} ` : line?.lead);
+  const tail = $derived(line?.tail ? ` ${line.tail}` : '');
   const button = $derived(stageAction(info, slotsFree));
   // Not started and its first task waits for a task of another stage.
   const waits = $derived(info.state === 'idle' ? info.waitsFor : undefined);
@@ -42,11 +45,11 @@
       <span data-plan-stage class="state-dot {line.mark}" class:live={line.live}></span>
     {/if}
     <span>
-      {line.lead}{#if line.task}
-        <span data-plan-stage class="state-task" class:bright={line.tone === 'plain'}
-          >{line.task}</span
-        >{/if}{#if line.tail}
-        {line.tail}{/if}
+      {lead}{#if line.task}<span
+          data-plan-stage
+          class="state-task"
+          class:bright={line.tone === 'plain'}>{line.task}</span
+        >{/if}{tail}
     </span>
   </span>
 {/if}

@@ -15,7 +15,12 @@ export class CodexNotifications {
       if (method === 'item/started' || method === 'item/completed') {
         const item = obj(p['item']);
         if (item && item['type'] !== 'subAgentActivity')
-          this.state.itemsProjection.onItem(item, this.state.turnId, `agent-${threadId}`);
+          this.state.itemsProjection.onItem(
+            item,
+            this.state.turnId,
+            method === 'item/completed',
+            `agent-${threadId}`,
+          );
         return;
       }
       // The subagent thread finishing its turn finishes the subagent task.
@@ -32,7 +37,31 @@ export class CodexNotifications {
         }
         return;
       }
-      if (!method.startsWith('item/')) return;
+      // Child deltas update their nested feed without changing the main activity.
+      if (
+        [
+          'item/agentMessage/delta',
+          'item/plan/delta',
+          'item/reasoning/summaryTextDelta',
+          'item/reasoning/textDelta',
+          'item/commandExecution/outputDelta',
+        ].includes(method)
+      ) {
+        this.state.emit({
+          t: 'item.append',
+          itemId: str(p['itemId']) ?? '',
+          field: method === 'item/commandExecution/outputDelta' ? 'output' : 'text',
+          chunk: str(p['delta']) ?? '',
+        });
+      } else if (method === 'item/fileChange/patchUpdated') {
+        const item = this.state.items.get(str(p['itemId']) ?? '');
+        if (item?.kind === 'file_change')
+          this.state.upsert({ ...item, files: filesOf(p['changes']) });
+      } else if (method === 'item/commandExecution/terminalInteraction') {
+        const item = this.state.items.get(str(p['itemId']) ?? '');
+        if (item?.kind === 'command') this.state.upsert({ ...item, awaitingInput: true });
+      }
+      return;
     }
     switch (method) {
       case 'turn/started': {
@@ -50,7 +79,31 @@ export class CodexNotifications {
       case 'item/started':
       case 'item/completed': {
         const item = obj(p['item']);
-        if (item) this.state.itemsProjection.onItem(item, str(p['turnId']) ?? this.state.turnId);
+        if (item) {
+          this.state.itemsProjection.onItem(
+            item,
+            str(p['turnId']) ?? this.state.turnId,
+            method === 'item/completed',
+          );
+          const type = item['type'];
+          if (type === 'subAgentActivity') return;
+          const started = method === 'item/started';
+          this.state.emit({
+            t: 'activity',
+            state: !started
+              ? 'waiting_model'
+              : type === 'fileChange'
+                ? 'preparing_edit'
+                : type === 'reasoning'
+                  ? 'thinking'
+                  : type === 'agentMessage' || type === 'plan'
+                    ? 'writing'
+                    : 'waiting_model',
+            ...(started && type === 'fileChange' && filesOf(item['changes'])[0]
+              ? { target: filesOf(item['changes'])[0]!.path }
+              : {}),
+          });
+        }
         return;
       }
       case 'item/agentMessage/delta':
@@ -82,7 +135,8 @@ export class CodexNotifications {
         const files = filesOf(p['changes']);
         if (item?.kind === 'file_change') this.state.upsert({ ...item, files });
         const first = files[0];
-        if (first) this.state.emit({ t: 'activity', state: 'preparing_edit', target: first.path });
+        if (first && item?.status === 'running')
+          this.state.emit({ t: 'activity', state: 'preparing_edit', target: first.path });
         return;
       }
       case 'turn/plan/updated':

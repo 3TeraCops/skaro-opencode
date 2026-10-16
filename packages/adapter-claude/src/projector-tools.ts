@@ -84,6 +84,8 @@ export class ClaudeToolsProjection {
       if (!item) continue;
       const updated = this.completeTool(item, isError, text, structured, block['content']);
       this.state.upsert(updated);
+      if (!updated.parentId && updated.kind === 'file_change')
+        this.state.emit({ t: 'activity', state: 'waiting_model' });
     }
   }
 

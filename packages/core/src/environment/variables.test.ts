@@ -41,4 +41,15 @@ describe('task environment identity', () => {
     const ports = await allocatePorts(3, new Set([20000, 20003]), async (p) => !busy.has(p));
     expect(ports).toEqual([20002, 20004, 20005]);
   });
+
+  it('keeps registry allocations authoritative over raw environment values', () => {
+    expect(
+      environmentVariables(identity, {
+        ports: ['API_PORT'],
+        env: { API_PORT: '18001' },
+        start: 'up',
+        urls: {},
+      }).API_PORT,
+    ).toBe('20000');
+  });
 });

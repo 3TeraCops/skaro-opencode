@@ -21,15 +21,20 @@ import type {
 } from './model.ts';
 import type { NewTask, TaskPatch, NewAdr, NewSpec } from './inputs.ts';
 import { slugify } from './slug.ts';
+import { restoreTaskSnapshot } from './task-snapshot.ts';
 
 /** Public artifact API; persistence operations are composed by responsibility. */
 export class ArtifactStore {
   readonly root: string;
   private readonly files: ArtifactFiles;
   private readonly defaults: () => ConfigDefaults;
-  constructor(projectRoot: string, defaults: () => ConfigDefaults = () => ({})) {
+  constructor(
+    projectRoot: string,
+    defaults: () => ConfigDefaults = () => ({}),
+    reservedTaskIds: () => string[] = () => [],
+  ) {
     this.root = projectRoot;
-    this.files = new ArtifactFiles(projectRoot);
+    this.files = new ArtifactFiles(projectRoot, reservedTaskIds);
     this.defaults = defaults;
   }
   readTask(id: string): Promise<Task> {
@@ -38,8 +43,32 @@ export class ArtifactStore {
   createTask(input: NewTask): Promise<Task> {
     return tasks.createTask(this.files, input);
   }
+  reserveTaskId(): Promise<string> {
+    return tasks.reserveNewTaskId(this.files);
+  }
+  createReservedTask(id: string, input: NewTask): Promise<Task> {
+    return tasks.createReservedTask(this.files, id, input);
+  }
+  reserveMilestoneId(): Promise<string> {
+    return milestones.reserveNewMilestoneId(this.files);
+  }
+  createReservedMilestone(
+    id: string,
+    input: { title: string; body?: string; order?: number },
+  ): Promise<Milestone> {
+    return milestones.createReservedMilestone(this.files, id, input);
+  }
   updateTask(id: string, patch: TaskPatch): Promise<Task> {
     return tasks.updateTask(this.files, id, patch);
+  }
+  updateTaskAtomically(id: string, patch: TaskPatch): Promise<Task> {
+    return tasks.updateTask(this.files, id, patch, true);
+  }
+  deleteReplannedTask(id: string, removedIds: string[]): Promise<void> {
+    return tasks.deleteReplannedTask(this.files, id, removedIds);
+  }
+  restoreReplannedTask(task: Task, content: string, expected: string | undefined): Promise<void> {
+    return restoreTaskSnapshot(this.files, task, content, expected);
   }
   deleteTask(id: string): Promise<void> {
     return tasks.deleteTask(this.files, id);

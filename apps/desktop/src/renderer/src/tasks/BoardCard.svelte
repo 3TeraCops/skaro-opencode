@@ -3,7 +3,9 @@
   import { AgentLogo, Checkbox, Icon, t } from '@skaro/ui';
   import type { TaskSummary } from '../../../shared/ipc';
   import { agoLong } from '../ago';
-  import { agentLine, boardStatus, statusLabel, waitsStageMerge } from './model';
+  import { agentLine, boardStatus, mergeWords, statusLabel } from './model';
+  import ActivityMark from '../activity/ActivityMark.svelte';
+  import { activityLabel } from '../activity/icons';
 
   /**
    * A task card of the board (Tasks mockup): title, lock or status dot; milestone; time and
@@ -39,19 +41,18 @@
 
   const short = (id: string) => id.replace(/^T-0*(\d+)$/, 'T$1');
   const shortId = $derived(short(task.id));
-  // Done in the branch of its stage: dimmed, it needs nothing until the stage is merged.
-  const stageDone = $derived(waitsStageMerge(task));
+  // The merge of its accepted result at work or failed: the card stays in review and says it.
+  const merge = $derived(mergeWords(task));
   const kind = $derived(boardStatus(task.status));
   const muted = $derived(kind === 'blocked' || kind === 'done' || kind === 'cancelled');
   const dot = $derived(
-    task.status === 'in_progress'
-      ? 'working'
-      : kind === 'need'
-        ? 'need'
-        : kind === 'error'
-          ? 'error'
-          : undefined,
+    kind === 'need' || task.merge === 'needs_answer'
+      ? 'need'
+      : kind === 'error' || task.merge === 'failed'
+        ? 'error'
+        : undefined,
   );
+  const activityTip = $derived(merge?.tip ?? t(activityLabel[task.activity ?? 'waiting_model']));
   const when = $derived(
     task.status === 'in_progress' ? t('agoShort.now') : agoLong(task.updatedAt, now),
   );
@@ -70,7 +71,6 @@
   class:ghost
   class:dropped
   class:dim={kind === 'blocked' && !ghost}
-  class:stage-done={stageDone && !ghost}
   role="button"
   tabindex={ghost ? -1 : 0}
   aria-hidden={ghost || undefined}
@@ -99,12 +99,25 @@
         ><Icon name="lock" size={13} stroke={2} /></span
       >
     {/if}
-    {#if dot}<span class="dot {dot}" data-tip={statusLabel(task.status)}></span>{/if}
+    {#if task.status === 'queued' || (task.status === 'todo' && task.after) || task.merge === 'queued'}
+      {@const queueTip = merge?.tip ?? statusLabel('queued')}
+      <span class="queue" role="img" aria-label={queueTip} data-tip={queueTip}
+        ><Icon name="clock" size={13} stroke={2} /></span
+      >
+    {/if}
+    {#if task.status === 'in_progress' || task.merge === 'running'}
+      <span class="activity" role="img" aria-label={activityTip} data-tip={activityTip}>
+        <ActivityMark kind={task.activity ?? 'waiting_model'} size={14} />
+      </span>
+    {/if}
+    {#if dot}<span class="dot {dot}" data-tip={merge?.tip ?? statusLabel(task.status)}></span>{/if}
   </div>
   <div class="meta">
     <span class="ms"
-      >{stageDone && task.milestone
-        ? `${task.milestone.id} · ${t('board.stage.review')}`
+      >{merge
+        ? task.milestone
+          ? `${task.milestone.id} · ${merge.note}`
+          : merge.tip
         : task.milestone
           ? `${task.milestone.id} · ${task.milestone.title}`
           : t('board.loose')}</span
@@ -114,18 +127,23 @@
         >{t('board.stage.after')} <span class="mono">{short(task.after)}</span></span
       >
     {/if}
+    {#if task.mergeAfter}
+      <span class="after"
+        >{t('board.stage.after')} <span class="mono">{short(task.mergeAfter)}</span></span
+      >
+    {/if}
   </div>
   <div class="bottom">
+    {#if task.agent}
+      <span class="agent" data-tip={agentLine(task)}
+        ><AgentLogo agent={task.agent} size={task.agent === 'codex' ? 16 : 17} /></span
+      >
+    {/if}
     <span
       class="time"
       data-tip={task.status === 'done'
         ? t('board.finished', { when })
         : t('board.updated', { when })}>{when}</span
     >
-    {#if task.agent}
-      <span class="agent" data-tip={agentLine(task)}
-        ><AgentLogo agent={task.agent} size={task.agent === 'codex' ? 16 : 17} /></span
-      >
-    {/if}
   </div>
 </div>

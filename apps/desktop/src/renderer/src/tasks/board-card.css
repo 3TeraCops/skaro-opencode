@@ -55,7 +55,9 @@
   color: var(--sk-text-12);
 }
 
-.board > .col > .cards > .board-card .lock {
+.board > .col > .cards > .board-card .lock,
+.board > .col > .cards > .board-card .queue,
+.board > .col > .cards > .board-card .activity {
   flex: none;
   margin-top: 1px;
   display: inline-flex;
@@ -71,20 +73,11 @@
   background: var(--sk-accent);
 }
 
-.board > .col > .cards > .board-card .dot.working {
-  background: var(--sk-fill-41);
-  animation: skPulse 1.6s ease-in-out infinite;
-}
-
 .board > .col > .cards > .board-card .dot.error {
   background: var(--sk-error);
 }
 
 /* Done in its stage and waiting for the merge: quieter than a blocked card. */
-.board > .col > .cards > .board-card.stage-done {
-  opacity: 0.55;
-}
-
 .board > .col > .cards > .board-card .meta {
   display: flex;
   align-items: center;

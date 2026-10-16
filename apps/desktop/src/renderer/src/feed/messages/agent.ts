@@ -3,7 +3,7 @@
 export const ru = {
   'agent.modal.title': 'Агент задачи',
   'agent.modal.subtitle': 'Применится к следующему запросу',
-  'agent.modal.locked': 'Агента нельзя сменить в начатой задаче',
+  'agent.modal.locked': 'Для смены агента дождитесь завершения текущей операции или остановите ход',
   'agent.state.ready': 'Готов к работе',
   'agent.state.download': 'Не загружен · ~{mb} МБ',
   'agent.state.downloading': 'Загружается · {a} из {b} МБ',
@@ -61,7 +61,8 @@ export const ru = {
 export const en = {
   'agent.modal.title': 'Task agent',
   'agent.modal.subtitle': 'Applies to the next request',
-  'agent.modal.locked': 'The agent of a started task cannot be changed',
+  'agent.modal.locked':
+    'Wait for the current operation to finish or stop the turn to change agents',
   'agent.state.ready': 'Ready',
   'agent.state.download': 'Not downloaded · ~{mb} MB',
   'agent.state.downloading': 'Downloading · {a} of {b} MB',

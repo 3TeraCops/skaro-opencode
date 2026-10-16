@@ -28,8 +28,10 @@ export function ciRunTool(
       required: ['run_id', 'kind', 'action'],
       additionalProperties: false,
     },
-    available: (scope) => !scope.importId,
+    available: (scope) => !scope.importId && scope.kind !== 'integration',
     call: async (args, scope) => {
+      if (scope.kind === 'integration')
+        return { text: 'Integration sessions cannot manage CI or releases.', isError: true };
       if (
         !Number.isSafeInteger(args['run_id']) ||
         Number(args['run_id']) < 1 ||

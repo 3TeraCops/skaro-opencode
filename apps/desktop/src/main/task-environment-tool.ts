@@ -23,10 +23,15 @@ export async function startTaskEnvironment(
       text:
         `The environment ${info.name} is running and ready.\n` +
         (urls.length ? `${urls.join('\n')}\n` : '') +
+        (info.portBindings
+          ? `Allocated host access: ${JSON.stringify(info.portBindings)}. ` +
+            'Other services are internal; use docker compose exec for tests.\n'
+          : '') +
         'It is a disposable copy of the main environment: sign in with the existing accounts ' +
         'the project documents, and change its data freely. COMPOSE_PROJECT_NAME and the ' +
         "environment's variables are set in your shell, so `docker compose ps`, `logs` and " +
-        '`exec` address it. Name these addresses in your verification result.',
+        '`exec` address it. Use the addresses returned by this call for host access; a port ' +
+        'may have been replaced since the shell was attached. Name these addresses in your verification result.',
     };
   } catch (error) {
     if (error instanceof EnvironmentUnavailable) {

@@ -11,6 +11,8 @@
     /** Tooltip of the collapsed rail item when the count is shown. */
     railTip?: string;
     separated?: boolean;
+    /** Optional right-aligned text of a footer action (including "0%"). */
+    trailing?: string;
   }
 </script>
 
@@ -38,6 +40,8 @@
     onresize,
     onselect,
     ontask,
+    footerItem,
+    onfooter,
   }: {
     title: string;
     /** The project's logo (a data: URL), before the title. */
@@ -51,6 +55,8 @@
     onresize?: () => void;
     onselect: (id: string) => void;
     ontask?: (id: string) => void;
+    footerItem?: NavItem;
+    onfooter?: () => void;
   } = $props();
   const id = $props.id();
 </script>
@@ -87,6 +93,14 @@
     {/each}
     <span class="spacer"></span>
     {#if tasks.length}<NavActiveTasks {tasks} onopen={(id) => ontask?.(id)} />{/if}
+    {#if footerItem}
+      <div class="sep"></div>
+      <button type="button" class="item footer-item" data-tip={footerItem.label} onclick={onfooter}>
+        <span class="icon"><Icon name={footerItem.icon} size={16} /></span>
+        <span class="label">{footerItem.label}</span>
+        {#if footerItem.trailing}<span class="count">{footerItem.trailing}</span>{/if}
+      </button>
+    {/if}
   </nav>
   <PanelResizer
     {width}
@@ -126,5 +140,19 @@
     {/each}
     <span class="spacer"></span>
     {#if tasks.length}<NavActiveTasks {tasks} rail onopen={(id) => ontask?.(id)} />{/if}
+    {#if footerItem}
+      <div class="rail-sep"></div>
+      <button
+        type="button"
+        class="rail-item"
+        onclick={onfooter}
+        data-tip={footerItem.trailing
+          ? `${footerItem.label} · ${footerItem.trailing}`
+          : footerItem.label}
+        aria-label={footerItem.label}
+      >
+        <Icon name={footerItem.icon} size={16} />
+      </button>
+    {/if}
   </nav>
 {/if}

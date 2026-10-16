@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Песочные часы: 3 секунды пересыпания, затем переворот">
+  <defs>
+    <clipPath id="hourglass-upper">
+      <path d="M8.3 3.9h7.4v2.272a.7.7 0 0 1-.205.495L12 10.162 8.505 6.667a.7.7 0 0 1-.205-.495Z"/>
+    </clipPath>
+    <clipPath id="hourglass-lower">
+      <path d="M8.3 20.1h7.4v-2.272a.7.7 0 0 0-.205-.495L12 13.838l-3.495 3.495a.7.7 0 0 0-.205.495Z"/>
+    </clipPath>
+    <clipPath id="hourglass-stream">
+      <path d="M11.45 10.9h1.1v3.6l3.15 3.15v2.45H8.3v-2.45l3.15-3.15Z"/>
+    </clipPath>
+  </defs>
+  <g>
+    <animateTransform attributeName="transform" type="rotate" values="0 12 12;0 12 12;180 12 12" keyTimes="0;0.833333333;1" dur="3.6s" repeatCount="indefinite" calcMode="spline" keySplines="0 0 1 1;.4 0 .2 1"/>
+    <g fill="currentColor" stroke="none">
+      <g clip-path="url(#hourglass-upper)">
+        <rect x="8" y="3.9" width="8" height="7">
+          <animate attributeName="y" values="3.9;4.76;5.62;6.49;7.31;8.24;10.2;10.2" keyTimes="0;0.166666667;0.333333333;0.5;0.666666667;0.75;0.833333333;1" dur="3.6s" repeatCount="indefinite"/>
+        </rect>
+      </g>
+      <g clip-path="url(#hourglass-lower)">
+        <rect x="8" y="20.1" width="8" height="7">
+          <animate attributeName="y" values="20.1;19.24;18.38;17.51;16.69;15.76;13.8;13.8" keyTimes="0;0.166666667;0.333333333;0.5;0.666666667;0.75;0.833333333;1" dur="3.6s" repeatCount="indefinite"/>
+        </rect>
+      </g>
+      <g clip-path="url(#hourglass-stream)">
+        <animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.763888889;0.833333333;1" dur="3.6s" repeatCount="indefinite"/>
+        <circle cx="11.82" cy="11.1" r=".23">
+          <animate attributeName="cy" values="11.1;20.1" dur=".42s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx="12.16" cy="11.1" r=".25">
+          <animate attributeName="cy" values="11.1;20.1" dur=".46s" begin="-.16s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx="11.98" cy="11.1" r=".22">
+          <animate attributeName="cy" values="11.1;20.1" dur=".4s" begin="-.28s" repeatCount="indefinite"/>
+        </circle>
+      </g>
+    </g>
+    <path d="M5 22h14"/>
+    <path d="M5 2h14"/>
+    <path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/>
+    <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>
+  </g>
+</svg>

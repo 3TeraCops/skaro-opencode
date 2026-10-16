@@ -5,8 +5,10 @@ import type { ProjectContext } from './projects';
 import { mergeInteraction, withStage } from './task-merge-card';
 import { closeMergeCards } from './task-merge-result';
 import { subjectOf } from './task-subject';
+import type { IntegrationService } from './integration-service';
 
 export interface TaskMergeHooks {
+  integrations: IntegrationService;
   active: () => ActiveRun[];
   /** The run of a task with its feed, loaded from its log when it is not in memory. */
   restore: (projectId: string, taskId: string) => Promise<ActiveRun | undefined>;
@@ -17,6 +19,8 @@ export interface TaskMergeHooks {
   launchUnblocked: (projectId: string, ids: string[]) => Promise<void>;
   detach: (active: ActiveRun) => Promise<void>;
   setRuntime: (projectId: string, taskId: string, state: TaskRuntime) => void;
+  /** The merge of the task met a conflict: its own agent resolves it and submits again. */
+  conflicted: (active: ActiveRun, conflicts: string[]) => Promise<void>;
   /** A merged task has no use for its environment: a disposable copy goes with it. */
   removeEnvironment: (projectId: string, taskId: string) => Promise<void>;
   refreshCard?: (

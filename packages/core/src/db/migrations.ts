@@ -90,4 +90,21 @@ export const MIGRATIONS: string[] = [
   `
   ALTER TABLE projects ADD COLUMN logo TEXT;
   `,
+  `
+  ALTER TABLE runs ADD COLUMN previous_run_id TEXT REFERENCES runs(id);
+  ALTER TABLE runs ADD COLUMN handoff TEXT;
+  CREATE UNIQUE INDEX runs_continuation ON runs(previous_run_id) WHERE previous_run_id IS NOT NULL;
+  `,
+  // 5: a deleted task's retained history must not become a replacement task's session.
+  `
+  ALTER TABLE runs ADD COLUMN retired_at INTEGER;
+  UPDATE runs SET retired_at = (
+    SELECT MIN(events.at) FROM events
+    WHERE events.project_id = runs.project_id AND events.kind = 'task_deleted'
+      AND json_extract(events.data, '$.task') = runs.task_id AND events.at >= runs.started_at
+  );
+  UPDATE runs SET ended_at = COALESCE(ended_at, retired_at), outcome = COALESCE(outcome, 'interrupted')
+    WHERE retired_at IS NOT NULL;
+  DELETE FROM task_runtime WHERE run_id IN (SELECT id FROM runs WHERE retired_at IS NOT NULL);
+  `,
 ];

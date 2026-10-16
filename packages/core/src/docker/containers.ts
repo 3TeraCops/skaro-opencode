@@ -7,6 +7,7 @@ export interface DockerContainer {
   Name: string;
   State?: { Running?: boolean };
   Config?: { Labels?: Record<string, string> | null };
+  NetworkSettings?: { Ports?: Record<string, { HostIp: string; HostPort: string }[] | null> };
   Mounts: { Type: string; Source: string }[];
 }
 

@@ -10,6 +10,7 @@ import { ActiveRun } from './task-run-model';
 import type { TaskRunEngine } from './task-run-engine';
 import { lastAgentText } from './task-merges';
 import { readSubject, updateSubject } from './task-subject';
+import { IntegrationPending } from './integration-model';
 
 /** results: a focused part of the task-run controller. */
 export class TaskRunResults {
@@ -45,6 +46,7 @@ export class TaskRunResults {
         );
         return { text: mergedTaskReply(result) };
       } catch (error) {
+        if (error instanceof IntegrationPending) return { text: error.message };
         return { text: errorText(error), isError: true };
       }
     }
@@ -62,6 +64,7 @@ export class TaskRunResults {
     try {
       return await this.ctx.merges.request(args, active, this.ctx.project(active.projectId));
     } catch (error) {
+      if (error instanceof IntegrationPending) return { text: error.message };
       return { text: errorText(error), isError: true };
     }
   }
@@ -75,7 +78,7 @@ export class TaskRunResults {
   async criteriaChanged(
     projectId: string,
     taskId: string,
-  ): Promise<'merge' | 'merged' | 'done' | 'stage' | 'open' | 'none'> {
+  ): Promise<'merge' | 'merged' | 'done' | 'conflicts' | 'open' | 'none' | 'integrating'> {
     const context = this.ctx.project(projectId);
     context.invalidate();
     const artifacts = await context.load();
@@ -117,6 +120,7 @@ export class TaskRunResults {
       active.run.worktree,
       active.commitMessage ?? task.id + ': ' + task.title,
       active.mergeSummary ?? lastAgentText(active),
+      active.verification,
     );
     const after = await context.load();
     await this.ctx.stages.sync(projectId, taskId);
@@ -124,19 +128,6 @@ export class TaskRunResults {
       projectId,
       newlyUnblocked(artifacts.tasks, after.tasks),
     );
-    if (
-      task.milestone &&
-      after.tasks.some(
-        (item) =>
-          item.milestone === task.milestone &&
-          !item.archived &&
-          !['review', 'done', 'cancelled'].includes(item.status),
-      )
-    ) {
-      this.statusChanged(projectId, taskId);
-      return 'stage';
-    }
-
     // "Вливать автоматически": commit and merge now; a blocked merge falls back to the card.
     if (this.ctx.deps.db.getSetting<boolean | null>(AUTO_MERGE_KEY, null) === true) {
       const card = active.timeline.state.interactions.find(
@@ -151,6 +142,12 @@ export class TaskRunResults {
         );
         return 'merged';
       } catch (error) {
+        if (error instanceof IntegrationPending) return 'integrating';
+        // The agent of the task resolves its conflict in its own checkout and environment.
+        if (error instanceof MergeBlockedError && error.check.blockers.includes('conflicts')) {
+          await this.ctx.mergeActions.conflicted(active, error.check.conflicts);
+          return 'conflicts';
+        }
         if (!(error instanceof MergeBlockedError))
           this.ctx.history.notice(active, 'other', 'error', errorText(error));
         context.invalidate();
@@ -162,10 +159,15 @@ export class TaskRunResults {
     const card = active.timeline.state.interactions.find(
       (i): i is MergeInteraction => i.kind === 'merge',
     );
-    const stale =
-      !!task.milestone || (active.commitMessage && card?.message !== active.commitMessage);
+    const stale = active.commitMessage && card?.message !== active.commitMessage;
     if (!card || stale) {
-      const shown = await this.ctx.merges.showCard(active, context);
+      let shown;
+      try {
+        shown = await this.ctx.merges.showCard(active, context);
+      } catch (error) {
+        if (error instanceof IntegrationPending) return 'integrating';
+        throw error;
+      }
       if (!shown) return active.merged ? 'merged' : 'none';
     }
     this.statusChanged(projectId, taskId);
@@ -209,11 +211,21 @@ export class TaskRunResults {
     const met = criteria.map((_, i) => verdicts.get(i + 1)!.met);
     await updateSubject(context, task.id, { body: setCriteria(task.body, met) });
     active.mergeSummary = args.summary;
+    active.verification = args.verification;
     if (args.commitMessage) active.commitMessage = args.commitMessage;
     const state = await this.criteriaChanged(active.projectId, active.taskId);
     const open = met.flatMap((ok, i) => (ok ? [] : [i + 1]));
     if (open.length) return { text: unmetReply(task, open, 'result') };
     const done = `All ${criteria.length} acceptance criteria are ticked in the task. `;
+    if (state === 'integrating')
+      return {
+        text:
+          done +
+          'Skaro saved the accepted result and is automatically ' +
+          'resolving and verifying integration in an isolated candidate. Publication has not happened. ' +
+          'End this turn so the integration worker can take its queue slot. Do not change the accepted branch ' +
+          'or ask the owner to resolve Git conflicts; Skaro will continue automatically.',
+      };
     if (state === 'merged' && active.merged) {
       return {
         text:
@@ -222,14 +234,7 @@ export class TaskRunResults {
           mergedTaskReply(active.merged),
       };
     }
-    if (state === 'stage') {
-      return {
-        text:
-          done +
-          'Skaro saved the accepted result. Implementation is complete; the task stays in review ' +
-          'until its milestone is merged. Report the pending merge accurately. There is no separate milestone chat.',
-      };
-    }
+    if (state === 'conflicts') return { text: done + (active.conflictOrder ?? '') };
     return {
       text:
         state === 'merge'

@@ -5,6 +5,7 @@ import { CompletionStore, criteriaRevision, type TaskResult } from './completion
 import { taskSections } from './task-body';
 import { readLedger } from './task-stage';
 import { stageIdOf } from './task-stage';
+import { dependencySnapshot, preparedDependencies } from './completion-dependencies';
 
 /** Import an accepted legacy result once. Never include unsubmitted work at a shared tip. */
 export async function acceptedResult(
@@ -17,7 +18,12 @@ export async function acceptedResult(
   if (saved) {
     if (saved.criteria !== criteriaRevision(task))
       throw new Error(`${task.id}: acceptance changed; submit the result again`);
-    return saved;
+    return saved.dependencies
+      ? saved
+      : {
+          ...saved,
+          dependencies: dependencySnapshot(preparedDependencies(db, context.id, task.id)),
+        };
   }
   if (task.status !== 'review' || taskSections(task.body).criteria.some((item) => !item.done))
     throw new Error(`${task.id}: no accepted result`);
@@ -43,6 +49,7 @@ export async function acceptedResult(
     ...(run?.worktree ? { worktree: run.worktree } : {}),
     ...(legacy ? { sharedCheckout: true } : {}),
     criteria: criteriaRevision(task),
+    dependencies: dependencySnapshot(preparedDependencies(db, context.id, task.id)),
     message: legacy?.message ?? `${task.id}: ${task.title}`,
   };
   await git(context.root, [

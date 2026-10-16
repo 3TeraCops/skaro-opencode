@@ -1,4 +1,12 @@
-export type ProposalState = 'pending' | 'applied' | 'rejected' | 'reverted';
+export type ProposalState =
+  'pending' | 'accepted' | 'applied' | 'rejected' | 'reverted' | 'superseded';
+
+export interface ProposedMilestone {
+  id: string;
+  title: string;
+  body?: string;
+  isNew: boolean;
+}
 
 /** A task in a proposed plan; `ref` links tasks of the same proposal to each other. */
 export interface ProposedTask {
@@ -12,9 +20,12 @@ export interface ProposedTask {
   dependsOnTitles: string[];
   /** Specification the task implements ("0003"). */
   spec?: string;
+  /** Destination within a complete plan spanning multiple milestones. */
+  milestone?: ProposedMilestone;
 }
 
 export type Proposal =
+  | import('./task-replan-model.ts').TaskReplanProposal
   | {
       /** brief.md, architecture.md or docs/<name>.md, written as a whole. */
       type: 'doc';
@@ -61,7 +72,12 @@ export type Proposal =
   | {
       /** A milestone with its tasks, or tasks for an existing milestone. */
       type: 'plan';
-      milestone?: { id: string; title: string; body?: string; isNew: boolean };
+      /** Saved planning operation whose tasks this card proposes. */
+      planKey?: string;
+      /** One review and one owner decision for the entire task graph. */
+      complete?: boolean;
+      title?: string;
+      milestone?: ProposedMilestone;
       tasks: ProposedTask[];
     }
   | {
@@ -93,6 +109,16 @@ export type Proposal =
     };
 
 export interface ProposalResult {
+  /** Actual progress and recoverable error while applying or reverting a task replan. */
+  replan?: import('./task-replan-model.ts').TaskReplanProgress;
+  /** One durable selection for the complete graph; used for interrupted-write recovery. */
+  selected?: string[];
+  /** Legacy per-card queue data, read only when migrating old reviews. */
+  waiting?: { ref: string; reason: string }[];
+  /** Choices declined before older per-milestone cards were consolidated. */
+  omitted?: string[];
+  error?: string;
+  milestones?: { id: string; title: string }[];
   milestone?: { id: string; title: string };
   /** Created tasks; `ref` links them to the proposal (later cards may depend on them). */
   tasks?: { id: string; title: string; ref: string }[];

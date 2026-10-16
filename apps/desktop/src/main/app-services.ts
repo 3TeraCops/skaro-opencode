@@ -6,6 +6,9 @@ import {
   mergeTaskTool,
   submitResultTool,
   startEnvironmentTool,
+  configureEnvironmentTool,
+  verifyIntegrationTool,
+  taskHistoryTool,
   ciRunTool,
   projectTools,
   type ToolResult,
@@ -49,8 +52,17 @@ export async function createServices(
       mergeTaskTool((args, scope): Promise<ToolResult> => runs.mergeTask(args, scope)),
       submitResultTool((args, scope): Promise<ToolResult> => runs.submitResult(args, scope)),
       startEnvironmentTool((scope): Promise<ToolResult> => runs.startEnvironment(scope)),
+      configureEnvironmentTool((args, scope) => runs.configureEnvironment(args, scope)),
+      verifyIntegrationTool((checks, scope) => runs.verifyIntegration(checks, scope)),
+      taskHistoryTool((args, scope) => runs.readHistory(args, scope)),
       ciRunTool((args, scope) => ci.call(args, scope)),
       ...projectTools({
+        planning: {
+          preparePlan: (args, scope) => chats.planning.preparePlan(args, scope),
+          proposeSavedPlan: (args, scope) => chats.planning.proposeSavedPlan(args, scope),
+          finishPlan: (args, scope) => chats.planning.finishPlan(args, scope),
+          controlPlan: (args, scope) => chats.planning.controlPlan(args, scope),
+        },
         context: (scope) => chats.context(scope),
         writeDoc: (args, scope) => chats.writeDoc(args, scope),
         proposeAdr: (args, scope) => chats.proposeAdr(args, scope),
@@ -60,6 +72,7 @@ export async function createServices(
         proposeMilestones: (args, scope) => chats.proposeMilestones(args, scope),
         proposeTasks: (args, scope) => chats.proposeTasks(args, scope),
         updateTask: (args, scope) => chats.updateTask(args, scope),
+        replanTasks: (args, scope) => chats.replanTasks(args, scope),
       }),
     ],
   });
@@ -107,6 +120,7 @@ export async function createServices(
     locale: () => appState.getLocale(app.getLocale()),
   });
   trace('task runs created');
+  await chats.recoverReplans();
   const ci = new CiRuns(db, projects, async (scope, text, error) => {
     if (scope.kind === 'task' && scope.taskId)
       await runs.operationNotice(scope.projectId, scope.taskId, text, error);

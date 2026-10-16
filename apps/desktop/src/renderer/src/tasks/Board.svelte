@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { t } from '@skaro/ui';
+  import { Checkbox, t } from '@skaro/ui';
   import BoardCard from './BoardCard.svelte';
   import { createBoardDrag } from './board-drag.svelte';
   import type { BoardMoves } from './board-moves-controller.svelte';
@@ -16,6 +16,7 @@
     selecting,
     now,
     onselect,
+    onselectmany,
     onopen,
   }: {
     moves: BoardMoves;
@@ -23,6 +24,7 @@
     selecting: boolean;
     now: number;
     onselect: (id: string, on: boolean) => void;
+    onselectmany: (ids: string[], on: boolean) => void;
     onopen: (id: string) => void;
   } = $props();
 
@@ -45,6 +47,21 @@
       <div class="head">
         <span class="name" style="color: {col.color}">{t(`board.col.${col.key}`)}</span>
         <span class="count">{items.length + (slot ? 1 : 0)}</span>
+        {#if selecting}
+          <span class="select-all">
+            <Checkbox
+              label={t('board.selectAll')}
+              bind:checked={
+                () => col.tasks.length > 0 && col.tasks.every((task) => selected.includes(task.id)),
+                (on) =>
+                  onselectmany(
+                    col.tasks.map((task) => task.id),
+                    on,
+                  )
+              }
+            />
+          </span>
+        {/if}
       </div>
       <div class="cards" data-scroll>
         {#each items as task, i (task.id)}

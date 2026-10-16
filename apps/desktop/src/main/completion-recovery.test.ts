@@ -1,9 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { git } from '@skaro/core';
+import { git, MergeBlockedError } from '@skaro/core';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { CompletionFixture } from './completion-test-support';
 import { publishCompletion } from './completion-publication';
+import { CompletionCoordinator } from './completion-coordinator';
 
 let fixture: CompletionFixture;
 beforeEach(async () => {
@@ -115,7 +116,7 @@ it('preserves new source edits and changed acceptance instead of closing an exte
   expect(fixture.db.listMerges(fixture.projectId, task.id)).toEqual([]);
 }, 30_000);
 
-it('blocks conflicting task results and keeps main and source files intact', async () => {
+it('merges milestone tasks one by one and hands a conflict to the agent of its task', async () => {
   const stage = await fixture.context.store.createMilestone({ title: 'Conflicts' });
   const first = await fixture.task('First', stage.id);
   const second = await fixture.task('Second', stage.id);
@@ -125,10 +126,30 @@ it('blocks conflicting task results and keeps main and source files intact', asy
   const b = await fixture.checkout(second);
   await fixture.accept(first, a, 'shared.txt');
   await fixture.accept(second, b, 'shared.txt');
-  await expect(fixture.coordinator.merge(fixture.projectId, stage.id)).rejects.toThrow('conflicts');
-  expect(await fixture.context.git.head()).toBe(before);
-  expect((await fixture.context.store.readTask(first.id)).status).toBe('review');
+  // Without a run to ask, the conflict is the error of the merge.
+  await expect(fixture.coordinator.merge(fixture.projectId, stage.id)).rejects.toBeInstanceOf(
+    MergeBlockedError,
+  );
+  const merged = await fixture.context.git.head();
+  expect(merged).not.toBe(before);
+  expect((await fixture.context.store.readTask(first.id)).status).toBe('done');
   expect((await fixture.context.store.readTask(second.id)).status).toBe('review');
-  expect(await readFile(join(a, 'shared.txt'), 'utf8')).toBe(`${first.id} result\n`);
+  expect(await readFile(join(fixture.repo, 'shared.txt'), 'utf8')).toBe(`${first.id} result\n`);
   expect(await readFile(join(b, 'shared.txt'), 'utf8')).toBe(`${second.id} result\n`);
+  // With a run, the conflict goes to the agent of the task; no candidate is built for it.
+  const handed: [string, string[]][] = [];
+  const coordinator = new CompletionCoordinator({
+    ...fixture.hooks(),
+    conflicted: async (_project, taskId, conflicts) => {
+      handed.push([taskId, conflicts]);
+      return true;
+    },
+  });
+  await expect(coordinator.merge(fixture.projectId, stage.id)).rejects.toThrow(
+    'went back to the task agent',
+  );
+  await coordinator.close();
+  expect(handed).toEqual([[second.id, ['shared.txt']]]);
+  expect(await fixture.context.git.head()).toBe(merged);
+  expect(fixture.integrations.deps.store.all(fixture.projectId)).toEqual([]);
 }, 30_000);

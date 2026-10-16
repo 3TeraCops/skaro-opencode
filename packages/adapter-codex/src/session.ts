@@ -16,27 +16,20 @@ import {
   type UserInput,
 } from '@skaro/timeline';
 import { CodexProjector } from './projector.ts';
-import { AppServer, type CodexBinary } from './rpc.ts';
-import { codexMcpConfig } from './mcp-config.ts';
 import { codexPolicy, sandboxPolicy } from './session-policy.ts';
+import { CodexSessionProcess, type CodexSessionConfig } from './session-process.ts';
 import { TurnControl } from './turn-control.ts';
 import { PERMISSION_CONTINUATION, toInput, toCodexAnswer } from './session-input.ts';
 import { CODEX_DEFAULT_INSTRUCTIONS } from './interaction-instructions.ts';
 
 export { codexPolicy } from './session-policy.ts';
-
-export interface CodexSessionConfig extends CodexBinary {
-  /** `-c key=value` overrides, e.g. the Windows sandbox mode chosen by the self-check. */
-  config?: string[];
-  codexHome?: string;
-}
+export type { CodexSessionConfig } from './session-process.ts';
 
 export class CodexSession implements AgentSession {
   readonly events: EventChannel<TimelineEvent> = new EventChannel();
   private readonly projector: CodexProjector;
   private readonly options: SessionOptions;
-  private readonly config: CodexSessionConfig;
-  private server: AppServer | undefined;
+  private readonly process: CodexSessionProcess;
   private threadId = '';
   private model = '';
   private effort: string | undefined;
@@ -49,49 +42,19 @@ export class CodexSession implements AgentSession {
 
   constructor(options: SessionOptions, config: CodexSessionConfig) {
     this.options = options;
-    this.config = config;
     this.mode = options.permissionMode;
     this.planning = options.planFirst ?? false;
     this.effort = options.effort;
-    this.projector = new CodexProjector(options.context, (event) => {
-      if (event.t === 'interaction.opened')
-        this.interactions.set(event.interaction.id, event.interaction);
-      if (event.t === 'interaction.closed') this.interactions.delete(event.id);
-      if (event.t === 'turn.completed') {
-        for (const [id, interaction] of this.interactions)
-          if (!isAsyncQuestion(interaction)) this.interactions.delete(id);
-        this.requestIds.clear();
-      }
-      this.events.push(this.turns.observe(event));
-    });
-  }
-
-  async start(): Promise<void> {
-    const o = this.options;
-    const now = () => o.context.now();
-    this.server = await AppServer.start({
-      ...this.config,
-      config: [
-        ...(this.config.config ?? []),
-        ...(o.sandboxMode ? [`windows.sandbox="${o.sandboxMode}"`] : []),
-        'features.default_mode_request_user_input=true',
-        'suppress_unstable_features_warning=true',
-      ],
-      cwd: o.cwd,
-      ...(o.env ? { env: o.env } : {}),
+    this.process = new CodexSessionProcess(options, config, {
       onMessage: (msg) => {
-        // Server requests are answered by their own id (numbers or strings).
-        if (typeof msg['method'] === 'string' && msg['id'] !== undefined) {
+        if (typeof msg['method'] === 'string' && msg['id'] !== undefined)
           this.requestIds.set(`req-${String(msg['id'])}`, msg['id']);
-        }
       },
       onRaw: (dir, line) => {
-        o.raw({ ts: now(), dir, line });
         if (dir === 'in') this.projector.input(line);
         else if (dir === 'out') this.projector.output(line);
       },
       onExit: (code, signal) => {
-        o.raw({ ts: now(), dir: 'meta', line: { event: 'exit', code, signal } });
         if (this.turns.active) {
           this.events.push(
             this.turns.observe({
@@ -105,27 +68,38 @@ export class CodexSession implements AgentSession {
         void this.close();
       },
     });
-    const policy = codexPolicy(this.mode, o);
-    const mcp = codexMcpConfig(o.mcpServers);
-    const params = {
-      cwd: o.cwd,
-      approvalPolicy: policy.approvalPolicy,
-      sandbox: policy.sandbox,
-      ...(o.model ? { model: o.model } : {}),
-      ...(o.instructions ? { developerInstructions: o.instructions } : {}),
-      ...(Object.keys(mcp).length ? { config: mcp } : {}),
-    };
-    const result = obj(
-      o.resume
-        ? await this.server.request('thread/resume', {
-            threadId: o.resume,
-            ...params,
-            excludeTurns: true,
-          })
-        : await this.server.request('thread/start', params),
+    this.projector = new CodexProjector(options.context, (event) => {
+      if (event.t === 'interaction.opened')
+        this.interactions.set(event.interaction.id, event.interaction);
+      if (event.t === 'interaction.closed') this.interactions.delete(event.id);
+      if (event.t === 'turn.completed') {
+        this.process.failed(event.error);
+        for (const [id, interaction] of this.interactions)
+          if (!isAsyncQuestion(interaction)) this.interactions.delete(id);
+        this.requestIds.clear();
+      }
+      this.events.push(this.turns.observe(event));
+    });
+  }
+
+  start(): Promise<void> {
+    return this.ensureReady();
+  }
+
+  private async ensureReady(): Promise<void> {
+    if (this.closed) throw new Error('Codex session is closed');
+    // Login and auth failures never interrupt an active turn or its pending approvals.
+    if (this.turns.active) return;
+    const model = this.model;
+    const result = await this.process.ensure(
+      this.threadId || this.options.resume,
+      model || this.options.model,
+      this.mode,
     );
-    this.threadId = str(obj(result?.['thread'])?.['id']) ?? '';
-    this.model = str(result?.['model']) ?? o.model ?? '';
+    if (result) {
+      this.threadId = result.threadId;
+      if (this.model === model) this.model = result.model;
+    }
   }
 
   send(input: UserInput): Promise<void> {
@@ -133,24 +107,27 @@ export class CodexSession implements AgentSession {
   }
 
   private async startTurn(input: UserInput): Promise<void> {
-    if (this.closed) throw new Error('Codex session is closed');
+    await this.ensureReady();
     const policy = codexPolicy(this.mode, this.options);
-    await this.rpc().request('turn/start', {
-      threadId: this.threadId,
-      input: toInput(input),
-      ...(this.model ? { model: this.model } : {}),
-      ...(this.effort ? { effort: this.effort } : {}),
-      approvalPolicy: policy.approvalPolicy,
-      sandboxPolicy: sandboxPolicy(policy.sandbox),
-      collaborationMode: {
-        mode: this.planning ? 'plan' : 'default',
-        settings: {
-          model: this.model,
-          reasoning_effort: this.effort ?? null,
-          developer_instructions: this.planning ? null : CODEX_DEFAULT_INSTRUCTIONS,
+    const result = obj(
+      await this.rpc().request('turn/start', {
+        threadId: this.threadId,
+        input: toInput(input),
+        ...(this.model ? { model: this.model } : {}),
+        ...(this.effort ? { effort: this.effort } : {}),
+        approvalPolicy: policy.approvalPolicy,
+        sandboxPolicy: sandboxPolicy(policy.sandbox),
+        collaborationMode: {
+          mode: this.planning ? 'plan' : 'default',
+          settings: {
+            model: this.model,
+            reasoning_effort: this.effort ?? null,
+            developer_instructions: this.planning ? null : CODEX_DEFAULT_INSTRUCTIONS,
+          },
         },
-      },
-    });
+      }),
+    );
+    this.turns.accepted(str(obj(result?.['turn'])?.['id']));
   }
 
   /** Adds to the running turn; without one, `turn/steer` fails, so it becomes a new turn. */
@@ -220,11 +197,17 @@ export class CodexSession implements AgentSession {
   async rewind(toItemId: string): Promise<void> {
     const turnId = this.projector.turnOf(toItemId);
     if (!turnId) throw new Error(`unknown message ${toItemId}`);
-    await this.rpc().request('thread/revert', { threadId: this.threadId, beforeTurnId: turnId });
+    await this.turns.run(async () => {
+      await this.ensureReady();
+      await this.rpc().request('thread/revert', { threadId: this.threadId, beforeTurnId: turnId });
+    });
   }
 
   async compact(): Promise<void> {
-    await this.rpc().request('thread/compact/start', { threadId: this.threadId });
+    await this.turns.run(async () => {
+      await this.ensureReady();
+      await this.rpc().request('thread/compact/start', { threadId: this.threadId });
+    });
   }
 
   async interrupt(): Promise<void> {
@@ -250,15 +233,18 @@ export class CodexSession implements AgentSession {
   }
 
   async close(): Promise<void> {
-    if (this.closed) return;
+    if (this.closed) {
+      await this.process.close();
+      this.events.close();
+      return;
+    }
     this.closed = true;
     this.turns.cancelRestart();
-    await this.server?.close();
+    await this.process.close();
     this.events.close();
   }
 
-  private rpc(): AppServer {
-    if (!this.server) throw new Error('session not started');
-    return this.server;
+  private rpc(): CodexSessionProcess {
+    return this.process;
   }
 }

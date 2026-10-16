@@ -17,7 +17,7 @@ afterEach(async () => {
 });
 
 it.each(['squash', 'merge', 'rebase'] as const)(
-  'undoes a %s milestone as a group and does not reclose its tasks on restart',
+  'undoes the %s merge of one milestone task and does not reclose it on restart',
   async (strategy) => {
     const stage = await fixture.context.store.createMilestone({ title: 'Undo group' });
     const first = await fixture.task('First', stage.id);
@@ -30,10 +30,11 @@ it.each(['squash', 'merge', 'rebase'] as const)(
     await Promise.all([fixture.accept(first, a), fixture.accept(second, b)]);
     const merged = await fixture.coordinator.merge(fixture.projectId, stage.id);
     await fixture.restart();
+    // Each task was merged on its own: the last merge is the second task's.
     const active = new ActiveRun(
       fixture.projectId,
-      first.id,
-      fixture.db.listRuns(fixture.projectId, first.id)[0]!,
+      second.id,
+      fixture.db.listRuns(fixture.projectId, second.id)[0]!,
       new Timeline(),
     );
     const hooks = {
@@ -45,17 +46,17 @@ it.each(['squash', 'merge', 'rebase'] as const)(
     const reverted = await undoTaskMerge(active, fixture.context, merged.commit, hooks);
     expect(await fixture.context.git.head()).toBe(reverted);
     expect(await undoTaskMerge(active, fixture.context, merged.commit, hooks)).toBe(reverted);
-    for (const task of [first, second]) {
-      expect((await fixture.context.store.readTask(task.id)).status).toBe('review');
-      expect(fixture.db.listMerges(fixture.projectId, task.id)[0]?.revertCommit).toBe(reverted);
-      expect(existsSync(join(fixture.repo, `${task.id}.txt`))).toBe(false);
-    }
+    expect((await fixture.context.store.readTask(second.id)).status).toBe('review');
+    expect(fixture.db.listMerges(fixture.projectId, second.id)[0]?.revertCommit).toBe(reverted);
+    expect(existsSync(join(fixture.repo, `${second.id}.txt`))).toBe(false);
+    expect((await fixture.context.store.readTask(first.id)).status).toBe('done');
+    expect(existsSync(join(fixture.repo, `${first.id}.txt`))).toBe(true);
     expect(await readFile(join(a, `${first.id}.txt`), 'utf8')).toBe(`${first.id} result\n`);
     expect(await readFile(join(b, `${second.id}.txt`), 'utf8')).toBe(`${second.id} result\n`);
     await fixture.restart();
     await fixture.reconcile();
-    expect((await fixture.context.store.readTask(first.id)).status).toBe('review');
-    expect(fixture.journal.operations()[0]?.state).toBe('reverted');
+    expect((await fixture.context.store.readTask(second.id)).status).toBe('review');
+    expect(fixture.journal.operations().at(-1)?.state).toBe('reverted');
     await expect(fixture.coordinator.merge(fixture.projectId, stage.id)).rejects.toThrow(
       'reverted',
     );
