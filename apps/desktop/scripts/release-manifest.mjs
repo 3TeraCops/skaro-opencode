@@ -6,7 +6,12 @@ import { join } from 'node:path';
 import { parse } from 'yaml';
 import { desktop, bundleMetadata } from './bundle-metadata.mjs';
 import { agentPackage } from '../../../packages/core/src/agents/pins.ts';
-import { mergeReleaseParts, parseRelease, updateFeedName } from '../src/main/update-release.ts';
+import {
+  mergeReleaseParts,
+  parseRelease,
+  releasePayloadSuffix,
+  updateFeedName,
+} from '../src/main/update-release.ts';
 import { releaseAssets } from './release-assets.mjs';
 
 const dir = join(desktop, 'release');
@@ -28,10 +33,7 @@ if (mode === 'platform') {
   const feed = parse(await readFile(join(dir, standard), 'utf8'));
   if (feed.version !== bundle.bundleVersion)
     throw new Error('electron-builder version does not match the bundle');
-  const extension = os === 'darwin' ? '.zip' : os === 'linux' ? '.AppImage' : '.exe';
-  const payload = feed.files.find(
-    (file) => file.url.endsWith(extension) && file.url.includes(arch),
-  );
+  const payload = feed.files.find((file) => file.url.endsWith(releasePayloadSuffix(os, arch)));
   if (!payload) throw new Error(`Missing ${os}-${arch} payload in electron-builder feed`);
   if ((await stat(join(dir, payload.url))).size !== payload.size)
     throw new Error('Built payload size mismatch');

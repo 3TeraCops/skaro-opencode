@@ -10,6 +10,7 @@ import {
   parseRelease,
   releasePlatform,
   updateFeedName,
+  releasePayloadSuffix,
   type ReleaseManifest,
 } from './update-release';
 
@@ -129,6 +130,14 @@ describe('release compatibility', () => {
     expect(updateFeedName('linux', 'x64')).toBe('latest-linux.yml');
     expect(updateFeedName('darwin', 'arm64')).toBe('latest-arm64-mac.yml');
     expect(updateFeedName('win32', 'arm64')).toBe('latest-arm64.yml');
+  });
+  it('matches native installer filenames including the AppImage x86_64 architecture', () => {
+    expect(releasePayloadSuffix('linux', 'x64')).toBe('-x86_64.AppImage');
+    expect(releasePayloadSuffix('linux', 'arm64')).toBe('-arm64.AppImage');
+    expect(releasePayloadSuffix('darwin', 'x64')).toBe('-x64.zip');
+    expect(releasePayloadSuffix('darwin', 'arm64')).toBe('-arm64.zip');
+    expect(releasePayloadSuffix('win32', 'x64')).toBe('-x64.exe');
+    expect(releasePayloadSuffix('win32', 'arm64')).toBe('-arm64.exe');
   });
   it('merges all six platforms without comparing the already accumulated platforms', () => {
     const { platforms: _platforms, schema: _schema, ...bundle } = manifest();

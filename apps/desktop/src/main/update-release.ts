@@ -28,6 +28,13 @@ export function updateFeedName(os: string, arch: string): string {
     : `latest-${arch}${os === 'darwin' ? '-mac' : ''}.yml`;
 }
 
+/** AppImage uses x86_64 in filenames while Electron calls that architecture x64. */
+export function releasePayloadSuffix(os: string, arch: string): string {
+  const artifactArch = os === 'linux' && arch === 'x64' ? 'x86_64' : arch;
+  const extension = os === 'darwin' ? '.zip' : os === 'linux' ? '.AppImage' : '.exe';
+  return `-${artifactArch}${extension}`;
+}
+
 export interface ReleaseAgent {
   version: string;
   shownVersion: string;
