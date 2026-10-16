@@ -1,0 +1,5 @@
+version: 2.0.3
+files:
+  - url: https://github.com/dartdavros/skaro/releases/download/v2.0.3/Skaro-2.0.3-mac-x64.dmg
+    sha512: YRTZSvw6o3AJhs5a27f4AJO9vn+NaYpLTHWQuzU7ToOjzCBY3GBU8crXlDBwI0hQvEZKXWdBa0QDA9P2+566eg==
+    size: 146519257
