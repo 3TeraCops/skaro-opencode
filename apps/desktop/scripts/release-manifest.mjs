@@ -1,9 +1,9 @@
 // Produces immutable release metadata alongside real electron-builder artifacts.
-import { readFile, readdir, writeFile, copyFile, stat } from 'node:fs/promises';
+import { readFile, readdir, writeFile, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { join } from 'node:path';
-import { parse } from 'yaml';
+import { parse, stringify } from 'yaml';
 import { desktop, bundleMetadata } from './bundle-metadata.mjs';
 import { agentPackage } from '../../../packages/core/src/agents/pins.ts';
 import {
@@ -13,6 +13,7 @@ import {
   updateFeedName,
 } from '../src/main/update-release.ts';
 import { releaseAssets } from './release-assets.mjs';
+import { installerUrl } from '../src/main/update-locations.ts';
 
 const dir = join(desktop, 'release');
 const mode = process.argv[2];
@@ -30,17 +31,33 @@ if (mode === 'platform') {
         ? `latest-linux${arch === 'x64' ? '' : `-${arch}`}.yml`
         : 'latest.yml';
   const destination = updateFeedName(os, arch);
-  const feed = parse(await readFile(join(dir, standard), 'utf8'));
+  // Unsigned macOS updates are manual: publish the DMG, without an unused ZIP.
+  const dmg = (await readdir(dir)).find((name) =>
+    name.endsWith(`-mac${releasePayloadSuffix(os, arch)}`),
+  );
+  const feed =
+    os === 'darwin'
+      ? { version: bundle.bundleVersion, files: [{ url: dmg }] }
+      : parse(await readFile(join(dir, standard), 'utf8'));
   if (feed.version !== bundle.bundleVersion)
     throw new Error('electron-builder version does not match the bundle');
-  const payload = feed.files.find((file) => file.url.endsWith(releasePayloadSuffix(os, arch)));
+  const payload = feed.files.find((file) => file.url?.endsWith(releasePayloadSuffix(os, arch)));
   if (!payload) throw new Error(`Missing ${os}-${arch} payload in electron-builder feed`);
-  if ((await stat(join(dir, payload.url))).size !== payload.size)
-    throw new Error('Built payload size mismatch');
+  const size = (await stat(join(dir, payload.url))).size;
+  if (os !== 'darwin' && size !== payload.size) throw new Error('Built payload size mismatch');
   const hash = createHash('sha512');
   for await (const chunk of createReadStream(join(dir, payload.url))) hash.update(chunk);
-  if (hash.digest('base64') !== payload.sha512) throw new Error('Built payload SHA512 mismatch');
-  if (standard !== destination) await copyFile(join(dir, standard), join(dir, destination));
+  const sha512 = hash.digest('base64');
+  if (os !== 'darwin' && sha512 !== payload.sha512)
+    throw new Error('Built payload SHA512 mismatch');
+  const name = payload.url;
+  await writeFile(
+    join(dir, destination),
+    stringify({
+      version: bundle.bundleVersion,
+      files: [{ url: installerUrl(bundle.bundleVersion, name), sha512, size }],
+    }),
+  );
   const agents = {};
   for (const id of ['codex', 'claude-code']) {
     const pkg = agentPackage(id, { os, arch, musl: false });
@@ -61,7 +78,7 @@ if (mode === 'platform') {
     platforms: {
       [`${os}-${arch}`]: {
         feed: destination,
-        payload: { name: payload.url, sha512: payload.sha512, size: payload.size },
+        payload: { name, sha512, size },
         agents,
       },
     },

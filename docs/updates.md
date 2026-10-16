@@ -36,7 +36,10 @@ Baseline сценария — текущие `updates/UpdateButton.svelte`,
 ## Контракт релиза
 
 Публичный стабильный GitHub Release `dartdavros/skaro`, tag `v<bundleVersion>`,
-asset `skaro-release.json`, platform feeds electron-builder и установщики.
+содержит только шесть установщиков: Windows EXE, macOS DMG, Linux AppImage,
+каждый для x64 и arm64. GitHub дополнительно показывает два архива исходников.
+`skaro-release.json` и шесть platform feeds находятся отдельно в orphan-ветке
+`updates`, каталог `v<bundleVersion>/`, доступный через raw.githubusercontent.com.
 Метаданные публикуются только вместе с полностью проверенными артефактами.
 Формат и генератор лежат в исходниках desktop; произвольный npm latest не используется.
 Метаданные содержат schema, bundleVersion, skaroVersion, закреплённые package/shown
@@ -84,9 +87,11 @@ Manifest schema 1 определяется в `src/main/update-release.ts`. `pla
 У каждой платформы: имя `feed`, `payload.{name,sha512,size}` и `agents` с точными
 `agent/version/shownVersion/name/npmVersion/binary/pathDirs/tarball/integrity`.
 Tarball разрешён только с HTTPS npm registry; SDK должен равняться Claude pin.
-NSIS использует `latest-<arch>.yml`, macOS ZIP — `latest-<arch>-mac.yml`, AppImage —
-`latest-linux.yml` либо `latest-linux-arm64.yml`. Feeds и payload относятся к
-одному tag `v<bundleVersion>`; версия, имена assets, hashes и sizes сверяются.
+NSIS использует `latest-<arch>.yml`, macOS DMG — `latest-<arch>-mac.yml`, AppImage —
+`latest-linux.yml` либо `latest-linux-arm64.yml`. Feed содержит абсолютный HTTPS
+URL установщика в публичном релизе того же номера; версия, URL, hashes и sizes
+сверяются. Windows/Linux скачивают полный установщик с проверкой SHA512,
+без differential downloads и внешних blockmaps. macOS обновляется вручную.
 
 `.github/workflows/release-artifacts.yml` (Build and publish release) запускается
 вручную. Установщики
@@ -94,12 +99,14 @@ NSIS использует `latest-<arch>.yml`, macOS ZIP — `latest-<arch>-mac.
 Actions artifacts. По умолчанию `publish_release=false`: GitHub Release не создаётся.
 При `publish_release=true` после успешной сборки всех платформ и проверки feeds,
 размеров и SHA512 workflow создаёт новый tag на точный commit запуска, черновик
-GitHub Release, загружает полный комплект assets и сверяет их имена/размеры.
+GitHub Release, загружает шесть установщиков и сверяет их имена/размеры.
+Затем записывает и перечитывает семь файлов метаданных в ветке `updates`.
 Только затем черновик публикуется как latest stable release. Существующие tags
 не переиспользуются, assets не перезаписываются. Сбой загрузки оставляет черновик;
 его нужно проверить вручную перед повторным выпуском с новым номером.
-Публикуются установщики, blockmaps, feeds с отдельными именами архитектур и
-`skaro-release.json`; промежуточные platform manifests остаются в Actions artifact.
+Повторная запись каталога версии в `updates` запрещена. Platform manifests
+и диагностические файлы сборки остаются в Actions artifacts; ZIP и blockmaps
+в публичный релиз не попадают. Публикация разрешена только из `main`.
 Владелец подтверждает реальные canary/model проверки pins через `agents_verified`.
 Полный существующий suite содержит HTTP test servers и fixtures: отдельный
 `test_fixtures_allowed` по умолчанию false требует явного разрешения владельца
@@ -111,13 +118,13 @@ version resources, отключая подпись. macOS: только техн
 `identity: '-'`, без Hardened Runtime и notarization. Signing secrets не требуются.
 Windows может показать предупреждение неизвестного издателя, macOS — заблокировать
 первый запуск. Автообновление macOS без Developer ID подписи не считается рабочим;
-новый DMG/ZIP устанавливается вручную. SHA512 проверяет целостность, но не заменяет
+новый DMG устанавливается вручную. SHA512 проверяет целостность, но не заменяет
 подпись издателя.
 
 ## Запуск выпуска
 
-1. Закоммитить и отправить проверенные исходники в `dartdavros/skaro`.
-2. В Actions открыть Build and publish release → Run workflow и выбрать нужный ref.
+1. Закоммитить и интегрировать проверенные исходники в `main` репозитория `dartdavros/skaro`.
+2. В Actions открыть Build and publish release → Run workflow и выбрать `main`.
 3. Задать `bundle_version` и `skaro_version` в формате `X.Y.Z` без `v` и prerelease
    суффиксов. Номер комплекта повышается; существующий tag запрещён. В частности,
    опубликованные ранее `v2.0.1` и другие tags нельзя использовать повторно.
@@ -132,6 +139,10 @@ Windows может показать предупреждение неизвес�
 assemble; отдельный PAT не требуется. Политика репозитория должна разрешать job
 создание tags и releases. Запуск в fork не публикует релиз оригинального проекта.
 Обычный `pnpm dist` по-прежнему никогда ничего не публикует.
+
+После очистки assets версии 2.0.2 установленную 2.0.2 нужно один раз обновить
+вручную: её встроенный клиент ещё ищет служебные файлы среди release assets.
+Начиная с 2.0.3 клиент использует отдельную ветку `updates`.
 
 ## Восстановление
 
@@ -162,6 +173,13 @@ main state. Автоматического отката userData или беск
   Публикация выполняется только при явном выборе этого флага владельцем.
 
 ## Проверка подготовки выпуска 16.10.2026
+
+После публикации 2.0.2 выпуск переработан по требованию владельца: в release
+assets остаются только установщики, метаданные вынесены в `updates`, публикация
+допускается только из `main`. Локально прошли production-сборка 2.0.3, desktop
+main TypeScript, ESLint/Prettier и 14 тестов release/update activity. Ниже
+сохранены результаты первоначальной подготовки 2.0.2; ограничения тех проверок
+не означают, что последующая публикация не состоялась.
 
 Для публикации `2.0.2` владелец отдельно разрешил включить все текущие исходники
 и документацию, выполнить существующий полный suite с файловыми/Git fixtures

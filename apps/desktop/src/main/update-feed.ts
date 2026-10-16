@@ -6,7 +6,9 @@ import {
   releasePlatform,
   SHA512,
   type ReleaseManifest,
+  STABLE_VERSION,
 } from './update-release';
+import { installerUrl, updateFeedBase } from './update-locations';
 import type { Platform } from '@skaro/core';
 
 interface GitHubRelease {
@@ -25,7 +27,7 @@ async function request(url: string, fetcher: typeof fetch): Promise<Response> {
   return response;
 }
 
-/** Uses only assets attached to the stable Skaro release; empty old releases are not updates. */
+/** Installer assets belong to the stable release; metadata lives in the updates branch. */
 export async function fetchRelease(
   platform: Platform,
   fetcher: typeof fetch,
@@ -45,13 +47,20 @@ export async function fetchRelease(
       throw new Error(`Release asset missing: ${name}`);
     return found.browser_download_url;
   };
-  if (!release.assets?.some((a) => a.name === 'skaro-release.json')) return undefined;
-  const manifest = parseRelease(await (await request(asset('skaro-release.json'), fetcher)).json());
+  const version = release.tag_name.replace(/^v/, '');
+  if (release.tag_name !== `v${version}` || !STABLE_VERSION.test(version)) return undefined;
+  const metadata = updateFeedBase(version);
+  const manifestResponse = await fetcher(`${metadata}skaro-release.json`, {
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (manifestResponse.status === 404) return undefined;
+  if (!manifestResponse.ok) throw new Error(`Update manifest: HTTP ${manifestResponse.status}`);
+  const manifest = parseRelease(await manifestResponse.json());
   if (release.tag_name !== `v${manifest.bundleVersion}`)
     throw new Error('Release tag does not match the bundle');
   const selected = releasePlatform(manifest, platform);
   asset(selected.payload.name);
-  const feed = parse(await (await request(asset(selected.feed), fetcher)).text()) as {
+  const feed = parse(await (await request(metadata + selected.feed, fetcher)).text()) as {
     version?: string;
     files?: { url: string; sha512: string; size: number }[];
   };
@@ -60,9 +69,10 @@ export async function fetchRelease(
   for (const file of feed.files) {
     if (!file || !SHA512.test(file.sha512) || !Number.isSafeInteger(file.size) || file.size <= 0)
       throw new Error('Invalid update payload integrity');
-    asset(file.url);
+    if (file.url !== installerUrl(version, selected.payload.name))
+      throw new Error('Unexpected update installer URL');
   }
-  const payload = feed.files.find((f) => f.url === selected.payload.name);
+  const payload = feed.files.find((f) => f.url === installerUrl(version, selected.payload.name));
   if (
     !payload ||
     payload.sha512 !== selected.payload.sha512 ||

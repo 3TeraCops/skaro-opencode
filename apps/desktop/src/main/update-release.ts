@@ -31,7 +31,7 @@ export function updateFeedName(os: string, arch: string): string {
 /** AppImage uses x86_64 in filenames while Electron calls that architecture x64. */
 export function releasePayloadSuffix(os: string, arch: string): string {
   const artifactArch = os === 'linux' && arch === 'x64' ? 'x86_64' : arch;
-  const extension = os === 'darwin' ? '.zip' : os === 'linux' ? '.AppImage' : '.exe';
+  const extension = os === 'darwin' ? '.dmg' : os === 'linux' ? '.AppImage' : '.exe';
   return `-${artifactArch}${extension}`;
 }
 
@@ -40,7 +40,7 @@ export interface ReleaseAgent {
   shownVersion: string;
 }
 export interface ReleasePlatform {
-  /** electron-builder channel feed in the same immutable GitHub release. */
+  /** Channel metadata published separately from the public installers. */
   feed: string;
   payload: { name: string; sha512: string; size: number };
   agents: Record<AgentId, AgentPackage & AgentArtifact>;
@@ -99,7 +99,7 @@ export function parseRelease(value: unknown): ReleaseManifest {
     const expectedFeed = updateFeedName(os!, arch!);
     if (platform.feed !== expectedFeed) fail();
     const payload = platform.payload;
-    const extension = os === 'darwin' ? '.zip' : os === 'linux' ? '.AppImage' : '.exe';
+    const extension = os === 'darwin' ? '.dmg' : os === 'linux' ? '.AppImage' : '.exe';
     if (
       !payload ||
       !/^[\w .-]+$/.test(payload.name) ||

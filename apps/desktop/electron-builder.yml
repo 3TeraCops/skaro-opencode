@@ -21,7 +21,7 @@ win:
   signExecutable: false
 mac:
   icon: build/icon.icns
-  target: [dmg, zip]
+  target: dmg
   category: public.app-category.developer-tools
   # No publisher certificate; ad-hoc signing keeps Apple Silicon binaries runnable.
   identity: '-'

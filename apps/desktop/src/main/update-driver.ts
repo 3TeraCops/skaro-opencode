@@ -1,6 +1,7 @@
 import electronUpdater, { type AppUpdater } from 'electron-updater';
 import type { ReleaseManifest } from './update-release';
-import { RELEASE_ROOT, releasePlatform } from './update-release';
+import { releasePlatform } from './update-release';
+import { installerUrl, updateFeedBase } from './update-locations';
 import type { Platform } from '@skaro/core';
 
 /** The actual NSIS / Squirrel.Mac / AppImage updater; never enabled against a dev checkout. */
@@ -16,6 +17,8 @@ export class UpdateDriver {
     this.updater.autoInstallOnAppQuit = false;
     this.updater.allowDowngrade = false;
     this.updater.allowPrerelease = false;
+    // Full, SHA512-verified installers keep blockmaps out of public releases.
+    this.updater.disableDifferentialDownload = true;
     // Errors also reject check/download; a listener avoids an unhandled EventEmitter error.
     this.updater.on('error', (error) => this.onFailure?.(error));
   }
@@ -24,17 +27,23 @@ export class UpdateDriver {
     manifest: ReleaseManifest,
     progress: (percent: number) => void,
   ): Promise<string[]> {
-    if (!this.packaged || (this.platform.os === 'linux' && !process.env['APPIMAGE']))
+    if (
+      !this.packaged ||
+      this.platform.os === 'darwin' ||
+      (this.platform.os === 'linux' && !process.env['APPIMAGE'])
+    )
       throw new Error('UPDATES_PACKAGED_ONLY');
     const selected = releasePlatform(manifest, this.platform);
     this.updater.setFeedURL({
       provider: 'generic',
-      url: `${RELEASE_ROOT}/download/v${manifest.bundleVersion}/`,
+      url: updateFeedBase(manifest.bundleVersion),
       channel: this.platform.os === 'linux' ? 'latest' : `latest-${this.platform.arch}`,
       useMultipleRangeRequest: false,
     });
     const checked = await this.updater.checkForUpdates();
-    const payload = checked?.updateInfo.files.find((file) => file.url === selected.payload.name);
+    const payload = checked?.updateInfo.files.find(
+      (file) => file.url === installerUrl(manifest.bundleVersion, selected.payload.name),
+    );
     if (
       checked?.updateInfo.version !== manifest.bundleVersion ||
       payload?.sha512 !== selected.payload.sha512

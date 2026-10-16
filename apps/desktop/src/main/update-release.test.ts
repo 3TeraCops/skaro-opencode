@@ -13,6 +13,7 @@ import {
   releasePayloadSuffix,
   type ReleaseManifest,
 } from './update-release';
+import { installerUrl, updateFeedBase } from './update-locations';
 
 /** In-memory contract inputs only: no update server, app payload or installed binary. */
 function manifest(): ReleaseManifest {
@@ -134,10 +135,21 @@ describe('release compatibility', () => {
   it('matches native installer filenames including the AppImage x86_64 architecture', () => {
     expect(releasePayloadSuffix('linux', 'x64')).toBe('-x86_64.AppImage');
     expect(releasePayloadSuffix('linux', 'arm64')).toBe('-arm64.AppImage');
-    expect(releasePayloadSuffix('darwin', 'x64')).toBe('-x64.zip');
-    expect(releasePayloadSuffix('darwin', 'arm64')).toBe('-arm64.zip');
+    expect(releasePayloadSuffix('darwin', 'x64')).toBe('-x64.dmg');
+    expect(releasePayloadSuffix('darwin', 'arm64')).toBe('-arm64.dmg');
     expect(releasePayloadSuffix('win32', 'x64')).toBe('-x64.exe');
     expect(releasePayloadSuffix('win32', 'arm64')).toBe('-arm64.exe');
+  });
+  it('separates service metadata from exact installer assets and rejects unsafe locations', () => {
+    expect(updateFeedBase('2.0.3')).toBe(
+      'https://raw.githubusercontent.com/dartdavros/skaro/updates/v2.0.3/',
+    );
+    expect(installerUrl('2.0.3', 'Skaro-2.0.3-win-x64.exe')).toBe(
+      'https://github.com/dartdavros/skaro/releases/download/v2.0.3/Skaro-2.0.3-win-x64.exe',
+    );
+    for (const name of ['../evil.exe', 'https://example.org/evil.exe', 'unused.zip'])
+      expect(() => installerUrl('2.0.3', name)).toThrow();
+    expect(() => updateFeedBase('../main')).toThrow();
   });
   it('merges all six platforms without comparing the already accumulated platforms', () => {
     const { platforms: _platforms, schema: _schema, ...bundle } = manifest();
@@ -171,7 +183,7 @@ function releaseParts(): ReleaseManifest[] {
     const [os, arch] = key.split('-') as [NodeJS.Platform, string];
     const selected = part.platforms['win32-x64']!;
     selected.feed = updateFeedName(os, arch);
-    selected.payload.name = `Skaro-2.0.4-${key}${os === 'win32' ? '.exe' : os === 'darwin' ? '.zip' : '.AppImage'}`;
+    selected.payload.name = `Skaro-2.0.4-${key}${os === 'win32' ? '.exe' : os === 'darwin' ? '.dmg' : '.AppImage'}`;
     for (const id of ['codex', 'claude-code'] as const)
       selected.agents[id] = {
         ...selected.agents[id],
