@@ -34,9 +34,10 @@ test('uses one real update state and protects a dev checkout from installation',
       await indicator.click();
       const modal = page.getByRole('dialog', { name: /Обновления|Updates/ });
       await expect(modal).toBeVisible();
-      expect(await modal.evaluate((node) => Math.round(node.getBoundingClientRect().width))).toBe(
-        440,
-      );
+      // The baseline entrance animation scales the dialog for 160 ms.
+      await expect
+        .poll(() => modal.evaluate((node) => Math.round(node.getBoundingClientRect().width)))
+        .toBe(440);
       await expect(modal.getByRole('link')).toHaveCount(checked.components.length);
       if (!packaged)
         await expect(modal.getByRole('button', { name: /^Обновить$|^Update$/ })).toBeDisabled();
