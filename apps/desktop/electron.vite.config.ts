@@ -2,7 +2,9 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'electron-vite';
 
 export default defineConfig({
-  main: {},
+  main: {
+    build: { rollupOptions: { external: ['original-fs'] } },
+  },
   preload: {},
   renderer: {
     plugins: [svelte()],

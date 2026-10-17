@@ -10,7 +10,9 @@ export async function reconcileCompletions(
   hooks: CompletionHooks,
   report: (projectId: string, taskId: string | undefined, error: unknown) => void,
 ): Promise<void> {
-  await context.git.recoverPublication();
+  // Recovery may restore artifact files before their watcher notification arrives.
+  // An idle sweep must keep the cached documents and C4 validation.
+  if (await context.git.recoverPublication()) context.invalidate();
   const store = new CompletionStore(hooks.deps.db, context.id);
   for (const op of store.operations()) {
     if (
@@ -30,7 +32,6 @@ export async function reconcileCompletions(
     if (await containsCommit(context, op.base, op.commit))
       await finishCompletion(hooks, context, store, op);
   }
-  context.invalidate();
   const artifacts = await context.load();
   for (const task of artifacts.tasks) {
     const result = store.result(task.id);

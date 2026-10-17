@@ -56,3 +56,40 @@ test('uses one real update state and protects a dev checkout from installation',
     await app.close();
   }
 });
+
+test('shows the apply failure and its actual cause in the existing update modal', async () => {
+  test.skip(process.env['SKARO_E2E_PACKAGED'] === '1', 'Uses the dev installation guard');
+  const app = await launchApp();
+  try {
+    const page = await app.firstWindow();
+    await expect(page).toHaveTitle('Skaro');
+    const checked = await page.evaluate(() => window.skaro.invoke('app.checkUpdate'));
+    expect(checked.phase).toBe('available');
+    // A real rejected apply, without changing update state or replacing any IPC handler.
+    const failed = await page.evaluate(() => window.skaro.invoke('updates.apply'));
+    expect(failed.phase).toBe('error');
+    expect(failed.retry).toBe('apply');
+    expect(failed.error).toBe('The update has not been verified');
+    await page.getByRole('button', { name: /Доступны обновления|Updates available/ }).click();
+    const modal = page.getByRole('dialog', { name: /Обновления|Updates/ });
+    await expect(modal).toBeVisible();
+    await expect(modal.getByRole('alert')).toContainText(
+      /Не удалось применить обновление|Could not apply the update/,
+    );
+    await expect(modal.getByRole('alert')).toContainText(failed.error!);
+    await expect(modal.getByRole('alert')).not.toContainText(
+      /Не удалось загрузить обновление|Could not download the update/,
+    );
+    await expect(modal.getByRole('button', { name: /Повторить|Retry/ })).toBeDisabled();
+    await page.screenshot({ path: 'test-results/updates-apply-error.png' });
+    const downloadFailed = await page.evaluate(() => window.skaro.invoke('updates.download'));
+    expect(downloadFailed.retry).toBe('download');
+    expect(downloadFailed.error).toBe('UPDATES_PACKAGED_ONLY');
+    await expect(modal.getByRole('alert')).toContainText(
+      /Не удалось загрузить обновление|Could not download the update/,
+    );
+    await expect(modal.getByRole('alert')).toContainText(downloadFailed.error!);
+  } finally {
+    await app.close();
+  }
+});

@@ -228,7 +228,8 @@ export class GitService {
     return merge(this, options);
   }
 
-  recoverPublication(): Promise<void> {
+  /** Whether an interrupted publication was recovered and cached artifacts need refreshing. */
+  recoverPublication(): Promise<boolean> {
     return serializedMerge(this.repo, () => recoverPublications(this.repo));
   }
 
