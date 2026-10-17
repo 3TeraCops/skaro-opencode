@@ -39,7 +39,12 @@
   {#if state?.phase === 'downloading'}
     <Progress done={state.progress ?? 0} total={100} accessibleLabel={t('updates.download')} />
   {/if}
-  {#if state?.error}<Banner kind="error" text={t('updates.failed')} />{/if}
+  {#if state?.error}
+    <Banner
+      kind="error"
+      text={`${t(`updates.failed.${state.retry ?? 'check'}`)}: ${state.error}`}
+    />
+  {/if}
   {#if applying && state?.busy}<Banner kind="warning" text={t('updates.busy')} />{/if}
   {#snippet footer()}
     <Button onclick={() => (updates.open = false)}>{t('updates.later')}</Button>

@@ -35,7 +35,7 @@ test('opens the frameless main window with the Skaro top bar', async () => {
   await app.close();
 });
 
-test('restores project tabs after a restart', async () => {
+test('restores project tabs on Home after a restart', async () => {
   test.skip(noAgents, noAgentsReason);
   const userData = tempUserData();
   const shop = join(userData, 'shop-api');
@@ -49,10 +49,13 @@ test('restores project tabs after a restart', async () => {
   db.setSetting('ui.locale', 'ru');
   db.close();
 
-  let app = await launchApp(userData);
+  let app = await launchApp(userData, { openSavedProject: false });
   let page = await app.firstWindow();
   const tabs = page.getByRole('tab');
   await expect(tabs).toHaveText(['Shop API', 'Blog Engine']);
+  await expect(page.getByRole('tab', { selected: true })).toHaveCount(0);
+  await expect(page.locator('.bar .home.current')).toBeVisible();
+  await page.getByRole('tab', { name: 'Blog Engine' }).click();
   await expect(page.getByRole('tab', { selected: true })).toHaveText('Blog Engine');
   await expect(
     page.getByRole('navigation').getByRole('button', { name: 'Задачи', exact: true }),
@@ -67,10 +70,11 @@ test('restores project tabs after a restart', async () => {
   await expect(page.getByRole('tab', { selected: true })).toHaveText('Shop API');
   await app.close();
 
-  app = await launchApp(userData);
+  app = await launchApp(userData, { openSavedProject: false });
   page = await app.firstWindow();
   await expect(page.getByRole('tab')).toHaveText(['Shop API']);
-  await expect(page.getByRole('tab', { selected: true })).toHaveText('Shop API');
+  await expect(page.getByRole('tab', { selected: true })).toHaveCount(0);
+  await expect(page.locator('.bar .home.current')).toBeVisible();
   await app.close();
 });
 

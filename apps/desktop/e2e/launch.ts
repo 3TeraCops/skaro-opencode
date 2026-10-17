@@ -1,6 +1,7 @@
 import { _electron as electron, type ElectronApplication } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -64,7 +65,13 @@ function sampleStalledLaunch(started: number): () => void {
  * Launches the built app from `out/` or, with SKARO_E2E_PACKAGED=1, the packaged app from
  * `release/`. Each test gets its own data dir.
  */
-export async function launchApp(userData: string = tempUserData()): Promise<ElectronApplication> {
+export async function launchApp(
+  userData: string = tempUserData(),
+  { openSavedProject = true }: { openSavedProject?: boolean } = {},
+): Promise<ElectronApplication> {
+  // Feature tests explicitly navigate to their saved project through the real UI.
+  // Startup tests opt out to observe the application's Home screen unchanged.
+  const savedProject = openSavedProject ? activeProjectIndex(userData) : undefined;
   const env = { ...process.env, SKARO_USER_DATA: userData } as Record<string, string>;
   if (ci) env['SKARO_TRACE'] = '1';
   const started = Date.now();
@@ -86,5 +93,31 @@ export async function launchApp(userData: string = tempUserData()): Promise<Elec
       process.stdout.write(`[launch] pid ${pid} exited: ${code ?? signal}\n`);
     });
   }
+  if (savedProject !== undefined) {
+    try {
+      const page = await app.firstWindow();
+      await page.getByRole('tab').nth(savedProject).click({ timeout });
+    } catch (error) {
+      await app.close();
+      throw error;
+    }
+  }
   return app;
+}
+
+function activeProjectIndex(userData: string): number | undefined {
+  const path = join(userData, 'skaro.db');
+  if (!existsSync(path)) return;
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    const tabs = db
+      .prepare(
+        'SELECT open_tabs.active FROM open_tabs JOIN projects ON projects.id = open_tabs.project_id ORDER BY open_tabs.position',
+      )
+      .all() as { active: number }[];
+    const index = tabs.findIndex((tab) => tab.active === 1);
+    return index < 0 ? undefined : index;
+  } finally {
+    db.close();
+  }
 }

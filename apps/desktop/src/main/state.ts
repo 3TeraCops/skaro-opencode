@@ -12,6 +12,9 @@ export class AppState {
     this.db = AppDb.open(dbPath);
     // No agent process survives a restart (agent-output.md 6).
     this.db.resetStaleRuntime();
+    // A new app session starts on Home, retaining the tabs and their order.
+    // Renderer reloads within this session can still restore the selected project.
+    this.db.setOpenTabs(this.db.getOpenTabs().map((tab) => tab.projectId));
   }
 
   listProjects(): ProjectInfo[] {

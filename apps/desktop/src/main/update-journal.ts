@@ -1,8 +1,9 @@
-import { cp, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { AgentId, Platform } from '@skaro/core';
 import { parseRelease, type ReleaseManifest } from './update-release';
+import { backupApplication } from './update-backup';
 
 export interface PendingUpdate {
   manifest: ReleaseManifest;
@@ -51,29 +52,6 @@ export class UpdateJournal {
     );
   }
   async backup(version: string, executable: string, platform: Platform): Promise<string> {
-    const source = resolve(
-      platform.os === 'linux'
-        ? (process.env['APPIMAGE'] ?? executable)
-        : platform.os === 'darwin'
-          ? join(dirname(executable), '../..')
-          : dirname(executable),
-    );
-    const destination = resolve(
-      this.dir,
-      'previous',
-      `${version}-${randomUUID()}`,
-      basename(source),
-    );
-    const insideSource = relative(source, destination);
-    const insideUpdates = relative(resolve(this.dir), destination);
-    if (
-      (!insideSource.startsWith('..') && !isAbsolute(insideSource)) ||
-      insideUpdates.startsWith('..') ||
-      isAbsolute(insideUpdates)
-    )
-      throw new Error('Unsafe update backup path');
-    await mkdir(dirname(destination), { recursive: true });
-    await cp(source, destination, { recursive: true, errorOnExist: true, force: false });
-    return destination;
+    return backupApplication(this.dir, version, executable, platform);
   }
 }

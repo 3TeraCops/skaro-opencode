@@ -67,6 +67,12 @@ class Updates {
           ...this.state,
           phase: 'error',
           error: error instanceof Error ? error.message : String(error),
+          retry:
+            method === 'updates.apply'
+              ? 'apply'
+              : method === 'app.checkUpdate'
+                ? 'check'
+                : 'download',
         };
     }
   }

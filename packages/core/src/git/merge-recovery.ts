@@ -23,12 +23,12 @@ function alive(pid: number): boolean {
 }
 
 /** Called under the repository's publication queue. Unknown/concurrent edits stop recovery. */
-export async function recoverPublications(repo: string): Promise<void> {
+export async function recoverPublications(repo: string): Promise<boolean> {
   const gitDir = (await git(repo, ['rev-parse', '--absolute-git-dir'])).stdout.trim();
   const entries = (await readdir(gitDir)).filter((name) =>
     name.startsWith('skaro-merge-recovery-'),
   );
-  if (!entries.length) return;
+  if (!entries.length) return false;
   const index = (
     await git(repo, ['rev-parse', '--path-format=absolute', '--git-path', 'index'])
   ).stdout.trim();
@@ -97,4 +97,5 @@ export async function recoverPublications(repo: string): Promise<void> {
     if (lockBytes) await rm(lock, { force: true });
     await rm(dir, { recursive: true });
   }
+  return true;
 }
