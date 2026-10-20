@@ -64,7 +64,7 @@ export class CompletionCoordinator {
 
   async close(): Promise<void> {
     this.closed = true;
-    this.monitor.close();
+    await this.monitor.close();
     await Promise.allSettled(this.pending.values());
   }
 

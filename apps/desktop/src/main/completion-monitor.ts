@@ -30,7 +30,8 @@ export async function returnedToAgent(
 export class CompletionMonitor {
   private readonly attempts = new Map<string, string>();
   private timer: NodeJS.Timeout | undefined;
-  private sweeping = false;
+  private startup: Promise<void> | undefined;
+  private scanning: Promise<void> | undefined;
   private closed = false;
   private readonly dirty = new Set<string>();
   private readonly heads = new Map<string, string>();
@@ -43,11 +44,12 @@ export class CompletionMonitor {
   }
 
   start(): void {
+    if (this.closed || this.timer) return;
     this.timer ??= setInterval(() => {
       void this.sweep();
     }, 1000);
     this.timer.unref();
-    void (async () => {
+    this.startup = (async () => {
       for await (const project of projectRecords(this.hooks.deps.db)) {
         if (this.closed) return;
         this.dirty.add(project.id);
@@ -62,9 +64,10 @@ export class CompletionMonitor {
     if (this.timer && !this.closed) setImmediate(() => void this.sweep());
   }
 
-  close(): void {
+  async close(): Promise<void> {
     this.closed = true;
     clearInterval(this.timer);
+    await Promise.allSettled([this.startup, this.scanning]);
   }
 
   report(projectId: string, taskId: string | undefined, error: unknown): void {
@@ -76,23 +79,33 @@ export class CompletionMonitor {
     this.hooks.failed(projectId, taskId, message);
   }
 
-  private async sweep(): Promise<void> {
-    if (this.sweeping || this.closed) return;
-    this.sweeping = true;
+  private sweep(): Promise<void> {
+    if (this.closed || this.scanning) return this.scanning ?? Promise.resolve();
+    const scanning = this.scan().finally(() => {
+      this.scanning = undefined;
+    });
+    this.scanning = scanning;
+    return scanning;
+  }
+
+  private async scan(): Promise<void> {
     try {
       if (Date.now() - this.lastHeadCheck > 30_000) {
         this.lastHeadCheck = Date.now();
         for await (const project of projectRecords(this.hooks.deps.db)) {
+          if (this.closed) return;
           const head = await this.hooks.deps.projects
             .get(project.id)
             .git.head()
             .catch(() => '');
+          if (this.closed) return;
           if (this.heads.get(project.id) !== head) this.dirty.add(project.id);
           this.heads.set(project.id, head);
         }
       }
       await Promise.all(
         [...this.dirty].slice(0, 2).map(async (id) => {
+          if (this.closed) return;
           const project = this.hooks.deps.db.getProject(id);
           if (!project) {
             this.dirty.delete(id);
@@ -169,7 +182,6 @@ export class CompletionMonitor {
         }),
       );
     } finally {
-      this.sweeping = false;
       if (this.dirty.size && !this.closed) this.timer?.refresh();
     }
   }
