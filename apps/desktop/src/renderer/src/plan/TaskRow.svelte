@@ -14,7 +14,7 @@
    */
   let {
     task,
-    byId,
+    dependencies = [],
     relation,
     faded = false,
     ghost = false,
@@ -29,7 +29,7 @@
     onkey,
   }: {
     task: TaskSummary;
-    byId: Map<string, TaskSummary>;
+    dependencies?: import('../../../shared/plan-catalog').TaskLink[];
     relation?: 'up' | 'down' | 'self';
     faded?: boolean;
     ghost?: boolean;
@@ -134,7 +134,7 @@
       >
     {/if}
     {#each task.deps as dep (dep)}
-      {@const d = byId.get(dep)}
+      {@const d = dependencies.find((task) => task.id === dep)}
       <span
         data-plan-task
         class="dep"

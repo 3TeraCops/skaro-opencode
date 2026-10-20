@@ -14,7 +14,7 @@ export function createRunController(p: RunProps) {
     let cancelled = false;
     void Promise.all([
       window.skaro.invoke('project.settings', projectId),
-      window.skaro.invoke('task.open', projectId, taskId),
+      window.skaro.invoke('task.open', projectId, taskId, { paged: true }),
       window.skaro.invoke('tasks.slots'),
     ])
       .then(([project, view, available]) => {

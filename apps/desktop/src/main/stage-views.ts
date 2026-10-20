@@ -10,6 +10,7 @@ import {
   type ProjectArtifacts,
   type Task,
   type TaskRuntime,
+  type TaskIndex,
 } from '@skaro/core';
 import type { StageInfo } from '../shared/ipc';
 import type { IntegrationOperation } from './integration-model';
@@ -46,15 +47,17 @@ export function stageInfo(
     accepted: boolean;
     /** Integrations of the project: the merge of the stage is the last one of its tasks. */
     integrations: readonly IntegrationOperation[];
+    tasks?: Task[];
+    index?: TaskIndex;
   },
 ): StageInfo {
-  const tasks = orderedStageTasks(stage, artifacts);
+  const tasks = options.tasks ?? orderedStageTasks(stage, artifacts);
   const state = (id: string) => runtime.get(id)?.state;
   // The merge works on accepted results: its tasks stay in review, the stage says how it goes.
   const merge = options.integrations.findLast(
     (op) => op.purpose === 'publication' && tasks.some((t) => t.id === op.taskId),
   );
-  const all = indexTasks(artifacts.tasks);
+  const all = options.index ?? indexTasks(artifacts.tasks);
   const base = {
     id: stage.id,
     finished: tasks.filter(finished).length,
@@ -98,4 +101,32 @@ export function stageInfo(
     }
   }
   return { ...base, state: 'idle' };
+}
+
+/** Prepare the task index and stage groups once for the navigation refresh. */
+export function projectStages(
+  artifacts: ProjectArtifacts,
+  runtime: ReadonlyMap<string, { state: TaskRuntime }>,
+  options: { awaiting: ReadonlySet<string>; integrations: readonly IntegrationOperation[] },
+): StageInfo[] {
+  const index = indexTasks(artifacts.tasks);
+  const groups = new Map<string, Task[]>();
+  for (const task of artifacts.tasks) {
+    if (!task.milestone || task.archived || task.status === 'cancelled') continue;
+    const own = groups.get(task.milestone) ?? [];
+    own.push(task);
+    groups.set(task.milestone, own);
+  }
+  for (const own of groups.values())
+    own.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id));
+  return [...artifacts.milestones]
+    .sort((a, b) => a.order - b.order)
+    .map((stage) =>
+      stageInfo(stage, artifacts, runtime, {
+        ...options,
+        accepted: false,
+        index,
+        tasks: groups.get(stage.id) ?? [],
+      }),
+    );
 }

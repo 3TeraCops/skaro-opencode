@@ -1,3 +1,4 @@
+import { projectRecords } from './project-records';
 import { MergeBlockedError } from '@skaro/core';
 import { AUTO_MERGE_KEY } from '../shared/ipc';
 import type { CompletionHooks } from './completion-coordinator';
@@ -31,6 +32,9 @@ export class CompletionMonitor {
   private timer: NodeJS.Timeout | undefined;
   private sweeping = false;
   private closed = false;
+  private readonly dirty = new Set<string>();
+  private readonly heads = new Map<string, string>();
+  private lastHeadCheck = 0;
   private readonly hooks: CompletionHooks;
   private readonly actions: Actions;
   constructor(hooks: CompletionHooks, actions: Actions) {
@@ -41,9 +45,21 @@ export class CompletionMonitor {
   start(): void {
     this.timer ??= setInterval(() => {
       void this.sweep();
-    }, 3000);
+    }, 1000);
     this.timer.unref();
+    void (async () => {
+      for await (const project of projectRecords(this.hooks.deps.db)) {
+        if (this.closed) return;
+        this.dirty.add(project.id);
+      }
+      if (!this.closed) void this.sweep();
+    })();
     void this.sweep();
+  }
+
+  changed(projectId: string): void {
+    this.dirty.add(projectId);
+    if (this.timer && !this.closed) setImmediate(() => void this.sweep());
   }
 
   close(): void {
@@ -64,9 +80,26 @@ export class CompletionMonitor {
     if (this.sweeping || this.closed) return;
     this.sweeping = true;
     try {
+      if (Date.now() - this.lastHeadCheck > 30_000) {
+        this.lastHeadCheck = Date.now();
+        for await (const project of projectRecords(this.hooks.deps.db)) {
+          const head = await this.hooks.deps.projects
+            .get(project.id)
+            .git.head()
+            .catch(() => '');
+          if (this.heads.get(project.id) !== head) this.dirty.add(project.id);
+          this.heads.set(project.id, head);
+        }
+      }
       await Promise.all(
-        this.hooks.deps.db.listProjects().map(async (project) => {
+        [...this.dirty].slice(0, 2).map(async (id) => {
+          const project = this.hooks.deps.db.getProject(id);
+          if (!project) {
+            this.dirty.delete(id);
+            return;
+          }
           if (this.closed || this.actions.pending(project.id)) return;
+          this.dirty.delete(project.id);
           await this.actions
             .run(project.id, async () => {
               const context = this.hooks.deps.projects.get(project.id);
@@ -86,7 +119,7 @@ export class CompletionMonitor {
                   )
               )
                 return;
-              const artifacts = await context.load();
+              const artifacts = await context.summary();
               const store = new CompletionStore(this.hooks.deps.db, project.id);
               // One conflict at a time: while the agent of a task resolves its conflict, the
               // other tasks wait and are merged onto what it hands back, as their cards say.
@@ -137,6 +170,7 @@ export class CompletionMonitor {
       );
     } finally {
       this.sweeping = false;
+      if (this.dirty.size && !this.closed) this.timer?.refresh();
     }
   }
 }

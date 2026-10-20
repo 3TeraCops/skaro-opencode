@@ -13,6 +13,8 @@ const methods = new Set<string>(METHODS);
 const events = new Set<string>(EVENTS);
 
 const api: SkaroApi = {
+  // A single in-memory snapshot before Svelte mounts; no filesystem work or service startup.
+  bootstrap: ipcRenderer.sendSync('skaro:bootstrap'),
   platform: process.platform,
   pathOf: (file) => webUtils.getPathForFile(file),
   invoke: (method, ...args) => {

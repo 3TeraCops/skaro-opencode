@@ -5,6 +5,16 @@ import { getContext, setContext } from 'svelte';
 import type { FileDiff, MergeAction, ProposalAction } from '../../../shared/ipc';
 
 export interface FeedActions {
+  pendingHistory?(): import('../../../shared/history').HistoryPending[];
+  rememberHistoryPage?(page: import('../../../shared/history').HistoryPage): void;
+  historyError?(error: string): void;
+  refreshHistory?(): void;
+  architectureFiles?(itemId: string): Promise<string[]>;
+  architectureFile?(itemId: string, path: string, side: 'before' | 'after'): Promise<string>;
+  rowState?: Map<string, boolean>;
+  rowDrafts?: Map<string, { selection?: string[]; title: string; body: string }>;
+  revealRow?: (id: string) => void;
+  architectureContent?(itemId: string, side: 'before' | 'after'): Promise<string>;
   /** Working folder of the agent: paths are shown relative to it. */
   readonly cwd: string | undefined;
   /** The agent session can take commands now (not after the task is done). */
@@ -34,6 +44,12 @@ export interface FeedActions {
 const KEY = Symbol('feed');
 
 export function provideFeed(actions: FeedActions): void {
+  // Values initialize rows on remount; they must not subscribe their writers to this cache.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  actions.rowState ??= new Map();
+  // Drafts survive a virtual row leaving the viewport; only their owner reads them on remount.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  actions.rowDrafts ??= new Map();
   setContext(KEY, actions);
 }
 

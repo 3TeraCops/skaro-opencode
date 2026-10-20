@@ -4,13 +4,27 @@ import { type Row, toProject } from './rows.ts';
 import { randomUUID } from 'node:crypto';
 
 export class DbProjects extends DbTable {
+  private changed(action: () => unknown): void {
+    this.transaction(() => {
+      action();
+      this.db
+        .prepare(
+          `INSERT INTO settings VALUES ('ui.projects.revision','1') ON CONFLICT(key)
+        DO UPDATE SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT)`,
+        )
+        .run();
+    });
+  }
+
   // ── projects and tabs ────────────────────────────────────────────────────
 
   addProject(input: { name: string; path: string }): ProjectRecord {
     const id = randomUUID();
-    this.db
-      .prepare('INSERT INTO projects (id, name, path, created_at) VALUES (?, ?, ?, ?)')
-      .run(id, input.name, input.path, this.now());
+    this.changed(() =>
+      this.db
+        .prepare('INSERT INTO projects (id, name, path, created_at) VALUES (?, ?, ?, ?)')
+        .run(id, input.name, input.path, this.now()),
+    );
     return this.getProject(id)!;
   }
 
@@ -35,26 +49,36 @@ export class DbProjects extends DbTable {
   }
 
   touchProject(id: string): void {
-    this.db.prepare('UPDATE projects SET last_opened_at = ? WHERE id = ?').run(this.now(), id);
+    this.changed(() =>
+      this.db.prepare('UPDATE projects SET last_opened_at = ? WHERE id = ?').run(this.now(), id),
+    );
   }
 
   renameProject(id: string, name: string): void {
-    this.db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name, id);
+    this.changed(() => this.db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name, id));
   }
 
   /** A data: URL, or undefined to go back to the initials. */
   setProjectLogo(id: string, logo: string | undefined): void {
-    this.db.prepare('UPDATE projects SET logo = ? WHERE id = ?').run(logo ?? null, id);
+    this.changed(() => {
+      this.db.prepare('UPDATE projects SET logo = ? WHERE id = ?').run(logo ?? null, id);
+      this.db
+        .prepare(
+          `INSERT INTO settings VALUES (?, '1') ON CONFLICT(key)
+        DO UPDATE SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT)`,
+        )
+        .run(`ui.logo.${id}`);
+    });
   }
 
   /** The project folder moved: "Найти заново". */
   moveProject(id: string, path: string): void {
-    this.db.prepare('UPDATE projects SET path = ? WHERE id = ?').run(path, id);
+    this.changed(() => this.db.prepare('UPDATE projects SET path = ? WHERE id = ?').run(path, id));
   }
 
   /** Forgets the project in Skaro; files on disk are untouched. */
   removeProject(id: string): void {
-    this.db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+    this.changed(() => this.db.prepare('DELETE FROM projects WHERE id = ?').run(id));
   }
 
   getOpenTabs(): { projectId: string; active: boolean }[] {

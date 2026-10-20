@@ -11,9 +11,9 @@ export class IntegrationRawLog {
       this.error = error;
     });
   }
-  append(line: RawLine): void {
+  append(line: RawLine | Uint8Array): void {
     if (this.error) throw this.error;
-    this.stream.write(JSON.stringify(line) + '\n');
+    this.stream.write(line instanceof Uint8Array ? line : JSON.stringify(line) + '\n');
   }
   drain(): Promise<void> {
     if (this.error) return Promise.reject(this.error);

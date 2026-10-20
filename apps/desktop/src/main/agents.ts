@@ -4,8 +4,9 @@
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { ClaudeAdapter } from '@skaro/adapter-claude';
-import { CodexAdapter } from '@skaro/adapter-codex';
+import { ClaudeAdapter } from '@skaro/adapter-claude/adapter';
+import { CodexAdapter, CodexAuthRevision } from '@skaro/adapter-codex';
+import { nativeAdapter } from './native/adapter';
 import { AgentInstaller, agentPackage, type AgentId } from '@skaro/core';
 import type {
   AgentAdapter,
@@ -43,6 +44,8 @@ export class AgentManager {
   private readonly scratchDir: string;
   private readonly store: Store;
   private readonly onChange: (agents: AgentInfo[]) => void;
+  private readonly attachmentsDir?: string;
+  private readonly authRevision = new SharedArrayBuffer(4);
 
   constructor(options: {
     agentsDir: string;
@@ -52,17 +55,20 @@ export class AgentManager {
     onChange: (agents: AgentInfo[]) => void;
     /** Language of messages the user sees. */
     locale?: () => string;
+    attachmentsDir?: string;
   }) {
     this.locale = options.locale ?? (() => 'en');
     this.installer = new AgentInstaller({ dir: options.agentsDir });
     this.scratchDir = options.scratchDir;
     this.store = options.store;
     this.onChange = options.onChange;
+    this.attachmentsDir = options.attachmentsDir;
     this.adapters = {
       'claude-code': new ClaudeAdapter({
         executable: async () => (await this.installer.installed('claude-code'))?.binary,
       }),
       codex: new CodexAdapter({
+        authRevision: new CodexAuthRevision(this.authRevision),
         binary: async () => {
           const installed = await this.installer.installed('codex');
           return installed && { binary: installed.binary, pathDirs: installed.pathDirs };
@@ -76,7 +82,19 @@ export class AgentManager {
   }
 
   adapter(id: AgentId): AgentAdapter {
-    return this.adapters[id];
+    const adapter = this.adapters[id];
+    if (!this.attachmentsDir) return adapter;
+    return nativeAdapter(adapter, async () => {
+      const installed = await this.installer.installed(id);
+      if (!installed) throw new Error('The agent is not installed');
+      return {
+        agent: id,
+        binary: installed.binary,
+        pathDirs: installed.pathDirs ?? [],
+        attachmentsDir: this.attachmentsDir!,
+        authRevision: this.authRevision,
+      };
+    });
   }
 
   list(): AgentInfo[] {

@@ -46,7 +46,8 @@ test('keeps long history, large output and diff usable without changing visible 
     const feed = page.locator('.chat .fd-feed');
     const scroller = page.locator('.chat .feed-wrap > .scroller');
     const down = page.locator('.chat .feed-wrap > .down');
-    await expect(feed.locator('.fd-text')).toHaveCount(600);
+    await expect(feed.locator('.fd-text').last()).toContainText('Reply 599');
+    expect(await feed.locator('.fd-text').count()).toBeLessThan(100);
     await expect
       .poll(() => scroller.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight))
       .toBeLessThan(3);
@@ -106,7 +107,7 @@ test('keeps long history, large output and diff usable without changing visible 
         return { replies: count('fd-text'), diffChunks: count('fd-diff-chunk') };
       });
     if (process.env['SKARO_FEED_PERF_CULLING'])
-      await expect.poll(async () => (await culling()).replies).toBeGreaterThan(500);
+      expect(await feed.locator('.fd-text').count()).toBeLessThan(100);
     const skipped = await culling();
     const { metrics } = await cdp.send('Performance.getMetrics');
     const report = {

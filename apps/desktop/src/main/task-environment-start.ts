@@ -7,7 +7,7 @@ import type { EnvironmentDocker } from './task-environment-docker';
 
 export interface EnvironmentStartOptions {
   signal?: AbortSignal;
-  processStarted?: (pid: number) => void;
+  processStarted?: (pid: number) => void | Promise<void>;
   assertActive?: () => void;
 }
 

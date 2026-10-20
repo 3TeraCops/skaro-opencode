@@ -1,12 +1,16 @@
 import {
-  Timeline,
   isAsyncQuestion,
-  asyncQuestionInput,
+  validateQuestionAnswer,
+  assertQuestionsAnswered,
+  withSkaroNote,
   type InteractionAnswer,
 } from '@skaro/timeline';
 import type { MessageInput } from '../shared/ipc';
 import type { TaskRunEngine } from './task-run-engine';
 import type { ResolverSession } from './integration-worker';
+import { QuestionAnswers } from './question-answers';
+import { hasOwnerCommand } from './owner-command-history';
+import type { TimelineEvent } from '@skaro/timeline';
 import {
   currentIntegration,
   integrationQueueKey,
@@ -44,10 +48,32 @@ export class IntegrationControls {
     return true;
   }
 
+  async recover(op: IntegrationOperation): Promise<void> {
+    const mailbox = new QuestionAnswers(this.ctx.deps.db, `integration.${op.id}`);
+    const events: TimelineEvent[] = [];
+    mailbox.recover((await this.ctx.integrations.history.state(op)).state, (event) =>
+      events.push(event),
+    );
+    for (const event of events) await this.ctx.integrations.history.event(op, event);
+    const input = mailbox.pending((await this.ctx.integrations.history.state(op)).state);
+    if (input && ['preparing', 'resolving', 'verifying', 'waiting'].includes(op.state)) {
+      await this.deliver(op, input);
+      mailbox.delivered();
+    }
+  }
+
   private async deliver(op: IntegrationOperation, input: MessageInput): Promise<void> {
+    const timeline = (await this.ctx.integrations.history.state(op)).state;
+    assertQuestionsAnswered(timeline);
+    if (hasOwnerCommand(timeline, input.commandId)) return;
     const live = this.sessions.get(op.id);
-    if (live) await live.session.steer(input);
-    else {
+    if (live) {
+      const decoded = this.ctx.integrations.history.secrets(op).input(input);
+      await live.session.steer({
+        ...decoded,
+        text: withSkaroNote(input.commandId ? `command_id: ${input.commandId}` : '', decoded.text),
+      });
+    } else {
       this.ctx.integrations.store.appendInput(op.id, input);
       if (op.executor) return;
       op.state = 'resolving';
@@ -68,14 +94,29 @@ export class IntegrationControls {
       .find((value) => participatesIn(value, taskId) && id.startsWith(`integration-${value.id}:`));
     if (!op) return false;
     const scoped = id.slice(`integration-${op.id}:`.length);
-    const timeline = Timeline.from(await this.ctx.integrations.history.events(op));
+    const timeline = await this.ctx.integrations.history.state(op);
     const interaction = timeline.state.interactions.find((value) => value.id === scoped);
     if (!interaction) throw new Error('This integration interaction is no longer open.');
+    validateQuestionAnswer(interaction, answer);
+    if (interaction.kind === 'question' && answer.kind === 'question')
+      this.ctx.integrations.history
+        .secrets(op)
+        .remember(
+          interaction.questions.filter((q) => q.secret).flatMap((q) => answer.answers[q.id] ?? []),
+        );
     const live = this.sessions.get(op.id);
-    if (isAsyncQuestion(interaction)) {
+    if (interaction.kind === 'question' && (isAsyncQuestion(interaction) || !live)) {
+      const mailbox = new QuestionAnswers(this.ctx.deps.db, `integration.${op.id}`);
+      const events: TimelineEvent[] = [];
+      mailbox.accept(interaction, answer, (event) => events.push(event));
+      for (const event of events) await this.ctx.integrations.history.event(op, event);
+      const input = mailbox.pending((await this.ctx.integrations.history.state(op)).state);
       // The answer continues the candidate that asked; a finished one only closes its card.
-      if (CONTROLLED.includes(op.state))
-        await this.deliver(op, asyncQuestionInput(interaction, answer));
+      if (input && CONTROLLED.includes(op.state)) {
+        await this.deliver(op, input);
+        mailbox.delivered();
+      }
+      return true;
     } else {
       if (!live)
         throw new Error('The old approval expired; the current agent will request it again.');

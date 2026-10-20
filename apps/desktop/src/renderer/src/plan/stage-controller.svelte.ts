@@ -6,10 +6,6 @@ export function createStageController(getProps: () => StageProps) {
   const m = $derived(p.stage.milestone);
   /** The milestone can be dragged: not "Без этапа", not in the archive. */
   const movable = $derived(!p.stage.loose && !p.archived && !p.ghost);
-  // The dragged task leaves its list; its slot moves where it would land.
-  const shown = $derived(
-    p.stage.tasks.filter((x) => !(p.drag?.kind === 'task' && p.drag.id === x.id)),
-  );
   const slot = $derived(p.drag?.kind === 'task' && p.drag.to === m.id ? p.drag : undefined);
   /** A task from another milestone would land here. */
   const over = $derived(!!slot && slot.from !== m.id);
@@ -30,9 +26,6 @@ export function createStageController(getProps: () => StageProps) {
     },
     get movable() {
       return movable;
-    },
-    get shown() {
-      return shown;
     },
     get slot() {
       return slot;

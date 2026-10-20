@@ -39,7 +39,7 @@ it('projects a real async delivery as one persistent card anchored to the agent 
   expect(events.filter((e) => e.t === 'interaction.opened')).toHaveLength(1);
   expect(timeline.state.items).toHaveLength(1);
   expect(timeline.state.items[0]).toMatchObject({ role: 'agent', text: item.text });
-  expect(timeline.state.status).toBe('idle');
+  expect(timeline.state.status).toBe('waiting');
   const question = timeline.state.interactions[0]!;
   expect(question).toMatchObject({
     kind: 'question',
@@ -89,11 +89,9 @@ it.each(['legacy', 'before-echo', 'after-echo'])(
         },
       },
     });
-    expect(feedRows(timeline.state).map((row) => row.type)).toEqual([
-      'question',
-      'notice',
-      'turn_end',
-    ]);
+    // A turn with an unanswered question cannot show a completion banner.
+    expect(timeline.state.status).toBe('waiting');
+    expect(feedRows(timeline.state).map((row) => row.type)).toEqual(['question', 'notice']);
     const answer = { kind: 'question' as const, answers: { '0': ['Штатный контур'] } };
     const record = () => {
       timeline.apply({ t: 'interaction.closed', id: question.id, resolution: 'answered' });
@@ -172,7 +170,7 @@ it.each(['legacy', 'before-echo', 'after-echo'])(
   },
 );
 
-it('keeps async cards across segments, closes them on a real user reply and does not reopen on duplicate completion', () => {
+it('keeps async cards across segments until their explicit answer and ignores duplicate completion', () => {
   const rows: RawLine[] = [
     { ts: 0, dir: 'meta', line: { skaro: 'segment', agent: 'codex', adapterVersion: '0.1.0' } },
     { ts: 1, dir: 'out', line: { method: 'turn/started', params: { turn: { id: 't1' } } } },
@@ -204,7 +202,7 @@ it('keeps async cards across segments, closes them on a real user reply and does
     Timeline.from(replayRunLog(lines, 0, (ctx, emit) => new CodexProjector(ctx, emit), noImage))
       .state;
   expect(replay(rows.slice(0, 4)).interactions).toHaveLength(1);
-  expect(replay(rows).interactions).toHaveLength(0);
+  expect(replay(rows).interactions).toHaveLength(1);
   const events: TimelineEvent[] = [];
   const projector = new CodexProjector({ now: () => 1, attachImage: noImage }, (e) =>
     events.push(e),
@@ -212,10 +210,12 @@ it('keeps async cards across segments, closes them on a real user reply and does
   projector.output(rows[2]!.line);
   projector.output(rows[6]!.line);
   projector.output(rows[2]!.line);
+  expect(Timeline.from(events).state.interactions).toHaveLength(1);
+  events.push({ t: 'interaction.closed', id: `async-${item.id}`, resolution: 'answered' });
   expect(Timeline.from(events).state.interactions).toHaveLength(0);
 });
 
-it('maps string options and preserves multiple questions while synchronous requests still expire', () => {
+it('maps string options and preserves unanswered questions after a native turn completes', () => {
   const timeline = new Timeline();
   const projector = new CodexProjector({ now: () => 1, attachImage: noImage }, (e) =>
     timeline.apply(e),
@@ -256,7 +256,7 @@ it('maps string options and preserves multiple questions while synchronous reque
     method: 'turn/completed',
     params: { turn: { id: 't1', status: 'completed' } },
   });
-  expect(timeline.state.interactions).toHaveLength(1);
+  expect(timeline.state.interactions).toHaveLength(2);
   expect(timeline.state.interactions[0]).toMatchObject({
     questions: [
       { id: '0', options: [{ label: 'Штатный контур' }, { label: 'Оставить заблокированным' }] },

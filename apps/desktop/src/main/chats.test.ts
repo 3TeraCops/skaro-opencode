@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AgentManager } from './agents';
 import { ChatSessions } from './chats';
 import { Projects } from './projects';
+import { closeBackground } from './background/client';
 
 type ProposalItem = Extract<Item, { kind: 'proposal' }>;
 
@@ -113,6 +114,7 @@ afterEach(async () => {
   await chats.close();
   await mcp.close();
   projects.close();
+  await closeBackground();
   db.close();
   await rm(dataDir, { recursive: true, force: true });
   await rm(root, { recursive: true, force: true });

@@ -61,6 +61,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm -r --parallel --filter '!@skaro/agent-probe' typecheck
+      - name: Build real background workers for storage integration tests
+        run: pnpm build
       - run: pnpm test
   build:
     needs: check

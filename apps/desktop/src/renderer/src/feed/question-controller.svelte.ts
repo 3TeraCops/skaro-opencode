@@ -27,7 +27,7 @@ export function createQuestionController(
   }
 
   const answered = (id: string): boolean => answerOf(id).length > 0;
-  const ready = $derived(questions.every((x) => answered(x.id)));
+  const ready = $derived(feed.interactive && questions.every((x) => answered(x.id)));
 
   /** Shows another question; a pending move to the next one is dropped. */
   function goTo(index: number): void {

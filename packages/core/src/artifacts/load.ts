@@ -9,30 +9,32 @@ import { inspectC4Project } from '../c4/project.ts';
 export async function load(
   files: ArtifactFiles,
   defaults: () => ConfigDefaults,
+  summary = false,
 ): Promise<ProjectArtifacts> {
   return withC4Lock(files.root, async () => {
     await recoverC4Transaction(files.root);
-    return loadProject(files, defaults);
+    return loadProject(files, defaults, summary);
   });
 }
 
 async function loadProject(
   files: ArtifactFiles,
   defaults: () => ConfigDefaults,
+  summary = false,
 ): Promise<ProjectArtifacts> {
   const problems: ArtifactProblem[] = [];
   const config = await readConfig(files, defaults, problems);
-  const brief = await files.readDoc('brief.md', 'brief', problems);
-  const architecture = await files.readDoc('architecture.md', 'architecture', problems);
+  const brief = await files.readDoc('brief.md', 'brief', problems, !summary);
+  const architecture = await files.readDoc('architecture.md', 'architecture', problems, !summary);
   const docs: Doc[] = [];
   for (const name of await files.list('docs')) {
-    const doc = await files.readDoc(`docs/${name}`, 'doc', problems);
+    const doc = await files.readDoc(`docs/${name}`, 'doc', problems, !summary);
     if (doc) docs.push(doc);
   }
-  const adrs = (await files.readAll('adr', problems, toAdr)).sort((a, b) =>
+  const adrs = (await files.readAll('adr', problems, toAdr, !summary)).sort((a, b) =>
     a.id.localeCompare(b.id),
   );
-  const specs = (await files.readAll('specs', problems, toSpec)).sort((a, b) =>
+  const specs = (await files.readAll('specs', problems, toSpec, !summary)).sort((a, b) =>
     a.id.localeCompare(b.id),
   );
   const milestones = (await files.readAll('milestones', problems, toMilestone)).sort(
@@ -57,7 +59,7 @@ async function loadProject(
       problems.push({ path: task.path, message: `unknown specification ${task.spec}` });
     }
   }
-  const c4 = await inspectC4Project(files.root);
+  const c4 = summary ? { problems: [] } : await inspectC4Project(files.root);
   return {
     config,
     brief,

@@ -29,6 +29,8 @@ jobs:
       - run: pnpm format:check
       - run: pnpm -r --parallel --filter '!@skaro/agent-probe' typecheck
       # Unit tests and adapter golden tests (fixtures/golden) run as Vitest projects.
+      - name: Build real background workers for storage integration tests
+        run: pnpm build
       - run: pnpm test
 
   build:

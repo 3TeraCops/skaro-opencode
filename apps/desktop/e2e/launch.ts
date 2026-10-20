@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { assertLiveProfileBoundary } from './live-profile-boundary';
 
 const appDir = join(__dirname, '..');
 const ci = !!process.env['CI'];
@@ -69,6 +70,7 @@ export async function launchApp(
   userData: string = tempUserData(),
   { openSavedProject = true }: { openSavedProject?: boolean } = {},
 ): Promise<ElectronApplication> {
+  assertLiveProfileBoundary(userData);
   // Feature tests explicitly navigate to their saved project through the real UI.
   // Startup tests opt out to observe the application's Home screen unchanged.
   const savedProject = openSavedProject ? activeProjectIndex(userData) : undefined;

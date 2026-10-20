@@ -1,14 +1,6 @@
-import { c4Context } from './c4-context';
-import { randomUUID } from 'node:crypto';
-import {
-  applyC4Package,
-  c4PackageStatus,
-  prepareC4Package,
-  c4PackageText,
-  git,
-  type C4Package,
-  type AppDb,
-} from '@skaro/core';
+import { dirname } from 'node:path';
+import { background } from './background/client';
+import { git, type C4Package, type AppDb } from '@skaro/core';
 import type {
   C4Handlers,
   ProposeC4Args,
@@ -31,6 +23,7 @@ export interface C4ProposalRecord {
   scope: SkaroScope;
   package: C4Package;
   item: ProposalItem;
+  fileIndex?: { path: string; beforeHash: string | null; afterHash: string }[];
 }
 interface Deps {
   db: AppDb;
@@ -39,6 +32,7 @@ interface Deps {
   publish(scope: SkaroScope, item: ProposalItem): Promise<void>;
   changed(projectId: string): void;
   stageImport(args: ProposeC4Args, scope: SkaroScope): Promise<ToolResult>;
+  assertMayWork?(scope: SkaroScope): void;
 }
 
 export class C4Service implements C4Handlers {
@@ -47,19 +41,26 @@ export class C4Service implements C4Handlers {
   constructor(deps: Deps) {
     this.deps = deps;
   }
-  private key(projectId: string) {
-    return `c4.proposals.${projectId}`;
+  private get dataDir(): string {
+    return dirname(this.deps.db.filePath);
   }
-  records(projectId: string): C4ProposalRecord[] {
-    return this.deps.db.getSetting(this.key(projectId), []);
+  records(projectId: string, ownerId?: string): Promise<C4ProposalRecord[]> {
+    return background(this.dataDir, 'c4.list', projectId, ownerId);
   }
-  private save(record: C4ProposalRecord): void {
-    const records = this.records(record.scope.projectId).filter(
-      (r) => r.item.id !== record.item.id,
-    );
-    this.deps.db.setSetting(this.key(record.scope.projectId), [...records, record]);
+  private save(record: C4ProposalRecord): Promise<void> {
+    return background(this.dataDir, 'c4.save', record);
+  }
+  content(projectId: string, itemId: string, side: 'before' | 'after'): Promise<string> {
+    return background(this.dataDir, 'c4.content', projectId, itemId, side);
+  }
+  files(projectId: string, itemId: string): Promise<string[]> {
+    return background(this.dataDir, 'c4.files', projectId, itemId);
+  }
+  file(projectId: string, itemId: string, path: string, side: 'before' | 'after'): Promise<string> {
+    return background(this.dataDir, 'c4.file', projectId, itemId, path, side);
   }
   private caller(scope: SkaroScope): string {
+    this.deps.assertMayWork?.(scope);
     const context = this.deps.projects.get(scope.projectId);
     if (scope.kind === 'task') {
       const run = scope.runId ? this.deps.db.getRun(scope.runId) : undefined;
@@ -80,10 +81,13 @@ export class C4Service implements C4Handlers {
   }
   async context(scope: SkaroScope): Promise<ToolResult> {
     const checkout = this.caller(scope);
-    return c4Context(
-      this.deps.projects.get(scope.projectId),
-      this.deps.db,
-      this.records(scope.projectId),
+    const context = this.deps.projects.get(scope.projectId);
+    context.invalidate();
+    return background(
+      this.dataDir,
+      'c4.context',
+      context.root,
+      this.deps.projects.defaults(),
       scope,
       checkout,
     );
@@ -92,33 +96,18 @@ export class C4Service implements C4Handlers {
     const checkout = this.caller(scope);
     if (scope.importId) return this.deps.stageImport(args, scope);
     const context = this.deps.projects.get(scope.projectId);
-    const pkg = await prepareC4Package(context.root, {
-      ...args,
-      locale: this.deps.locale(),
-      codeRoot: checkout,
-      ...(scope.kind === 'task' ? { task: { id: scope.taskId!, runId: scope.runId! } } : {}),
-    });
-    const item: ProposalItem = {
-      id: `skaro-c4-${randomUUID()}`,
-      turnId: '',
-      kind: 'proposal',
-      state: 'pending',
-      status: 'done',
-      startedAt: Date.now(),
-      native: { agent: 'skaro', type: 'proposal', ref: 'architecture' },
-      proposal: {
-        type: 'architecture',
-        packageId: pkg.id,
-        title: pkg.title,
-        summary: pkg.summary,
-        baseRevision: pkg.baseRevision,
-        files: pkg.files,
-        ...(pkg.task ? { task: pkg.task } : {}),
-        before: c4PackageText(pkg, 'before'),
-        after: c4PackageText(pkg, 'after'),
+    const record = await background(
+      this.dataDir,
+      'c4.prepare',
+      context.root,
+      {
+        ...args,
+        locale: this.deps.locale(),
+        codeRoot: checkout,
       },
-    };
-    this.save({ scope, package: pkg, item });
+      scope,
+    );
+    const item = record.item;
     await this.deps.publish(scope, item);
     return {
       text: `Saved C4 package ${item.id} for ONE owner decision. Nothing has been applied. Do not propose its documents separately or report them accepted. Read get_c4_context after the owner decides.`,
@@ -139,7 +128,7 @@ export class C4Service implements C4Handlers {
     id: string,
     action: 'apply' | 'reject',
   ): Promise<void> {
-    const record = this.records(projectId).find((r) => r.item.id === id);
+    const record = (await this.records(projectId)).find((r) => r.item.id === id);
     if (!record) throw new Error('Unknown C4 package');
     if (record.item.state === 'applied' && action === 'apply') return;
     if (record.item.state !== 'pending' && record.item.state !== 'accepted')
@@ -152,25 +141,25 @@ export class C4Service implements C4Handlers {
     if (action === 'reject') record.item = { ...record.item, state: 'rejected' };
     else {
       record.item = { ...record.item, state: 'accepted', result: {} };
-      this.save(record);
+      await this.save(record);
       await this.deps.publish(record.scope, record.item);
       try {
-        await applyC4Package(context.root, record.package);
+        await background(this.dataDir, 'c4.apply', context.root, projectId, id);
         record.item = { ...record.item, state: 'applied', result: {} };
       } catch (error) {
-        const status = await c4PackageStatus(context.root, record.package);
+        const status = await background(this.dataDir, 'c4.status', context.root, projectId, id);
         record.item = {
           ...record.item,
           state: status === 'applied' ? 'applied' : status === 'writing' ? 'accepted' : 'pending',
           result: { error: String(error) },
         };
-        this.save(record);
+        await this.save(record);
         context.invalidate();
         await this.deps.publish(record.scope, record.item);
         throw error;
       }
     }
-    this.save(record);
+    await this.save(record);
     context.invalidate();
     this.deps.changed(projectId);
     await this.deps.publish(record.scope, record.item);
@@ -190,7 +179,7 @@ export class C4Service implements C4Handlers {
     if (args.changeHash !== (await c4ChangeHash(checkout, baseHead)))
       problems.push('Code changed since context was read.');
     if (
-      this.records(scope.projectId).some(
+      (await this.records(scope.projectId, scope.taskId)).some(
         (r) =>
           r.package.task?.id === scope.taskId && ['pending', 'accepted'].includes(r.item.state),
       )
@@ -209,9 +198,7 @@ export class C4Service implements C4Handlers {
     };
   }
   async restore(scope: SkaroScope): Promise<void> {
-    for (const record of this.records(scope.projectId).filter((r) =>
-      scope.taskId ? r.scope.taskId === scope.taskId : r.scope.chatId === scope.chatId,
-    )) {
+    for (const record of await this.records(scope.projectId, scope.taskId ?? scope.chatId)) {
       if (record.item.state === 'accepted') {
         try {
           await this.decide(scope.projectId, record.item.id, 'apply');

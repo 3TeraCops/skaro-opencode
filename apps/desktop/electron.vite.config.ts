@@ -1,12 +1,37 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'electron-vite';
+import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 export default defineConfig({
   main: {
-    build: { rollupOptions: { external: ['original-fs'] } },
+    build: {
+      // Keep synchronous startup imports in the build, rather than resolving
+      // hundreds of YAML/updater modules from node_modules on every launch.
+      externalizeDeps: { exclude: ['yaml', 'electron-updater'] },
+      rollupOptions: {
+        external: ['original-fs'],
+        output: {
+          banner: (chunk) =>
+            chunk.name === 'index'
+              ? readFileSync(resolve('scripts/startup-load-probe.cjs'), 'utf8')
+              : '',
+          footer: (chunk) =>
+            chunk.name === 'index'
+              ? "if (process.env.SKARO_LOAD_TRACE) globalThis[Symbol.for('skaro.startupLoads')].stop();"
+              : '',
+        },
+        input: {
+          index: resolve('src/main/index.ts'),
+          'background-worker': resolve('src/main/background/worker.ts'),
+          'native-worker': resolve('src/main/native/worker.ts'),
+        },
+      },
+    },
   },
   preload: {},
   renderer: {
+    worker: { format: 'es' },
     plugins: [svelte()],
     // Own port on 127.0.0.1: the default 5173 is often taken by other projects' dev servers,
     // and the window would load their page instead of Skaro.

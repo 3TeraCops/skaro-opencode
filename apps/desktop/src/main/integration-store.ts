@@ -22,23 +22,23 @@ export function integrationFingerprint(request: IntegrationRequest, baseHead: st
 
 /** Durable operation ownership and immutable inputs; no state is inferred from agent prose. */
 export class IntegrationStore {
-  private readonly db: Pick<AppDb, 'getSetting' | 'setSetting'>;
+  private readonly db: Pick<AppDb, 'getSetting' | 'setSetting' | 'collections'>;
   readonly dataDir: string;
-  constructor(db: Pick<AppDb, 'getSetting' | 'setSetting'>, dataDir: string) {
+  constructor(db: Pick<AppDb, 'getSetting' | 'setSetting' | 'collections'>, dataDir: string) {
     this.db = db;
     this.dataDir = dataDir;
   }
 
   all(projectId: string): IntegrationOperation[] {
-    return this.db.getSetting(`integration.${projectId}.operations`, []);
+    return this.db.collections.all(`integration.${projectId}.operations`);
   }
 
   find(projectId: string, id: string): IntegrationOperation | undefined {
-    return this.all(projectId).find((op) => op.id === id);
+    return this.db.collections.get(`integration.${projectId}.operations`, id);
   }
 
   publications(projectId: string): CompletionOperation[] {
-    return this.db.getSetting(`completion.${projectId}.operations`, []);
+    return this.db.collections.all(`completion.${projectId}.operations`);
   }
 
   inputs(id: string): MessageInput[] {
@@ -46,7 +46,9 @@ export class IntegrationStore {
   }
 
   appendInput(id: string, input: MessageInput): void {
-    this.db.setSetting(`integration.${id}.inputs`, [...this.inputs(id), input]);
+    const pending = this.inputs(id);
+    if (input.commandId && pending.some((value) => value.commandId === input.commandId)) return;
+    this.db.setSetting(`integration.${id}.inputs`, [...pending, input]);
   }
 
   delivered(id: string, count: number): void {
@@ -79,10 +81,7 @@ export class IntegrationStore {
       op.message = saved.message;
     }
     op.updatedAt = Date.now();
-    this.db.setSetting(`integration.${op.projectId}.operations`, [
-      ...this.all(op.projectId).filter((item) => item.id !== op.id),
-      op,
-    ]);
+    this.db.collections.put(`integration.${op.projectId}.operations`, op);
   }
 
   create(request: IntegrationRequest, baseHead: string): IntegrationOperation {

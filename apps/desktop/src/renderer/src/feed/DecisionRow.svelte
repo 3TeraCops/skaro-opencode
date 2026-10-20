@@ -2,11 +2,17 @@
   import type { FeedRow } from '@skaro/timeline';
   import { Icon, t } from '@skaro/ui';
   import Chevron from './Chevron.svelte';
+  import { useFeed } from './context.svelte';
 
   /** What the user answered, after the card closed (mockups 3g, 9h). */
   let { row }: { row: Extract<FeedRow, { type: 'decision' }> } = $props();
 
-  let open = $state(false);
+  const feed = useFeed();
+  // svelte-ignore state_referenced_locally
+  let open = $state(feed.rowState?.get(`open:${row.id}`) ?? false);
+  $effect(() => {
+    feed.rowState?.set(`open:${row.id}`, open);
+  });
   const { interaction, answer } = $derived(row.item);
 
   const pairs = $derived.by(() => {

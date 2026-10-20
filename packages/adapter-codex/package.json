@@ -5,7 +5,8 @@
   "description": "Codex adapter (codex app-server, JSON-RPC v2).",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./projector": "./src/projector.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."

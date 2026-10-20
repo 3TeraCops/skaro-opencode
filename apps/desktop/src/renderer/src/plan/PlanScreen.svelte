@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Banner } from '@skaro/ui';
+  import LoadingView from '../screens/LoadingView.svelte';
   import type { PlanProps } from './plan-props';
   import { createPlanController } from './plan-controller.svelte';
   import DeleteStage from './DeleteStage.svelte';
@@ -20,7 +21,9 @@
     </div>
   {/if}
 
-  {#if model.p.data.loaded && !model.list.length}
+  {#if !model.loaded}
+    <LoadingView />
+  {:else if !model.list.length}
     <PlanEmpty {model} />
   {:else}
     <PlanStages {model} />
@@ -31,7 +34,7 @@
   {@const m = model.modal.milestone}
   <DeleteStage
     milestone={m}
-    tasks={model.p.data.tasks.filter((x) => x.milestone?.id === m.id).length}
+    tasks={model.taskCount(m.id)}
     onconfirm={() => void model.remove(m)}
     onclose={() => (model.modal = undefined)}
   />

@@ -13,6 +13,7 @@ export default ts.config(
       '**/release/',
       '**/coverage/',
       '**/test-results/',
+      'output/',
       'docs/',
       'fixtures/',
     ],
@@ -25,6 +26,7 @@ export default ts.config(
   {
     languageOptions: {
       globals: { ...globals.node },
+      parserOptions: { tsconfigRootDir: import.meta.dirname },
     },
     rules: {
       '@typescript-eslint/no-unused-vars': [

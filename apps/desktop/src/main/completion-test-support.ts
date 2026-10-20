@@ -9,6 +9,7 @@ import { reconcileCompletions } from './completion-recovery';
 import { IntegrationService } from './integration-service';
 import { IntegrationStore } from './integration-store';
 import { prepareFixtureArchitecture, reviewFixtureResult } from './c4-test-support';
+import { closeBackground } from './background/client';
 
 /** Owner-authorized real Git/SQLite fixtures. No agent, HTTP server or backend replacement. */
 export class CompletionFixture {
@@ -49,7 +50,7 @@ export class CompletionFixture {
     const store = new ArtifactStore(repo);
     await store.writeConfig((await store.load()).config);
     await prepareFixtureArchitecture(repo);
-    const db = AppDb.open(join(root, 'app.sqlite'));
+    const db = AppDb.open(join(root, 'skaro.db'));
     const projectId = db.addProject({ name: 'Completion test', path: repo }).id;
     return new CompletionFixture(root, db, projectId);
   }
@@ -151,7 +152,7 @@ export class CompletionFixture {
     await this.coordinator.close();
     this.projects.close();
     this.db.close();
-    this.db = AppDb.open(join(this.root, 'app.sqlite'));
+    this.db = AppDb.open(join(this.root, 'skaro.db'));
     this.projects = new Projects(this.db, () => undefined);
     this.integrations = this.integrationService();
     this.coordinator = new CompletionCoordinator(this.hooks());
@@ -160,6 +161,7 @@ export class CompletionFixture {
   async close(): Promise<void> {
     await this.coordinator.close();
     this.projects.close();
+    await closeBackground();
     this.db.close();
     const target = resolve(this.root);
     const inside = relative(resolve(tmpdir()), target);

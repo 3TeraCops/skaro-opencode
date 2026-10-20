@@ -108,18 +108,46 @@ export async function writeSpec(files: ArtifactFiles, id: string, body: string):
   return (await files.findFile('specs', id, toSpec)).item;
 }
 
-export async function writeDoc(files: ArtifactFiles, path: string, body: string): Promise<Doc> {
-  if (!/^(brief\.md|architecture\.md|docs\/[^/]+\.md)$/.test(path))
-    throw new Error(`not a document path: ${path}`);
+async function replaceBody(
+  files: ArtifactFiles,
+  path: string,
+  body: string,
+  create: boolean,
+): Promise<void> {
   let file: MarkdownFile;
   try {
     file = parseMarkdown(await readFile(join(files.dir, path), 'utf8'));
-  } catch {
+  } catch (error) {
+    if (!create || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     file = { doc: parseMarkdown('').doc, body: '' };
   }
+  const fields = getFields(file);
+  if (/^(adr|specs)\//.test(path)) {
+    const convert = path.startsWith('adr/') ? toAdr : toSpec;
+    if (!convert(fields, file.body, path, [])) throw new Error(`unknown document ${path}`);
+  }
   file.body = body;
-  const hasFrontmatter = Object.keys(getFields(file)).length > 0;
-  await files.writeFile(path, hasFrontmatter ? serializeMarkdown(file) : body);
+  await files.writeFile(path, Object.keys(fields).length ? serializeMarkdown(file) : body);
+}
+
+/** An editor already has a verified path; replacing its body never scans unrelated documents. */
+export async function writeDocumentBody(
+  files: ArtifactFiles,
+  path: string,
+  body: string,
+): Promise<void> {
+  if (
+    !/^(brief\.md|architecture\.md|(?:docs|adr|specs)\/[^/\\]+\.md)$/.test(path) ||
+    path.includes('..')
+  )
+    throw new Error(`not a document path: ${path}`);
+  await replaceBody(files, path, body, !/^(adr|specs)\//.test(path));
+}
+
+export async function writeDoc(files: ArtifactFiles, path: string, body: string): Promise<Doc> {
+  if (!/^(brief\.md|architecture\.md|docs\/[^/]+\.md)$/.test(path))
+    throw new Error(`not a document path: ${path}`);
+  await replaceBody(files, path, body, true);
   const kind = path === 'brief.md' ? 'brief' : path === 'architecture.md' ? 'architecture' : 'doc';
   const doc = await files.readDoc(path, kind, []);
   if (!doc) throw new Error(`failed to write ${path}`);

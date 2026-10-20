@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Icon, t, tn } from '@skaro/ui';
+  import { untrack } from 'svelte';
+  import WindowedContent from '../WindowedContent.svelte';
   import type { MilestoneInfo, TaskSummary } from '../../../shared/ipc';
   import Dialog from './Dialog.svelte';
   import { statusLabel, type BulkKind } from './model';
@@ -23,6 +25,14 @@
   import { BULK_LOOK as LOOK } from './bulk-appearance';
 
   const shown = $derived(kind === 'unblock' ? tasks.filter((x) => x.status === 'blocked') : tasks);
+  let revision = $state(0);
+  $effect(() => {
+    void shown;
+    untrack(() => revision++);
+  });
+  const read = async (start: number) => shown.slice(start, start + 16);
+  const copyText = () =>
+    shown.map((task) => `${task.id} · ${task.title} · ${note(task)}`).join('\n');
   const title = $derived(
     kind === 'unblock'
       ? t('board.dlg.unblock', { n: shown.length })
@@ -54,15 +64,25 @@
   </div>
 
   <div data-task-bulk-dialog class="tasks">
-    {#each shown as task (task.id)}
-      <div data-task-bulk-dialog class="task">
-        <span data-task-bulk-dialog class="id">{task.id}</span>
-        <span data-task-bulk-dialog class="name">{task.title}</span>
-        <span data-task-bulk-dialog class="note" class:blocked={task.status === 'blocked'}
-          >{note(task)}</span
-        >
-      </div>
-    {/each}
+    <WindowedContent
+      count={shown.length}
+      {revision}
+      {read}
+      {copyText}
+      scroller=".tasks[data-task-bulk-dialog]"
+      gap={0}
+      estimate={33}
+    >
+      {#snippet children(task)}
+        <div data-task-bulk-dialog class="task">
+          <span data-task-bulk-dialog class="id">{task.id}</span>
+          <span data-task-bulk-dialog class="name">{task.title}</span>
+          <span data-task-bulk-dialog class="note" class:blocked={task.status === 'blocked'}
+            >{note(task)}</span
+          >
+        </div>
+      {/snippet}
+    </WindowedContent>
   </div>
 
   {#if kind === 'move'}

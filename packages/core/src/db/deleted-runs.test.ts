@@ -44,7 +44,7 @@ describe('deleted task run boundaries', () => {
     const path = join(directory, 'skaro.db');
     try {
       const legacy = new DatabaseSync(path);
-      for (const migration of MIGRATIONS.slice(0, -1)) legacy.exec(migration);
+      for (const migration of MIGRATIONS.slice(0, 4)) legacy.exec(migration);
       legacy.exec(`PRAGMA user_version = 4;
         INSERT INTO projects(id,name,path,created_at) VALUES ('p','Lifecycle','/lifecycle',0);
         INSERT INTO runs(id,project_id,task_id,agent,log_path,adapter_version,started_at,native_session_id)

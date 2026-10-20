@@ -28,10 +28,9 @@ import type {
   TaskView,
   MessageInput,
   MergeAction,
+  ChatView,
   ChatSettings,
   ChatSummary,
-  ChatView,
-  ProposalAction,
   PathSuggestion,
   FileDiff,
   PickedFile,
@@ -44,12 +43,28 @@ import type {
 } from './ipc-sessions';
 import type { UpdateState } from './updates';
 import type { Diagnostics } from './diagnostics';
+import type { HistoryMethods, HistoryEvents } from './history';
+import type { TaskCatalogMethods } from './task-catalog';
+import type { ChatMethods } from './chat-methods';
+import type { ProjectCatalogMethods } from './project-catalog';
+import type { DocumentCatalogMethods } from './document-catalog';
 export * from './ipc-entities';
 export * from './ipc-sessions';
 export type { UpdateState } from './updates';
 
 /** Methods the renderer may call: name → signature. */
-export interface Methods {
+export interface Methods
+  extends
+    HistoryMethods,
+    DocumentCatalogMethods,
+    ProjectCatalogMethods,
+    TaskCatalogMethods,
+    ChatMethods {
+  'c4.files': (projectId: string, itemId: string) => string[];
+  'c4.file': (projectId: string, itemId: string, path: string, side: 'before' | 'after') => string;
+  'session.remember': (key: string, view: ChatView | TaskView) => void;
+  'commands.list': (projectId: string, ownerId: string) => import('@skaro/timeline').OwnerCommand[];
+  'c4.content': (projectId: string, itemId: string, side: 'before' | 'after') => string;
   'c4.decide': (projectId: string, itemId: string, action: 'apply' | 'reject') => void;
   'task.revertMerge': (projectId: string, taskId: string, commit: string) => void;
   'window.minimize': () => void;
@@ -72,6 +87,7 @@ export interface Methods {
   /** "Другой…": an application picked by the user; undefined if cancelled. */
   'app.pickApp': () => string | undefined;
   'projects.list': () => ProjectInfo[];
+  'projects.get': (id: string) => ProjectInfo;
   /** Folder picker; undefined if cancelled. */
   'projects.pickFolder': (defaultPath?: string) => string | undefined;
   'projects.inspect': (path: string) => FolderInfo;
@@ -175,7 +191,7 @@ export interface Methods {
   ) => void;
   /** "Показать в папке". */
   'docs.reveal': (projectId: string, path: string) => void;
-  'task.open': (projectId: string, taskId: string) => TaskView;
+  'task.open': (projectId: string, taskId: string, options?: { paged: boolean }) => TaskView;
   'task.openExternal': (projectId: string, taskId: string, url: string) => void;
   'task.stopEnvironmentReview': (projectId: string, taskId: string) => void;
   'task.send': (projectId: string, taskId: string, input: MessageInput) => void;
@@ -195,29 +211,6 @@ export interface Methods {
     action: MergeAction,
   ) => void;
   'task.toggleCriterion': (projectId: string, taskId: string, index: number) => void;
-  /** Project chats, active and archived, most recent first. */
-  'chats.list': (projectId: string) => ChatSummary[];
-  /** Agent, model and effort a new chat starts with. */
-  'chats.defaults': (projectId: string) => ChatSettings;
-  'chat.open': (projectId: string, chatId: string) => ChatView;
-  /** Starts a chat with its first message. */
-  'chat.create': (projectId: string, settings: ChatSettings, input: MessageInput) => ChatSummary;
-  'chat.send': (projectId: string, chatId: string, input: MessageInput) => void;
-  'chat.respond': (
-    projectId: string,
-    chatId: string,
-    interactionId: string,
-    answer: InteractionAnswer,
-  ) => void;
-  'chat.interrupt': (projectId: string, chatId: string) => void;
-  'chat.setSettings': (projectId: string, chatId: string, settings: ChatSettings) => void;
-  'chat.archive': (projectId: string, chatId: string, archived: boolean) => void;
-  'chat.proposal': (
-    projectId: string,
-    chatId: string,
-    itemId: string,
-    action: ProposalAction,
-  ) => void;
   /** Files and folders for the "@" menu. */
   'files.suggest': (projectId: string, taskId: string, query: string) => PathSuggestion[];
   /** Which of the paths exist in the task's working folder (links in agent text). */
@@ -232,7 +225,9 @@ export interface Methods {
 }
 
 /** Events from the main process: name → payload. */
-export interface Events {
+export interface Events extends HistoryEvents {
+  'command.changed': import('@skaro/timeline').OwnerCommand;
+  'projects.card': ProjectCard;
   'updates.changed': UpdateState;
   'window.maximized': boolean;
   'agents.changed': AgentInfo[];
@@ -275,6 +270,7 @@ export const EVENT_CHANNEL = 'skaro:event';
 
 /** What the renderer sees as `window.skaro`. */
 export interface SkaroApi {
+  readonly bootstrap?: import('./ipc-sessions').BootstrapState;
   readonly platform: string;
   /** Path on disk of a file or a folder dropped into the window. */
   pathOf(file: File): string;

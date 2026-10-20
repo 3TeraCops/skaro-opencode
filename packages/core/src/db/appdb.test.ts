@@ -16,7 +16,7 @@ afterEach(() => db.close());
 
 describe('AppDb', () => {
   it('migrates a new database', () => {
-    expect(db.schemaVersion).toBe(5);
+    expect(db.schemaVersion).toBe(8);
   });
 
   it('keeps projects, most recently opened first', () => {
@@ -191,7 +191,7 @@ describe('AppDb', () => {
       first.close();
       const second = AppDb.open(path);
       try {
-        expect(second.schemaVersion).toBe(5);
+        expect(second.schemaVersion).toBe(8);
         expect(second.listProjects().map((p) => p.name)).toEqual(['P']);
       } finally {
         second.close();

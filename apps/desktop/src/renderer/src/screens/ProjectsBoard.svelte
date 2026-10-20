@@ -7,6 +7,7 @@
   import { ProjectsBoardState } from './projects-board.svelte';
   import ProjectOverviewCard from './ProjectOverviewCard.svelte';
   import ProjectsList from './ProjectsList.svelte';
+  import WindowedContent from '../WindowedContent.svelte';
   import './projects-board.css';
   import './project-card-runs.css';
   import './projects-list.css';
@@ -77,23 +78,31 @@
     />
   </div>
 
-  {#if state.loaded && state.query.trim() && !state.shown.length}
+  {#if state.loaded && state.query.trim() && !state.source.count}
     <div class="nothing">
       <div class="nothing-title">{t('projects.nothing')}</div>
       <div class="nothing-text">{t('projects.nothing.text', { q: state.query.trim() })}</div>
     </div>
   {:else if state.view === 'grid'}
-    <div class="grid">
-      {#each state.shown as c (c.id)}
-        <ProjectOverviewCard
-          {c}
-          {onopen}
-          relocate={(c) => state.relocate(c)}
-          remove={(id) => state.remove(id)}
-        />
-      {/each}
-    </div>
+    <WindowedContent
+      count={Math.ceil(state.source.count / 3)}
+      revision={state.source.revision}
+      read={(start) => state.gridRows(start)}
+      gap={13}
+      estimate={220}
+    >
+      {#snippet children(row)}
+        <div class="grid">
+          {#each row.cards as c (c.id)}<ProjectOverviewCard
+              {c}
+              {onopen}
+              relocate={(c) => state.relocate(c)}
+              remove={(id) => state.remove(id)}
+            />{/each}
+        </div>
+      {/snippet}
+    </WindowedContent>
   {:else}
-    <ProjectsList shown={state.shown} {onopen} />
+    <ProjectsList {state} {onopen} />
   {/if}
 </div>

@@ -28,12 +28,11 @@ export async function createUpdates(options: {
   const activity = new UpdateActivity(
     () =>
       runs.slots().free < runs.slots().total ||
+      chats.busy() ||
       db
         .listProjects()
-        .some(
-          (project) =>
-            [...db.getTaskRuntime(project.id).values()].some((task) => isAgentBusy(task.state)) ||
-            chats.list(project.id).some((chat) => chat.live),
+        .some((project) =>
+          [...db.getTaskRuntime(project.id).values()].some((task) => isAgentBusy(task.state)),
         ),
   );
   const installer = new AgentInstaller({

@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { Checkbox, t } from '@skaro/ui';
+  import { tick } from 'svelte';
   import BoardCard from './BoardCard.svelte';
   import { createBoardDrag } from './board-drag.svelte';
   import type { BoardMoves } from './board-moves-controller.svelte';
-  import { COLUMN_ICONS } from './column-icons';
+  import BoardColumn from './BoardColumn.svelte';
+  import type { ColumnKey } from './board-moves';
   import './board.css';
 
   /**
@@ -12,26 +13,34 @@
    */
   let {
     moves,
-    selected,
+    selection,
     selecting,
     now,
     onselect,
-    onselectmany,
+    onselectcolumn,
     onopen,
   }: {
     moves: BoardMoves;
-    selected: string[];
+    selection: import('./task-selection.svelte').TaskSelection;
     selecting: boolean;
     now: number;
-    onselect: (id: string, on: boolean) => void;
-    onselectmany: (ids: string[], on: boolean) => void;
+    onselect: (id: string, on: boolean, task?: import('../../../shared/ipc').TaskSummary) => void;
+    onselectcolumn: (range: import('../../../shared/task-catalog').TaskRange, on: boolean) => void;
     onopen: (id: string) => void;
   } = $props();
 
   let root: HTMLDivElement | undefined = $state();
+  const views: Partial<Record<ColumnKey, BoardColumn>> = {};
   const dnd = createBoardDrag({
+    reveal: (key, index) => views[key]?.revealSlot(index),
+    revealCard: async (id) => {
+      await moves.ready();
+      await tick();
+      await Promise.all(moves.columns.map((col) => col.range.ready()));
+      await Promise.all(Object.values(views).map((view) => view?.revealCard(id)));
+    },
     root: () => root,
-    columns: () => moves.columns,
+    columns: () => moves.columns.map((col) => ({ key: col.key, count: col.range.count })),
     allowed: (task, from, to) => moves.allowed(task, from, to),
     ondrop: (task, from, to, index) => moves.drop(task, from, to, index),
   });
@@ -40,57 +49,17 @@
 
 <div class="board" bind:this={root}>
   {#each moves.columns as col (col.key)}
-    {@const items = col.tasks.filter((x) => x.id !== drag?.task.id)}
-    {@const slot = drag && drag.to === col.key && drag.allowed ? drag : undefined}
-    {@const Icon = COLUMN_ICONS[col.key]}
-    <div class="col" class:over={slot && drag?.from !== col.key} data-col={col.key}>
-      <div class="head">
-        <span class="name" style="color: {col.color}">{t(`board.col.${col.key}`)}</span>
-        <span class="count">{items.length + (slot ? 1 : 0)}</span>
-        {#if selecting}
-          <span class="select-all">
-            <Checkbox
-              label={t('board.selectAll')}
-              bind:checked={
-                () => col.tasks.length > 0 && col.tasks.every((task) => selected.includes(task.id)),
-                (on) =>
-                  onselectmany(
-                    col.tasks.map((task) => task.id),
-                    on,
-                  )
-              }
-            />
-          </span>
-        {/if}
-      </div>
-      <div class="cards" data-scroll>
-        {#each items as task, i (task.id)}
-          {#if slot && slot.index === i}
-            <div class="slot" style="height: {slot.h || 76}px"><span></span></div>
-          {/if}
-          <BoardCard
-            {task}
-            {now}
-            {selecting}
-            selected={selected.includes(task.id)}
-            dropped={dnd.dropped === task.id}
-            onselect={(on) => onselect(task.id, on)}
-            onopen={() => onopen(task.id)}
-            ondragstart={(e) => dnd.down(task, col.key, e)}
-            onkey={(e) => dnd.keydown(task, col.key, e)}
-          />
-        {/each}
-        {#if slot && slot.index >= items.length}
-          <div class="slot" style="height: {slot.h || 76}px"><span></span></div>
-        {/if}
-        {#if !items.length && !slot}
-          <div class="empty">
-            <span class="empty-icon"><Icon size={18} strokeWidth={1.8} /></span>
-            <span class="empty-text">{t(`board.col.${col.key}.empty`)}</span>
-          </div>
-        {/if}
-      </div>
-    </div>
+    <BoardColumn
+      bind:this={views[col.key]}
+      {col}
+      {dnd}
+      {selection}
+      {selecting}
+      {now}
+      {onselect}
+      {onselectcolumn}
+      {onopen}
+    />
   {/each}
   {#if drag && !drag.keyboard}
     <div
@@ -98,13 +67,7 @@
       style="left: {drag.x - drag.ox}px; top: {drag.y - drag.oy}px; width: {drag.w}px"
     >
       <div class="cards">
-        <BoardCard
-          task={drag.task}
-          {now}
-          {selecting}
-          selected={selected.includes(drag.task.id)}
-          ghost
-        />
+        <BoardCard task={drag.task} {now} {selecting} selected={selection.has(drag.task)} ghost />
       </div>
     </div>
   {/if}

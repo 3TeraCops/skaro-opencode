@@ -9,16 +9,26 @@ import type { MarkdownFile } from './frontmatter.ts';
 
 export const SKARO_DIR = '.skaro';
 
+export interface ArtifactReadCache {
+  read(
+    path: string,
+    includeBody?: boolean,
+  ): Promise<{ fields: Record<string, unknown>; body: string; title?: string }>;
+  invalidate(path: string): void;
+}
+
 /** File access and observation shared by artifact operations. */
 export class ArtifactFiles {
   readonly dir: string;
   readonly ownWrites = new Map<string, string>();
   readonly root: string;
   readonly reservedTaskIds: () => string[];
-  constructor(root: string, reservedTaskIds: () => string[] = () => []) {
+  private readonly cache?: ArtifactReadCache;
+  constructor(root: string, reservedTaskIds: () => string[] = () => [], cache?: ArtifactReadCache) {
     this.root = root;
     this.dir = join(root, SKARO_DIR);
     this.reservedTaskIds = reservedTaskIds;
+    this.cache = cache;
   }
 
   watch(onChange: (paths: string[]) => void, debounceMs = 150): () => void {
@@ -36,6 +46,7 @@ export class ArtifactFiles {
           this.ownWrites.delete(abs);
         }
         changed.push(path.split(sep).join('/'));
+        this.cache?.invalidate(path.split(sep).join('/'));
       }
       pending.clear();
       if (changed.length) onChange(changed.sort());
@@ -58,6 +69,7 @@ export class ArtifactFiles {
   }
 
   async writeFile(path: string, content: string): Promise<void> {
+    this.cache?.invalidate(path);
     const abs = join(this.dir, path);
     await mkdir(dirname(abs), { recursive: true });
     this.ownWrites.set(abs, content);
@@ -66,6 +78,7 @@ export class ArtifactFiles {
 
   /** A journalled creation must expose either a complete file or no file after a crash. */
   async writeCreatedFile(path: string, content: string): Promise<void> {
+    this.cache?.invalidate(path);
     const abs = join(this.dir, path);
     await mkdir(dirname(abs), { recursive: true });
     const temporary = `${abs}.${randomUUID()}.tmp`;
@@ -95,13 +108,22 @@ export class ArtifactFiles {
       path: string,
       problems: ArtifactProblem[],
     ) => T | undefined,
+    includeBody = true,
   ): Promise<T[]> {
     const out: T[] = [];
     for (const name of await this.list(sub)) {
       const path = `${sub}/${name}`;
       try {
-        const file = parseMarkdown(await readFile(join(this.dir, path), 'utf8'));
-        const item = convert(getFields(file), file.body, `${SKARO_DIR}/${path}`, problems);
+        const file = this.cache ? await this.cache.read(path, includeBody) : undefined;
+        const parsed = file
+          ? undefined
+          : parseMarkdown(await readFile(join(this.dir, path), 'utf8'));
+        const item = convert(
+          file?.fields ?? getFields(parsed!),
+          file?.body ?? parsed!.body,
+          `${SKARO_DIR}/${path}`,
+          problems,
+        );
         if (item) out.push(item);
       } catch (error) {
         problems.push({
@@ -141,7 +163,23 @@ export class ArtifactFiles {
     path: string,
     kind: Doc['kind'],
     problems: ArtifactProblem[],
+    includeBody = true,
   ): Promise<Doc | undefined> {
+    if (this.cache) {
+      try {
+        const file = await this.cache.read(path, includeBody);
+        const title =
+          str(file.fields['title']) ??
+          file.title ??
+          /^#\s+(.+)$/m.exec(file.body)?.[1]?.trim() ??
+          path.split('/').pop()!.replace(/\.md$/, '');
+        return { kind, title, body: file.body, path: `${SKARO_DIR}/${path}` };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+          problems.push({ path: `${SKARO_DIR}/${path}`, message: String(error) });
+        return undefined;
+      }
+    }
     let text: string;
     try {
       text = await readFile(join(this.dir, path), 'utf8');

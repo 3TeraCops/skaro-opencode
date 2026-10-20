@@ -1,0 +1,114 @@
+.project-nav .nav-active {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  max-height: 45%;
+}
+
+.project-nav .nav-active-head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 10px 6px;
+}
+
+.project-nav .nav-active-label {
+  font-size: var(--sk-fs-2);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--sk-text-26);
+}
+
+.project-nav .nav-active-count {
+  font-family: var(--sk-mono);
+  font-size: var(--sk-fs-1);
+  color: var(--sk-text-28);
+}
+
+.project-nav .nav-active-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.project-nav .nav-task {
+  width: 100%;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 8px 4px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.project-nav .nav-task:hover,
+.project-nav .rail-task:hover {
+  background: var(--sk-hover);
+}
+
+.project-nav .nav-task-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--sk-fs-3);
+  color: var(--sk-text-13);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-nav .nav-task-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.project-nav .nav-task-dot.need {
+  background: var(--sk-accent);
+}
+
+.project-nav .nav-task-dot.review {
+  box-shadow: inset 0 0 0 1.5px var(--sk-accent);
+}
+
+.project-nav .nav-task-dot.working {
+  background: var(--sk-fill-41);
+  animation: skPulse 1.6s ease-in-out infinite;
+}
+
+.project-nav .nav-active-rail {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 0;
+  max-height: 45%;
+  overflow-y: auto;
+}
+
+.project-nav .rail-task {
+  flex: none;
+  width: 32px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+}

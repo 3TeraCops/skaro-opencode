@@ -1,15 +1,14 @@
 <script lang="ts">
   import { ActionMenu, Icon, t } from '@skaro/ui';
   import type { StageController } from './stage-controller.svelte';
-  import { doneLike, rowStatus } from './model';
   import StageRun from './StageRun.svelte';
   let { model }: { model: StageController } = $props();
 
-  const left = $derived(model.p.stage.tasks.filter((x) => !doneLike(rowStatus(x.status))).length);
+  const left = $derived(model.p.stage.total - model.p.stage.done);
   const archiveTip = $derived(
     model.p.canArchive
       ? t('plan.menu.archive.tip')
-      : model.p.stage.tasks.length
+      : model.p.stage.taskCount
         ? t('plan.menu.archive.left', { n: left })
         : t('plan.menu.archive.empty'),
   );

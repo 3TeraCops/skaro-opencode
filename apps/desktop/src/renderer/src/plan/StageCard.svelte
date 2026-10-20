@@ -6,6 +6,9 @@
   import './stage-card.css';
   let p: StageProps = $props();
   const model = createStageController(() => p);
+  let body = $state<StageBody>();
+  export const reveal = (index: number) => body?.reveal(index);
+  export const revealTask = (id: string) => body?.revealTask(id);
 </script>
 
 <div
@@ -21,6 +24,6 @@
 >
   <StageHeader {model} />
   {#if model.p.open}
-    <StageBody {model} />
+    <StageBody bind:this={body} {model} />
   {/if}
 </div>

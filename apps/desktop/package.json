@@ -19,6 +19,8 @@
     "release:manifest": "node scripts/release-manifest.mjs"
   },
   "devDependencies": {
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.14",
     "@lucide/svelte": "1.48.0",
     "@playwright/test": "^1.63.0",
     "@skaro/adapter-claude": "workspace:*",

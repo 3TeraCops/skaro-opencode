@@ -14,6 +14,7 @@ export class TaskRunEvents {
   }
 
   onEvent(active: ActiveRun, event: TimelineEvent): void {
+    event = active.secrets.redact(event);
     if (this.ctx.active.get(`${active.projectId}\n${active.taskId}`) !== active) return;
     const affectsActivity =
       event.t === 'activity' ||
@@ -79,6 +80,12 @@ export class TaskRunEvents {
     outcome: 'done' | 'interrupted' | 'failed',
   ): Promise<void> {
     this.settleRuntime(active);
+    if (active.timeline.state.interactions.some((i) => i.kind === 'question')) {
+      active.release?.();
+      active.release = undefined;
+      this.ctx.queue.poke();
+      return;
+    }
     const after = active.afterTurn;
     try {
       if (after)

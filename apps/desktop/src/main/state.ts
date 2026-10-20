@@ -3,22 +3,56 @@
 import { existsSync } from 'node:fs';
 import { basename } from 'node:path';
 import { AppDb, type ProjectRecord } from '@skaro/core';
-import type { Locale, ProjectInfo, TabsState } from '../shared/ipc';
+import { cachedSession } from './session-cache';
+import { startupChatCatalog } from './startup-chat-catalog';
+import type { ChatCatalog } from '../shared/chat-catalog';
+import { cachedProjectCards } from './project-card-cache';
+import { logoReference } from './project-logo-reference';
+import type { BootstrapState, Locale, ProjectInfo, TabsState } from '../shared/ipc';
 
 export class AppState {
   readonly db: AppDb;
+  /** Main services supply current liveness on renderer reload without restoring any history. */
+  chatCatalogOverlay?: (page: ChatCatalog) => ChatCatalog;
 
   constructor(dbPath: string) {
     this.db = AppDb.open(dbPath);
     // No agent process survives a restart (agent-output.md 6).
     this.db.resetStaleRuntime();
-    // A new app session starts on Home, retaining the tabs and their order.
-    // Renderer reloads within this session can still restore the selected project.
-    this.db.setOpenTabs(this.db.getOpenTabs().map((tab) => tab.projectId));
   }
 
   listProjects(): ProjectInfo[] {
-    return this.db.listProjects().map(info);
+    return this.db.shell.list().map(info);
+  }
+
+  bootstrap(systemLocale = 'en'): BootstrapState {
+    const projects = this.db.shell.initial().map((p) => ({
+      id: p.id,
+      name: p.name,
+      path: p.path,
+      missing: false,
+      ...(logoReference(p) ? { logo: logoReference(p) } : {}),
+    }));
+    const workspace = this.db.getSetting<
+      import('../shared/ipc-sessions').WorkspaceState | undefined
+    >('ui.workspace', undefined);
+    const tabs = this.getTabs();
+    const catalog = startupChatCatalog(this.db.filePath, workspace, tabs);
+    return {
+      chatCatalog: catalog ? (this.chatCatalogOverlay?.(catalog) ?? catalog) : undefined,
+      sessions: cachedSession(this.db.filePath, workspace, tabs),
+      projects,
+      projectsView: this.db.getSetting('ui.projects', undefined),
+      tabs,
+      locale: this.getLocale(systemLocale),
+      workspace,
+      cards: cachedProjectCards(
+        this.db.filePath,
+        projects.map((project) => project.id),
+      ).map((card) => ({ ...card, ...projects.find((project) => project.id === card.id)! })),
+      feedFont: this.db.getSetting('ui.feedFont', undefined),
+      panelCollapsed: this.db.getSetting('ui.navCollapsed', false),
+    };
   }
 
   /** Registers a folder as a project; returns the existing one if already added. */
@@ -49,8 +83,8 @@ export class AppState {
     return this.project(id);
   }
 
-  private project(id: string): ProjectInfo {
-    const project = this.db.getProject(id);
+  project(id: string): ProjectInfo {
+    const project = this.db.shell.get(id);
     if (!project) throw new Error('unknown project');
     return info(project);
   }
@@ -60,8 +94,7 @@ export class AppState {
   }
 
   getTabs(): TabsState {
-    const known = new Set(this.db.listProjects().map((p) => p.id));
-    const tabs = this.db.getOpenTabs().filter((t) => known.has(t.projectId));
+    const tabs = this.db.shell.tabs();
     const active = tabs.find((t) => t.active)?.projectId;
     return { projects: tabs.map((t) => t.projectId), ...(active ? { active } : {}) };
   }
@@ -94,12 +127,12 @@ export class AppState {
   }
 }
 
-function info(p: ProjectRecord): ProjectInfo {
+function info(p: ProjectRecord & { logoVersion?: number }): ProjectInfo {
   return {
     id: p.id,
     name: p.name,
     path: p.path,
     missing: !existsSync(p.path),
-    ...(p.logo ? { logo: p.logo } : {}),
+    ...(logoReference(p) ? { logo: logoReference(p) } : {}),
   };
 }

@@ -10,6 +10,8 @@ import {
 } from '@skaro/core';
 import type { AgentId, RunInfo, TaskDetail, TaskRef, TaskSummary } from '../shared/ipc';
 import { taskSections } from './task-body';
+import { requirementsOf } from '../shared/task-requirements';
+export { requirementsOf } from '../shared/task-requirements';
 import { stageIdOf } from './task-stage';
 import { subjectOf } from './task-subject';
 
@@ -61,9 +63,19 @@ export function summary(
   index: ReturnType<typeof indexTasks>,
   runtime: TaskRuntime | undefined,
   extra: { agent?: AgentId; model?: string; updatedAt: number },
+  catalogs?: {
+    milestones: ReadonlyMap<string, ProjectArtifacts['milestones'][number]>;
+    specs: ReadonlyMap<string, ProjectArtifacts['specs'][number]>;
+  },
 ): TaskSummary {
-  const milestone = artifacts.milestones.find((m) => m.id === task.milestone);
-  const spec = task.spec ? artifacts.specs.find((s) => s.id === task.spec) : undefined;
+  const milestone = catalogs
+    ? catalogs.milestones.get(task.milestone ?? '')
+    : artifacts.milestones.find((m) => m.id === task.milestone);
+  const spec = task.spec
+    ? catalogs
+      ? catalogs.specs.get(task.spec)
+      : artifacts.specs.find((s) => s.id === task.spec)
+    : undefined;
   const base = ref(task, index, runtime);
   const waitsFor = isBlocked(task, index) ? unmergedDependencies(task, index) : [];
   return {
@@ -99,15 +111,4 @@ export function detail(
     ...taskSections(task.body),
     ...requirementsOf(artifacts.specs.find((s) => s.id === task.spec)?.body),
   };
-}
-
-/** "- R-2 Права проверяются на сервере" lines of a specification. */
-export function requirementsOf(body: string | undefined): {
-  requirements?: { id: string; text: string }[];
-} {
-  const list = [...(body ?? '').matchAll(/^\s*[-*]\s+(R-\d+)[\s:.—–-]+(.+)$/gm)].map((m) => ({
-    id: m[1]!,
-    text: m[2]!.trim(),
-  }));
-  return list.length ? { requirements: list } : {};
 }

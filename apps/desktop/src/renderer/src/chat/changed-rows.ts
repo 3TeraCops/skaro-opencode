@@ -1,16 +1,17 @@
-import type { Item } from '@skaro/timeline';
+import type { ProposalChange } from '../../../shared/proposal-changes';
 import { t, tn } from '@skaro/ui';
 import './plan-decisions-i18n';
-import { replanStatus } from '../feed/proposal-replan';
+import { replanProgress } from '../feed/proposal-replan';
 import '../c4/i18n';
-export type ProposalItem = Extract<Item, { kind: 'proposal' }>;
+export type ProposalItem = ProposalChange;
 /** "Изменено в чате": what each proposal is and where it stands. */
-function changed(item: ProposalItem): {
+export function changed(item: ProposalItem): {
   icon: 'file' | 'adr' | 'spec' | 'milestone' | 'import';
   title: string;
   note: string;
   pending: boolean;
 } {
+  if (item.imported) return importedRow(item.imported);
   const p = item.proposal;
   const pending = item.state === 'pending';
   const settled =
@@ -38,8 +39,7 @@ function changed(item: ProposalItem): {
         pending,
         note: pending
           ? t('changed.pending')
-          : (settled ??
-            (p.before === undefined ? t('changed.doc.created') : t('changed.doc.updated'))),
+          : (settled ?? (p.created ? t('changed.doc.created') : t('changed.doc.updated'))),
       };
     case 'task':
       return {
@@ -53,7 +53,12 @@ function changed(item: ProposalItem): {
         icon: 'file',
         title: p.title,
         pending,
-        note: replanStatus(item),
+        note: replanProgress(
+          item.state,
+          item.result?.replan,
+          p.beforeCount,
+          item.result?.taskCount ?? p.afterCount,
+        ),
       };
     case 'adr':
       return {
@@ -89,21 +94,21 @@ function changed(item: ProposalItem): {
         title: p.complete
           ? t('proposal.plan.complete', {
               title: p.title ?? t('proposal.plan.defaultTitle'),
-              tasks: tn('proposal.tasks', p.tasks.length),
+              tasks: tn('proposal.tasks', p.taskCount),
             })
           : p.milestone?.isNew
             ? `${item.result?.milestone?.id ?? p.milestone.id} · ${p.milestone.title}`
-            : `${p.milestone ? `${p.milestone.id} · ` : ''}${tn('proposal.tasks', p.tasks.length)}`,
+            : `${p.milestone ? `${p.milestone.id} · ` : ''}${tn('proposal.tasks', p.taskCount)}`,
         pending,
         note:
           item.state === 'accepted'
             ? (item.result?.error ?? t('proposal.plan.creating'))
-            : item.state === 'rejected' && (item.result?.tasks?.length || item.result?.milestone)
+            : item.state === 'rejected' && (item.result?.taskCount || item.result?.milestone)
               ? t(
                   item.result.milestone
                     ? 'proposal.plan.cancelledMilestone'
                     : 'proposal.plan.cancelled',
-                  { done: item.result.tasks?.length ?? 0, id: item.result.milestone?.id ?? '' },
+                  { done: item.result.taskCount ?? 0, id: item.result.milestone?.id ?? '' },
                 )
               : pending
                 ? t('changed.pending')
@@ -114,16 +119,12 @@ function changed(item: ProposalItem): {
 }
 
 /** Rows of "Изменено в чате": one per proposal, what an applied import wrote one by one. */
-export function changedRows(proposals: ProposalItem[]) {
-  return proposals.flatMap((item) => {
-    if (item.state === 'superseded') return [];
-    if (item.proposal.type === 'import' && item.state === 'applied') {
-      return (item.result?.imported ?? [])
-        .filter((x) => x.kind !== 'plan' || x.code?.startsWith('M'))
-        .map((x, i) => ({ key: `${item.id}-${i}`, item, c: importedRow(x) }));
-    }
-    return [{ key: item.id, item, c: changed(item) }];
-  });
+export function changedRows(proposals: ProposalChange[]) {
+  return proposals.map((item) => ({
+    key: item.id,
+    item,
+    c: item.imported ? importedRow(item.imported) : changed(item),
+  }));
 }
 
 function importedRow(x: {

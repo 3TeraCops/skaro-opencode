@@ -1,7 +1,17 @@
 <script lang="ts">
   import { Icon, t } from '@skaro/ui';
+  import { chatListViewport } from './chat-list-viewport.svelte';
+  import WindowedContent from '../WindowedContent.svelte';
+  import ChatSessionRow from './ChatSessionRow.svelte';
   import type { ChatScreenController } from './chat-screen-controller.svelte';
-  let { state }: { state: ChatScreenController } = $props();
+  let { state: model }: { state: ChatScreenController } = $props();
+  let content: { reveal(index: number): Promise<void> } | undefined = $state();
+  let list: HTMLDivElement | undefined = $state();
+  chatListViewport({
+    state: () => model,
+    root: () => list,
+    reveal: (index) => content?.reveal(index),
+  });
 </script>
 
 <div data-chat-screen class="sessions">
@@ -11,53 +21,36 @@
     class="new"
     data-tip={t('chat.new.tip')}
     onclick={() => {
-      state.tab = 'active';
-      state.p.chat = 'new';
+      model.tab = 'active';
+      model.p.chat = 'new';
     }}
   >
     <Icon name="edit" size={14} stroke={1.9} />
     {t('chat.new')}
   </button>
-  <div data-chat-screen class="list">
-    {#each state.shown as item (item.id)}
-      <div
-        data-chat-screen
-        class="row"
-        class:on={item.id === state.p.chat}
-        role="button"
-        tabindex="0"
-        onclick={() => (state.p.chat = item.id)}
-        onkeydown={(e) => e.key === 'Enter' && (state.p.chat = item.id)}
-      >
-        {#if item.kind === 'import'}
-          <span data-chat-screen class="row-icon" data-tip={t('chat.import.tip')}
-            ><Icon name="import" size={14} stroke={1.8} /></span
-          >
-        {/if}
-        <span data-chat-screen class="row-title" data-tip={item.title}>{item.title}</span>
-        {#if item.live}
-          <span data-chat-screen class="live" data-tip={t('chat.live')}></span>
-        {/if}
-        {#if item.archived}
-          <button
-            data-chat-screen
-            type="button"
-            class="restore"
-            data-tip={t('chat.restore')}
-            aria-label={t('chat.restore')}
-            onclick={(e) => {
-              e.stopPropagation();
-              state.restore(item.id);
-            }}
-          >
-            <Icon name="unarchive" size={14} stroke={1.9} />
-          </button>
-        {/if}
-      </div>
-    {/each}
-    {#if state.list.loaded && !state.shown.length}
+  <div data-chat-screen class="list" bind:this={list}>
+    <WindowedContent
+      bind:this={content}
+      count={model.list.count}
+      revision={model.list.revision}
+      identity={model.list.identity}
+      read={model.list.read}
+      scroller=".list[data-chat-screen]"
+      gap={2}
+      estimate={model.tab === 'archive' ? 32 : 30}
+    >
+      {#snippet children(item)}
+        <ChatSessionRow
+          {item}
+          selected={model.p.chat}
+          onselect={(id) => (model.p.chat = id)}
+          onrestore={model.restore}
+        />
+      {/snippet}
+    </WindowedContent>
+    {#if model.list.loaded && model.list.count === 0}
       <span data-chat-screen class="list-empty"
-        >{state.tab === 'archive' ? t('chat.list.emptyArchive') : t('chat.list.empty')}</span
+        >{model.tab === 'archive' ? t('chat.list.emptyArchive') : t('chat.list.empty')}</span
       >
     {/if}
   </div>
@@ -66,11 +59,11 @@
       data-chat-screen
       type="button"
       class="archive-toggle"
-      class:on={state.tab === 'archive'}
-      data-tip={state.archiveTip}
-      aria-label={state.archiveTip}
-      aria-pressed={state.tab === 'archive'}
-      onclick={() => (state.tab = state.tab === 'archive' ? 'active' : 'archive')}
+      class:on={model.tab === 'archive'}
+      data-tip={model.archiveTip}
+      aria-label={model.archiveTip}
+      aria-pressed={model.tab === 'archive'}
+      onclick={() => (model.tab = model.tab === 'archive' ? 'active' : 'archive')}
     >
       <Icon name="archive" size={15} stroke={1.8} />
     </button>

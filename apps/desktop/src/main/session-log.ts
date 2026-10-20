@@ -1,8 +1,8 @@
 // Helpers shared by task runs and chats: raw logs, projectors, secrets in answers.
 
 import { readFile } from 'node:fs/promises';
-import { ClaudeProjector } from '@skaro/adapter-claude';
-import { CodexProjector } from '@skaro/adapter-codex';
+import { ClaudeProjector } from '@skaro/adapter-claude/projector';
+import { CodexProjector } from '@skaro/adapter-codex/projector';
 import type {
   Emit,
   Interaction,

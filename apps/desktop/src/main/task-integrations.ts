@@ -1,4 +1,6 @@
+import { projectRecords } from './project-records';
 import type { TaskRuntime } from '@skaro/core';
+import { assertQuestionsAnswered } from '@skaro/timeline';
 import type {
   ConfigureEnvironmentArgs,
   IntegrationCheck,
@@ -51,8 +53,8 @@ export class TaskIntegrations {
       changed: (op) => {
         for (const taskId of integrationParticipants(op)) ctx.changed(op.projectId, taskId);
       },
-      processStarted: (op, pid) => {
-        ctx.processes.started(`verification-${op.id}`, pid, true);
+      processStarted: async (op, pid) => {
+        await ctx.processes.startedAsync(`verification-${op.id}`, pid, true);
         this.assertExecuting(op);
       },
       stopProcesses: (op) => ctx.processes.stop(`verification-${op.id}`),
@@ -183,6 +185,7 @@ export class TaskIntegrations {
   async verify(checks: IntegrationCheck[], scope: SkaroScope): Promise<ToolResult> {
     try {
       const { operation: op } = this.admitted(scope);
+      assertQuestionsAnswered((await this.history.state(op)).state);
       await this.service.serial(op.id, () => {
         this.assertExecuting(op);
         return this.service.verify(
@@ -207,6 +210,7 @@ export class TaskIntegrations {
   async environment(scope: SkaroScope, args?: ConfigureEnvironmentArgs): Promise<ToolResult> {
     try {
       const { operation: op } = this.admitted(scope);
+      assertQuestionsAnswered((await this.history.state(op)).state);
       const key = integrationEnvironmentKey(op);
       const description = await this.ctx.environments.describe(key);
       this.assertExecuting(op);
@@ -220,10 +224,11 @@ export class TaskIntegrations {
 
   async recover(): Promise<void> {
     if (this.closed) return;
-    for (const project of this.ctx.deps.db.listProjects())
+    for await (const project of projectRecords(this.ctx.deps.db))
       for (const op of this.store.all(project.id)) {
         if (this.closed) return;
         if (this.operations.has(op.id)) continue;
+        if (['applied', 'stale'].includes(op.state) && !op.worker && !op.executor) continue;
         try {
           await this.ctx.processes.stop(`verification-${op.id}`);
           if (op.worker) {
@@ -234,6 +239,7 @@ export class TaskIntegrations {
           op.executor = undefined;
           this.service.save(op);
           await this.history.recover(op);
+          await this.controls.recover(op);
           if (recoverLegacyCheckShell(op)) {
             this.service.save(op);
             await this.history.notice(
@@ -280,7 +286,7 @@ export class TaskIntegrations {
       await this.service.serial(op.id, async () => undefined);
     }
     await Promise.allSettled(this.executions);
-    for (const project of this.ctx.deps.db.listProjects())
+    for await (const project of projectRecords(this.ctx.deps.db))
       for (const op of this.store.all(project.id)) await this.history.close(op);
   }
 }

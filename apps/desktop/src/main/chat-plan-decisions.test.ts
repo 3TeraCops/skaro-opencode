@@ -106,7 +106,7 @@ it('recovers a saved approval and an already-written task with independent SQLit
     w.live.log!.end();
     await finished(w.live.log!);
     w.live.log = undefined;
-    const db = AppDb.open(join(w.root, 'app.sqlite'));
+    const db = AppDb.open(join(w.root, 'skaro.db'));
     const recovered = new ChatEngine({ ...w.engine.deps, db });
     try {
       const opened = await recovered.views.open(w.live.projectId, w.live.chat.id);

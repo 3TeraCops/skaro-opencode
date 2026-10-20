@@ -4,8 +4,10 @@ import { t } from '@skaro/ui';
 import type { AgentId, MergeProgress, TaskStatus, TaskSummary } from '../../../shared/ipc';
 
 /** The eight statuses of the mockup; "queued" counts as "В работе" everywhere but its label. */
-export type BoardStatus =
-  'todo' | 'blocked' | 'working' | 'need' | 'review' | 'done' | 'error' | 'cancelled';
+import { activeKind, boardStatus, columnOf, needsYou } from '../../../shared/task-presentation';
+import type { BoardStatus } from '../../../shared/task-presentation';
+export { boardStatus, columnOf, needsYou };
+export type { BoardStatus };
 
 export const STATUS_META: Record<BoardStatus, { label: string; color: string }> = {
   todo: { label: 'task.status.todo', color: 'var(--sk-text-15)' },
@@ -28,20 +30,6 @@ export const STATUS_ORDER: BoardStatus[] = [
   'error',
   'cancelled',
 ];
-
-export function boardStatus(status: TaskStatus): BoardStatus {
-  switch (status) {
-    case 'in_progress':
-    case 'queued':
-      return 'working';
-    case 'needs_answer':
-      return 'need';
-    case 'failed':
-      return 'error';
-    default:
-      return status;
-  }
-}
 
 export function statusLabel(status: TaskStatus): string {
   return t(`task.status.${status}`);
@@ -87,24 +75,6 @@ export interface Column {
  * The column a task belongs to; a failed task stays in the column of its stage (the main process
  * never shows a task in review as failed). A cancelled task has no column.
  */
-export function columnOf(task: TaskSummary): Column['key'] | undefined {
-  switch (boardStatus(task.status)) {
-    case 'cancelled':
-      return undefined;
-    case 'todo':
-    case 'blocked':
-      return 'todo';
-    case 'error':
-      return task.stage === 'review' ? 'review' : 'working';
-    case 'review':
-      return 'review';
-    case 'done':
-      return 'done';
-    default:
-      return 'working';
-  }
-}
-
 /**
  * Four columns: not started (with blocked), in progress, in review, done. `moved` puts tasks
  * dropped on another column there until their status catches up (or the move fails).
@@ -136,22 +106,28 @@ export function groups(
   milestones: { id: string; title: string }[],
   looseTitle = '',
 ): Group[] {
-  // Tasks without a milestone close the list as "Без этапа" (D-32).
-  const all = shown.some((x) => !x.milestone)
-    ? [...milestones, { id: '', title: looseTitle }]
-    : milestones;
-  return all
-    .map((m) => {
-      const own = shown.filter((x) => (x.milestone?.id ?? '') === m.id);
-      return {
-        id: m.id,
-        title: m.title,
-        done: own.filter((x) => x.status === 'done').length,
-        total: own.length,
-        tasks: own,
-      };
-    })
-    .filter((g) => g.tasks.length > 0);
+  const byMilestone = new Map<string, TaskSummary[]>();
+  for (const task of shown) {
+    const id = task.milestone?.id ?? '';
+    const own = byMilestone.get(id) ?? [];
+    own.push(task);
+    byMilestone.set(id, own);
+  }
+  const all = byMilestone.has('') ? [...milestones, { id: '', title: looseTitle }] : milestones;
+  return all.flatMap((m) => {
+    const own = byMilestone.get(m.id);
+    return own
+      ? [
+          {
+            id: m.id,
+            title: m.title,
+            done: own.filter((task) => task.status === 'done').length,
+            total: own.length,
+            tasks: own,
+          },
+        ]
+      : [];
+  });
 }
 
 export { canStart } from './task-rules';
@@ -168,13 +144,6 @@ export function mergeKey(merge: MergeProgress, status: TaskStatus): string {
   return merge === 'conflict' && status !== 'in_progress' ? 'conflict.idle' : merge;
 }
 
-/** Accepted and waiting for its merge by Skaro itself: nothing for the owner to do. */
-const mergesItself = (task: TaskSummary) => task.merge === 'queued' || task.merge === 'running';
-
-export function needsYou(task: TaskSummary): boolean {
-  return task.status === 'needs_answer' || (task.status === 'review' && !mergesItself(task));
-}
-
 const ACTIVE_ORDER = { need: 0, review: 1, working: 2 } as const;
 
 /**
@@ -184,18 +153,10 @@ const ACTIVE_ORDER = { need: 0, review: 1, working: 2 } as const;
 export function activeTasks(
   tasks: TaskSummary[],
 ): { task: TaskSummary; kind: keyof typeof ACTIVE_ORDER }[] {
-  const kindOf = (task: TaskSummary): keyof typeof ACTIVE_ORDER | undefined =>
-    task.status === 'needs_answer'
-      ? 'need'
-      : task.status === 'review' && !mergesItself(task)
-        ? 'review'
-        : task.status === 'in_progress' || task.status === 'queued'
-          ? 'working'
-          : undefined;
   return tasks
     .filter((task) => !task.archived)
     .flatMap((task) => {
-      const kind = kindOf(task);
+      const kind = activeKind(task);
       return kind ? [{ task, kind }] : [];
     })
     .sort((a, b) => ACTIVE_ORDER[a.kind] - ACTIVE_ORDER[b.kind]);

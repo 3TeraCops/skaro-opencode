@@ -18,6 +18,7 @@ import {
 import { CodexProjector } from './projector.ts';
 import { codexPolicy, sandboxPolicy } from './session-policy.ts';
 import { CodexSessionProcess, type CodexSessionConfig } from './session-process.ts';
+import { RpcError } from './rpc.ts';
 import { TurnControl } from './turn-control.ts';
 import { PERMISSION_CONTINUATION, toInput, toCodexAnswer } from './session-input.ts';
 import { CODEX_DEFAULT_INSTRUCTIONS } from './interaction-instructions.ts';
@@ -79,6 +80,10 @@ export class CodexSession implements AgentSession {
         this.requestIds.clear();
       }
       this.events.push(this.turns.observe(event));
+      // Async deliveries do not suspend native execution. Stop this turn at the question;
+      // the owner answer explicitly starts/steers the same thread later.
+      if (event.t === 'interaction.opened' && isAsyncQuestion(event.interaction))
+        void this.interrupt().catch(() => this.close());
     });
   }
 
@@ -175,7 +180,7 @@ export class CodexSession implements AgentSession {
       this.mode = mode;
       try {
         await this.turns.resumeWithPermissions(
-          (turnId) => this.rpc().request('turn/interrupt', { threadId: this.threadId, turnId }),
+          (turnId) => this.interruptTurn(turnId),
           () => this.startTurn({ text: PERMISSION_CONTINUATION }),
           (event) => {
             this.options.raw({
@@ -213,19 +218,30 @@ export class CodexSession implements AgentSession {
   async interrupt(): Promise<void> {
     this.turns.cancelRestart();
     const active = this.turns.active;
-    if (active)
-      await this.rpc().request('turn/interrupt', {
-        threadId: this.threadId,
-        turnId: active,
-      });
+    if (active) await this.interruptTurn(active);
     // A continuation may already be starting: stop it once its turn/start finishes too.
     await this.turns.run(async () => {
-      if (this.turns.active && this.turns.active !== active)
-        await this.rpc().request('turn/interrupt', {
-          threadId: this.threadId,
-          turnId: this.turns.active,
-        });
+      const next = this.turns.active;
+      if (next && next !== active) await this.interruptTurn(next);
     });
+  }
+
+  private async interruptTurn(id: string): Promise<void> {
+    if (!(await this.turns.whenStarted(id)) || this.turns.active !== id) return;
+    try {
+      await this.rpc().request('turn/interrupt', { threadId: this.threadId, turnId: id });
+    } catch (error) {
+      // Confirm the terminal event even when the native RPC reply precedes its notification.
+      if (!(
+        error instanceof RpcError &&
+        error.code === -32600 &&
+        error.message === 'turn/interrupt: no active turn to interrupt'
+      ))
+        throw error;
+      await this.turns.whenCompleted(id).catch(() => {
+        throw error;
+      });
+    }
   }
 
   async stopBackground(): Promise<void> {

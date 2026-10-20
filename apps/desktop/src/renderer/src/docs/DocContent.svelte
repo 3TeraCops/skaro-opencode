@@ -35,8 +35,8 @@
   <div data-docs-screen class="body">
     <DocPage
       bind:this={model.page}
-      blocks={model.rendered.blocks}
-      headings={model.rendered.headings}
+      projection={model.rendered}
+      copyText={() => model.docs.text}
       empty={model.missing ? emptyDoc : undefined}
       onlink={model.link}
     >
@@ -47,7 +47,7 @@
           ondiscuss={model.p.onchat}
           onedit={() => model.docs.edit()}
           onreveal={() => void window.skaro.invoke('docs.reveal', model.p.projectId, doc.path)}
-          tasks={model.specTasks}
+          taskRange={model.specTasks}
           onstatus={(s) =>
             void (doc.spec
               ? window.skaro.invoke('docs.setSpecStatus', model.p.projectId, doc.spec.id, s)

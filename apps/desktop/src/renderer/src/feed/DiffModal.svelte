@@ -3,6 +3,7 @@
   import { t, ViewerModal } from '@skaro/ui';
   import type { FileDiff } from '../../../shared/ipc';
   import DiffCode from './DiffCode.svelte';
+  import { useFeed } from './context.svelte';
   import DiffModalHeader from './DiffModalHeader.svelte';
   import { createDiffModalController, isCodePath } from './diff-modal-controller.svelte';
   import { displayPath } from './format';
@@ -27,10 +28,12 @@
     onclose: () => void;
   } = $props();
 
+  const feed = useFeed();
   const dm = createDiffModalController({
     files: () => files,
     start: () => start,
     load: (path) => load(path),
+    onerror: (error) => feed.historyError?.(error),
   });
 
   const path = $derived(
@@ -62,7 +65,7 @@
     {#if dm.unchanged}
       <div class="dm-empty">{t('diff.unchanged')}</div>
     {:else}
-      <DiffCode lines={dm.lines} colors={dm.colors} />
+      <DiffCode lines={dm.lines} colors={dm.colors} width={dm.width} revision={dm.revision} />
     {/if}
   </div>
 </ViewerModal>

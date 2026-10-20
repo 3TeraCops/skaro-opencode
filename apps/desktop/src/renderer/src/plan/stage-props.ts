@@ -1,9 +1,12 @@
+import type { ProjectTasks } from '../tasks/data.svelte';
 import type { StageInfo, TaskSummary } from '../../../shared/ipc';
 import type { Stage } from './model';
 import type { PlanDrag } from './plan-drag.svelte';
 
 export type StageProps = {
   stage: Stage;
+  projectId: string;
+  data: ProjectTasks;
   open: boolean;
   /** A group of the archive: no dragging, "Вернуть из архива" instead of the plan actions. */
   archived?: boolean;
@@ -12,7 +15,6 @@ export type StageProps = {
   hovered?: string;
   up: Set<string>;
   down: Set<string>;
-  byId: Map<string, TaskSummary>;
   drag?: PlanDrag;
   /** The milestone or task just put down: it plays the landing. */
   dropped?: string;
@@ -29,6 +31,20 @@ export type StageProps = {
   onhover: (id: string | undefined) => void;
   onopen: (taskId: string) => void;
   onrestore?: (taskId: string) => void;
-  ondown: (kind: PlanDrag['kind'], id: string, from: string, e: PointerEvent) => void;
-  onkey: (kind: PlanDrag['kind'], id: string, from: string, e: KeyboardEvent) => void;
+  ondown: (
+    kind: PlanDrag['kind'],
+    id: string,
+    from: string,
+    e: PointerEvent,
+    task?: TaskSummary,
+    dependencies?: import('../../../shared/plan-catalog').TaskLink[],
+  ) => void;
+  onkey: (
+    kind: PlanDrag['kind'],
+    id: string,
+    from: string,
+    e: KeyboardEvent,
+    task?: TaskSummary,
+    dependencies?: import('../../../shared/plan-catalog').TaskLink[],
+  ) => void;
 };

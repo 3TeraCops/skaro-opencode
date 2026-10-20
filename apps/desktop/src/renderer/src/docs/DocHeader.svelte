@@ -9,6 +9,7 @@
     doc,
     now,
     tasks = [],
+    taskRange,
     ondiscuss,
     onedit,
     onreveal,
@@ -55,7 +56,7 @@
   {#if adr}
     <DocRecordMetadata {doc} {adr} {isSpec} bind:menu {onstatus} {onadr} />
   {/if}
-  {#if isSpec && tasks.length}
-    <DocSpecificationTasks {tasks} {ontask} />
+  {#if isSpec && (taskRange?.count ?? tasks.length)}
+    <DocSpecificationTasks {tasks} range={taskRange} {ontask} />
   {/if}
 </div>

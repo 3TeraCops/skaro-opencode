@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button, Modal, TextField, t } from '@skaro/ui';
   import type { ProposalState } from './proposal-state.svelte';
-  import Markdown from './Markdown.svelte';
+  import ProposalContent from './ProposalContent.svelte';
   let { state }: { state: ProposalState } = $props();
   const proposal = $derived(state.proposal);
 </script>
@@ -19,7 +19,7 @@
           : `${proposal.id} · ${proposal.title}`}
     subtitle={t('proposal.viewer.subtitle')}
   >
-    <div class="viewer"><Markdown text={proposal.after} /></div>
+    <div class="viewer"><ProposalContent {state} /></div>
   </Modal>
 {/if}
 

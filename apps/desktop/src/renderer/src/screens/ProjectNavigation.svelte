@@ -1,9 +1,12 @@
 <script lang="ts">
   import { i18n, NavPanel, t, tn, type NavItem, type NavTask } from '@skaro/ui';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
   import type { ProjectInfo } from '../../../shared/ipc';
   import type { ProjectTasks } from '../tasks/data.svelte';
-  import { activeTasks, needsYou, statusLabel } from '../tasks/model';
+  import { statusLabel } from '../tasks/model';
+  import { activeKind } from '../../../shared/task-presentation';
+  import type { TaskSummary } from '../../../shared/ipc';
+  import WindowedContent from '../WindowedContent.svelte';
   import '../limits/i18n';
   import { NavigationWidth } from './navigation-width.svelte';
   import { ProjectLimits } from '../limits/project-limits.svelte';
@@ -34,7 +37,7 @@
   const limitPercent = $derived(
     limits.remaining === undefined ? undefined : lowPercentLabel(limits.remaining, i18n.locale),
   );
-  const attention = $derived(data.tasks.filter((x) => !x.archived && needsYou(x)).length);
+  const attention = $derived(data.catalog?.facets.attention ?? 0);
   const stagesWaiting = $derived(
     data.stages.filter((s) =>
       ['acceptance_needs_answer', 'awaiting_merge', 'error'].includes(s.state),
@@ -63,17 +66,23 @@
     { id: 'chat', label: t('nav.chat'), tip: t('nav.chat.tip'), icon: 'chat', separated: true },
     { id: 'params', label: t('nav.params'), tip: t('nav.params.tip'), icon: 'params' },
   ]);
-  const navTasks = $derived<NavTask[]>(
-    activeTasks(data.tasks).map(({ task, kind }) => ({
+  function navTask(task: TaskSummary): NavTask {
+    return {
       id: task.id,
       title: task.title,
       tip: `${task.id.replace(/^T-0*(\d+)$/, 'T$1')} · ${task.title}`,
-      sub: `${statusLabel(task.status)} · ${
-        task.milestone ? `${task.milestone.id} · ${task.milestone.title}` : t('board.loose')
-      }`,
-      kind,
-    })),
-  );
+      sub: `${statusLabel(task.status)} · ${task.milestone ? `${task.milestone.id} · ${task.milestone.title}` : t('board.loose')}`,
+      kind: activeKind(task) ?? 'working',
+    };
+  }
+  async function readActive(start: number) {
+    const source = data.catalog?.active;
+    return source
+      ? (await data.page(source, start)).flatMap((entry) =>
+          entry.kind === 'task' ? [entry.task] : [],
+        )
+      : [];
+  }
 </script>
 
 <NavPanel
@@ -84,7 +93,8 @@
   bind:collapsed
   bind:width={navigation.width}
   onresize={() => navigation.save()}
-  tasks={navTasks}
+  taskCount={data.catalog?.active.count ?? 0}
+  {taskContent}
   {ontask}
   {onselect}
   footerItem={{
@@ -95,3 +105,16 @@
   }}
   onfooter={onlimits}
 />
+
+{#snippet taskContent(row: Snippet<[NavTask]>, rail: boolean)}
+  <WindowedContent
+    count={data.catalog?.active.count ?? 0}
+    revision={data.version}
+    read={readActive}
+    scroller={rail ? '.nav-active-rail' : '.nav-active-list'}
+    gap={2}
+    estimate={rail ? 24 : 30}
+  >
+    {#snippet children(task)}{@render row(navTask(task))}{/snippet}
+  </WindowedContent>
+{/snippet}

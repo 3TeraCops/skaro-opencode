@@ -3,12 +3,14 @@
 // `[data-rows]` / `[data-row]` — the open task list and its rows.
 
 /** Index of the pointer among `items`: before the first whose middle is below it. */
-function indexAt(items: HTMLElement[], y: number): number {
+function indexAt(items: HTMLElement[], y: number, count = items.length): number {
   const i = items.findIndex((el) => {
     const r = el.getBoundingClientRect();
     return y < r.top + r.height / 2;
   });
-  return i < 0 ? items.length : i;
+  const row = i < 0 ? items.at(-1) : items[i];
+  const index = row?.closest<HTMLElement>('[data-plan-index]')?.dataset['planIndex'];
+  return index === undefined ? (i < 0 ? count : i) : Math.min(count, Number(index) + Number(i < 0));
 }
 
 /**
@@ -33,7 +35,7 @@ export function planHit(
   return {
     to,
     index: stage.querySelector('[data-rows]')
-      ? indexAt([...stage.querySelectorAll<HTMLElement>('[data-row]')], y)
+      ? indexAt([...stage.querySelectorAll<HTMLElement>('[data-row]')], y, count(to))
       : count(to),
   };
 }

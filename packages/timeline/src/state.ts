@@ -10,6 +10,8 @@ import type {
   TimelineEvent,
 } from './model.ts';
 import { isAsyncQuestion, persistsAfterTurn } from './async-question.ts';
+import { StateIndex } from './state-index.ts';
+import { StateMemory } from './state-memory.ts';
 
 export interface TurnState {
   id: string;
@@ -47,7 +49,35 @@ export function emptyTimeline(): TimelineState {
 /** Applies events to a timeline in place (fast path for live sessions). */
 export class Timeline {
   readonly state: TimelineState = emptyTimeline();
-  private readonly index = new Map<string, number>();
+  private readonly indexed = new StateIndex(this.state);
+  private readonly index = this.indexed.items;
+  private readonly memory = new StateMemory(this.state);
+  get retainedBytes(): number {
+    return this.memory.bytes;
+  }
+  get hasRunningItems(): boolean {
+    return this.indexed.busy;
+  }
+  /** Indexed access for persisted projections; live deltas must not scan the archive. */
+  item(id: string): Item | undefined {
+    const at = this.index.get(id);
+    return at === undefined ? undefined : this.state.items[at];
+  }
+  position(id: string): number | undefined {
+    return this.index.get(id);
+  }
+  liveItems(turnId: string): Item[] {
+    return this.indexed.liveItems(turnId).map((id) => this.item(id)!);
+  }
+  /** Bounded hydration lets desktop command restoration yield between archive pages. */
+  restoreItems(items: Item[]): void {
+    for (const item of items) {
+      const at = this.state.items.length;
+      this.indexed.rememberItem(item, at);
+      this.state.items.push(item);
+      this.memory.item(item);
+    }
+  }
 
   static from(events: Iterable<TimelineEvent>): Timeline {
     const timeline = new Timeline();
@@ -59,7 +89,10 @@ export class Timeline {
   static restore(state: TimelineState): Timeline {
     const timeline = new Timeline();
     Object.assign(timeline.state, state);
-    state.items.forEach((item, i) => timeline.index.set(item.id, i));
+    if (timeline.state.interactions.some((i) => i.kind === 'question'))
+      timeline.state.status = 'waiting';
+    timeline.indexed.rebuild();
+    timeline.memory.rebuild();
     return timeline;
   }
 
@@ -74,46 +107,44 @@ export class Timeline {
         };
         return;
       case 'turn.started':
-        if (!s.turns.some((t) => t.id === event.turnId)) s.turns.push({ id: event.turnId });
-        s.status = 'working';
+        this.memory.turn(this.indexed.turn(event.turnId));
+        s.status = s.interactions.some((i) => i.kind === 'question') ? 'waiting' : 'working';
         return;
       case 'turn.completed': {
-        const turn = s.turns.find((t) => t.id === event.turnId);
-        if (turn) {
-          turn.outcome = event.outcome;
-          if (event.error) turn.error = event.error;
-        } else {
-          s.turns.push({
-            id: event.turnId,
-            outcome: event.outcome,
-            ...(event.error ? { error: event.error } : {}),
-          });
-        }
-        const done = s.turns.find((t) => t.id === event.turnId);
-        if (done && s.usage) {
-          done.usage = { inputTokens: s.usage.inputTokens, outputTokens: s.usage.outputTokens };
+        const turn = this.indexed.turn(event.turnId);
+        turn.outcome = event.outcome;
+        if (event.error) turn.error = event.error;
+        this.indexed.complete(event.turnId);
+        if (s.usage) {
+          turn.usage = { inputTokens: s.usage.inputTokens, outputTokens: s.usage.outputTokens };
         }
         // A turn Skaro ends for a lost agent process gets no closing from the agent itself.
-        s.items.forEach((item, at) => {
-          if (item.turnId === event.turnId && isLive(item))
-            s.items[at] = { ...item, status: event.outcome === 'done' ? 'done' : 'interrupted' };
-        });
+        for (const id of this.indexed.liveItems(event.turnId)) {
+          const at = this.index.get(id)!;
+          s.items[at] = {
+            ...s.items[at]!,
+            status: event.outcome === 'done' ? 'done' : 'interrupted',
+          };
+          this.indexed.rememberItem(s.items[at]!, at);
+          this.memory.item(s.items[at]!);
+        }
+        this.memory.turn(turn);
+        this.indexed.clearLive(event.turnId);
         delete s.activity;
         // Async questions wait for a later user message, even after the agent finishes.
         s.interactions = s.interactions.filter(persistsAfterTurn);
-        s.status = 'idle';
+        s.status = s.interactions.some((i) => i.kind === 'question') ? 'waiting' : 'idle';
         return;
       }
       case 'item.upsert': {
         const at = this.index.get(event.item.id);
+        this.indexed.rememberItem(event.item, at ?? s.items.length);
         if (at === undefined) {
-          if (event.item.kind === 'message' && event.item.role === 'user' && !event.item.parentId)
-            s.interactions = s.interactions.filter((i) => !isAsyncQuestion(i));
-          this.index.set(event.item.id, s.items.length);
           s.items.push({ ...event.item });
         } else {
           s.items[at] = { ...event.item };
         }
+        this.memory.item(event.item);
         return;
       }
       case 'item.append': {
@@ -121,8 +152,10 @@ export class Timeline {
         const item = at === undefined ? undefined : s.items[at];
         if (!item) return;
         if (event.field === 'text' && (item.kind === 'message' || item.kind === 'reasoning')) {
+          this.memory.append(item, event.chunk);
           s.items[at!] = { ...item, text: (item.text ?? '') + event.chunk };
         } else if (event.field === 'output' && item.kind === 'command') {
+          this.memory.append(item, event.chunk);
           s.items[at!] = { ...item, output: item.output + event.chunk };
         }
         return;
@@ -140,8 +173,8 @@ export class Timeline {
         return;
       case 'interaction.closed':
         s.interactions = s.interactions.filter((i) => i.id !== event.id);
-        if (!s.interactions.length && s.status === 'waiting')
-          s.status = s.turns.some((turn) => !turn.outcome) ? 'working' : 'idle';
+        if (!s.interactions.some((i) => i.kind !== 'merge') && s.status === 'waiting')
+          s.status = this.indexed.working ? 'working' : 'idle';
         return;
       case 'usage':
         s.usage = {
@@ -161,7 +194,7 @@ export class Timeline {
         s.activity = { state: event.state, ...(event.target ? { target: event.target } : {}) };
         return;
       case 'status':
-        s.status = event.state;
+        s.status = s.interactions.some((i) => i.kind === 'question') ? 'waiting' : event.state;
         return;
       case 'rewound':
         s.interactions = s.interactions.filter((i) => !isAsyncQuestion(i));
@@ -180,17 +213,9 @@ export class Timeline {
     this.state.turns = this.state.turns.filter(
       (t) => keptTurns.has(t.id) || !removedTurns.has(t.id),
     );
-    this.index.clear();
-    this.state.items.forEach((item, i) => this.index.set(item.id, i));
+    this.indexed.rebuild();
+    this.memory.rebuild();
   }
-}
-
-/** Reasoning or agent text still being streamed: it lives only inside a running turn. */
-function isLive(item: Item): boolean {
-  return (
-    item.status === 'running' &&
-    (item.kind === 'reasoning' || (item.kind === 'message' && item.role === 'agent'))
-  );
 }
 
 /** Items of the main timeline; subagent items (with parentId) are nested under their task. */

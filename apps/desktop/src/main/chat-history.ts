@@ -1,3 +1,5 @@
+import { restoreHistory } from './restore-history';
+import { presentationEvent } from './timeline-presentation';
 // Project chats (architecture.md 9, agent-output.md 5.4): an agent session per chat in the
 // project's main working copy, in the "ask" mode (the user confirms edits and commands in cards)
 // or with full access, with Skaro's tools for documents, ADRs, milestones and
@@ -6,15 +8,8 @@
 import { randomUUID } from 'node:crypto';
 import { createWriteStream, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import {
-  countSegments,
-  persistsAfterTurn,
-  replayRunLog,
-  Timeline,
-  type RawLine,
-  type TimelineEvent,
-} from '@skaro/timeline';
-import { errorText, projectorFor, readRunLog } from './session-log';
+import { persistsAfterTurn, type RawLine, type TimelineEvent } from '@skaro/timeline';
+import { errorText } from './session-log';
 import { LiveChat } from './chat-model';
 import { currentTurn } from './chat-settings-helpers';
 import { PlanJournal } from './chat-plan-journal';
@@ -28,6 +23,7 @@ export class ChatHistory {
     this.ctx = ctx;
   }
   onEvent(live: LiveChat, event: TimelineEvent): void {
+    event = live.secrets.redact(event);
     live.timeline.apply(event);
     live.seq++;
     live.pending.push(event);
@@ -70,15 +66,18 @@ export class ChatHistory {
     if (existing) return existing;
     const chat = this.ctx.deps.db.getChat(chatId);
     if (!chat || chat.projectId !== projectId) throw new Error('The chat is not found');
-    const lines = await readRunLog(join(this.ctx.deps.dataDir, chat.logPath));
+    const restored = await restoreHistory(
+      this.ctx.deps.dataDir,
+      join(this.ctx.deps.dataDir, chat.logPath),
+      chat.createdAt,
+      chat.agent,
+      projectId,
+    );
     const again = this.ctx.live.get(chatId);
     if (again) return again;
-    const events = replayRunLog(lines, chat.createdAt, projectorFor(chat.agent), (image) =>
-      this.ctx.deps.attachments.save(image),
-    );
-    const live = new LiveChat(projectId, chat, Timeline.from(events));
-    live.seq = events.length;
-    live.segments = countSegments(lines);
+    const live = new LiveChat(projectId, chat, restored.timeline);
+    live.seq = restored.seq;
+    live.segments = restored.segments;
     this.ctx.live.set(chatId, live);
     new PlanJournal(this.ctx, live).restore();
     // A live turn cannot survive a restart; async questions still wait for a later reply.
@@ -131,7 +130,8 @@ export class ChatHistory {
     });
   }
 
-  writeLine(live: LiveChat, line: RawLine): void {
+  writeLine(live: LiveChat, line: RawLine | Uint8Array): void {
+    if (!(line instanceof Uint8Array)) line = live.secrets.redact(line);
     if (!live.log) {
       const path = join(this.ctx.deps.dataDir, live.chat.logPath);
       mkdirSync(dirname(path), { recursive: true });
@@ -139,7 +139,7 @@ export class ChatHistory {
       log.on('error', (error) => console.error(`chat log ${path}: ${error.message}`));
       live.log = log;
     }
-    live.log.write(`${JSON.stringify(line)}\n`);
+    live.log.write(line instanceof Uint8Array ? line : `${JSON.stringify(line)}\n`);
   }
 
   flush(live: LiveChat): void {
@@ -152,7 +152,7 @@ export class ChatHistory {
       projectId: live.projectId,
       chatId: live.chat.id,
       seq: live.seq - events.length,
-      events,
+      events: events.map(presentationEvent),
     });
   }
 }

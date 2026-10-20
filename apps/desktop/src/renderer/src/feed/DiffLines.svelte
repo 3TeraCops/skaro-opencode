@@ -1,66 +1,41 @@
 <script lang="ts">
-  import type { DiffLine } from './diff-model';
-  import { diffDimensions } from './diff-dimensions';
-  let { lines }: { lines: DiffLine[] } = $props();
+  import type { FileRow } from '@skaro/timeline';
+  import WindowedContent from '../WindowedContent.svelte';
+  import DiffText from './DiffText.svelte';
+  import { useFeed } from './context.svelte';
+  import { createInlineDiff } from './inline-diff.svelte';
+  let { row }: { row: Pick<FileRow, 'diffs' | 'change'> } = $props();
   let node = $state<HTMLDivElement>();
-  let dimensions = $state<ReturnType<typeof diffDimensions>>();
-  const large = $derived(lines.length > 200);
-  const chunks = $derived(
-    large
-      ? Array.from({ length: Math.ceil(lines.length / 35) }, (_, index) =>
-          lines.slice(index * 35, (index + 1) * 35),
-        )
-      : [],
-  );
-  $effect(() => {
-    const current = node;
-    const entries = lines;
-    dimensions = undefined;
-    if (!current || !large) return;
-    let disposed = false;
-    const measure = () => {
-      if (!disposed) dimensions = diffDimensions(current, entries);
-    };
-    void document.fonts.ready.then(measure);
-    document.fonts.addEventListener('loadingdone', measure);
-    return () => {
-      disposed = true;
-      document.fonts.removeEventListener('loadingdone', measure);
-    };
+  const feed = useFeed();
+  const view = createInlineDiff({
+    node: () => node,
+    row: () => row,
+    onerror: (error) => feed.historyError?.(error),
   });
 </script>
 
-{#snippet line(entry: DiffLine)}
-  {#if entry.kind === 'sep'}
-    <div class="fd-diff-sep"></div>
-  {:else}
-    <div class="fd-diff-line {entry.kind}">
-      <span class="sign">{entry.sign}</span><span>{entry.text}</span>
-    </div>
-  {/if}
-{/snippet}
-
 <div class="fd-diff" bind:this={node}>
-  {#if large}
-    {#each chunks as chunk, index (index)}
-      <div
-        class="fd-diff-chunk"
-        class:contained={dimensions !== undefined}
-        style:min-width={dimensions ? `${dimensions.width}px` : undefined}
-        style:contain-intrinsic-block-size={dimensions
-          ? `auto ${chunk.reduce((height, entry) => height + (entry.kind === 'sep' ? dimensions!.separatorHeight : dimensions!.lineHeight), 0)}px`
-          : undefined}
+  <div style:min-width={view.metadata ? `${view.metadata.width + 32}px` : undefined}>
+    {#key view.metadata?.height}
+      <WindowedContent
+        count={view.metadata?.count ?? 1}
+        revision={view.revision}
+        read={view.read}
+        scroller=".fd-diff"
+        gap={0}
+        overscan={200}
+        estimate={view.metadata?.height ?? 20}
       >
-        {#each chunk as entry, at (at)}{@render line(entry)}{/each}
-      </div>
-    {/each}
-  {:else}
-    {#each lines as entry, at (at)}{@render line(entry)}{/each}
-  {/if}
+        {#snippet children({ entry, textView })}
+          {#if entry.kind === 'sep'}
+            <div style="display: flow-root"><div class="fd-diff-sep"></div></div>
+          {:else}
+            <div class="fd-diff-line {entry.kind}">
+              <span class="sign">{entry.sign}</span><DiffText text={entry.text} create={textView} />
+            </div>
+          {/if}
+        {/snippet}
+      </WindowedContent>
+    {/key}
+  </div>
 </div>
-
-<style>
-  .contained {
-    content-visibility: auto;
-  }
-</style>

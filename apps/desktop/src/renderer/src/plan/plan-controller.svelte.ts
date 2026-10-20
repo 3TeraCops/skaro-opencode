@@ -1,6 +1,9 @@
+import { tick } from 'svelte';
+import type { PlanCatalog } from '../../../shared/plan-catalog';
+import type StageCard from './StageCard.svelte';
 import { t } from '@skaro/ui';
 import type { MilestoneInfo } from '../../../shared/ipc';
-import { archive, relations, stages, type Stage } from './model';
+import type { Stage } from './model';
 import { createPlanDrag, type PlanDrag } from './plan-drag.svelte';
 import type { PlanProps } from './plan-props';
 
@@ -16,12 +19,53 @@ export function createPlanController(getProps: () => PlanProps) {
   /** Why the last order to a stage was refused; the plan says it until it is closed. */
   let error = $state<string | undefined>();
 
-  const plan = $derived(stages(p.data.milestones, p.data.tasks, t('plan.loose')));
-  const archived = $derived(archive(p.data.milestones, p.data.tasks, t('plan.loose')));
+  let catalog = $state.raw<PlanCatalog>();
+  let relation = $state.raw<{ up: string[]; down: string[] }>({ up: [], down: [] });
+  let refreshing = Promise.resolve();
+  let pendingDrop = Promise.resolve();
+  const views: Record<string, StageCard | undefined> = {};
+  const localize = (stage: Stage) =>
+    stage.loose ? { ...stage, milestone: { ...stage.milestone, title: t('plan.loose') } } : stage;
+  const plan = $derived((catalog?.plan ?? []).map(localize));
+  const archived = $derived((catalog?.archive ?? []).map(localize));
   const list = $derived(archiveView ? archived : plan);
-  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- Read-only lookup rebuilt when tasks change.
-  const byId = $derived(new Map(p.data.tasks.map((x) => [x.id, x])));
-  const rel = $derived(relations(hovered ? byId.get(hovered) : undefined, p.data.tasks));
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- Immutable relation snapshot.
+  const rel = $derived({ up: new Set(relation.up), down: new Set(relation.down) });
+  $effect(() => {
+    void p.data.version;
+    let cancelled = false;
+    refreshing = window.skaro
+      .invoke('plan.catalog', p.projectId)
+      .then((value) => {
+        if (!cancelled) catalog = value;
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) refused('', reason);
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+  $effect(() => {
+    const id = hovered;
+    void p.data.version;
+    let cancelled = false;
+    relation = { up: [], down: [] };
+    if (id)
+      void window.skaro
+        .invoke('plan.relations', p.projectId, id)
+        .then((value) => {
+          if (!cancelled) relation = value;
+        })
+        .catch((reason: unknown) => {
+          if (!cancelled) refused(id, reason);
+        });
+    return () => {
+      cancelled = true;
+    };
+  });
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- Immutable lookup of this snapshot.
+  const stageInfo = $derived(new Map(p.data.stages.map((stage) => [stage.id, stage])));
   const anyOpen = $derived(list.some((s) => openMap?.[s.milestone.id]));
   const done = $derived(list.reduce((n, s) => n + s.done, 0));
   const total = $derived(list.reduce((n, s) => n + s.total, 0));
@@ -33,12 +77,22 @@ export function createPlanController(getProps: () => PlanProps) {
     root: () => root,
     stages: () => plan,
     reveal: (id) => (openMap = { ...openMap, [id]: true }),
+    revealRows: async (id, index) => {
+      await tick();
+      await views[id]?.reveal(index);
+    },
+    restoreFocus: async (drag) => {
+      await pendingDrop;
+      await refreshing;
+      await tick();
+      if (drag.kind === 'task') await views[drag.to]?.revealTask(drag.id);
+    },
     ondrop: drop,
   });
 
   // At first the milestones still in work are open.
   $effect(() => {
-    if (openMap || !p.data.loaded) return;
+    if (openMap || !catalog) return;
     openMap = Object.fromEntries(
       plan.map((s) => [s.milestone.id, s.total === 0 || s.done < s.total]),
     );
@@ -65,22 +119,29 @@ export function createPlanController(getProps: () => PlanProps) {
         .filter((s) => !s.loose && s.milestone.id !== d.id)
         .map((s) => s.milestone.id);
       ids.splice(d.index, 0, d.id);
-      void window.skaro.invoke('plan.reorder', p.projectId, ids);
+      pendingDrop = window.skaro
+        .invoke('plan.reorder', p.projectId, ids)
+        .then(() => p.data.reload())
+        .catch((reason: unknown) => refused(d.id, reason));
     } else {
       openMap = { ...openMap, [d.to]: true };
-      void window.skaro.invoke('plan.placeTask', p.projectId, d.id, d.to, d.index);
+      pendingDrop = window.skaro
+        .invoke('plan.placeTask', p.projectId, d.id, d.to, d.index)
+        .then(() => p.data.reload())
+        .catch((reason: unknown) => refused(d.id, reason));
     }
   }
 
   /** "В архив" on the plan, "Вернуть из архива" in the archive: all tasks of the group. */
   function setArchived(stage: Stage, value: boolean): void {
-    const ids = stage.tasks.map((x) => x.id);
-    void window.skaro.invoke('tasks.archive', p.projectId, ids, value);
+    void window.skaro
+      .invoke('plan.archiveGroup', p.projectId, stage.milestone.id, value)
+      .catch((reason: unknown) => refused(stage.milestone.id, reason));
   }
 
   /** Where the stage of a milestone stands. */
   function info(id: string) {
-    return p.data.stages.find((s) => s.id === id);
+    return stageInfo.get(id);
   }
 
   /** «Запустить» and «Продолжить» start the tasks of the stage in order; «Остановить» ends it. */
@@ -159,9 +220,6 @@ export function createPlanController(getProps: () => PlanProps) {
     get list() {
       return list;
     },
-    get byId() {
-      return byId;
-    },
     get rel() {
       return rel;
     },
@@ -182,6 +240,12 @@ export function createPlanController(getProps: () => PlanProps) {
     run,
     toggle,
     setArchived,
+    views,
+    get loaded() {
+      return !!catalog;
+    },
+    taskCount: (id: string) =>
+      [...plan, ...archived].find((stage) => stage.milestone.id === id)?.allCount ?? 0,
     restoreTask,
     remove,
   };

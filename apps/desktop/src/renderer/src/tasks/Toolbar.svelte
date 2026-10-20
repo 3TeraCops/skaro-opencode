@@ -1,22 +1,24 @@
 <script lang="ts">
   import { AgentLogo, Icon, t } from '@skaro/ui';
-  import type { MilestoneInfo, TaskSummary } from '../../../shared/ipc';
+  import type { MilestoneInfo } from '../../../shared/ipc';
+  import type { TaskFacets } from '../../../shared/task-catalog';
   import FilterDrop from './FilterDrop.svelte';
-  import { boardStatus, STATUS_META, STATUS_ORDER, type BoardStatus, type Filters } from './model';
+  import { toolbarOptions } from './toolbar-options';
+  import { STATUS_META, type BoardStatus, type Filters } from './model';
 
   /**
    * Search, the milestone / status / agent filters, "Выбрать несколько" and the board-list
    * switch (Tasks mockup).
    */
   let {
-    tasks,
+    facets,
     milestones,
     filters = $bindable(),
     view = $bindable(),
     selecting,
     onselecting,
   }: {
-    tasks: TaskSummary[];
+    facets?: TaskFacets;
     milestones: MilestoneInfo[];
     filters: Filters;
     view: 'board' | 'list';
@@ -24,35 +26,7 @@
     onselecting: () => void;
   } = $props();
 
-  const msOptions = $derived([
-    ...milestones.map((m) => ({
-      value: m.id,
-      label: m.title,
-      short: m.id,
-      count: tasks.filter((x) => x.milestone?.id === m.id).length,
-    })),
-    // "Без этапа": tasks without a milestone.
-    {
-      value: '',
-      label: t('board.loose'),
-      short: '',
-      count: tasks.filter((x) => !x.milestone).length,
-    },
-  ]);
-  const stOptions = $derived(
-    STATUS_ORDER.map((s) => ({
-      value: s,
-      label: t(STATUS_META[s].label),
-      count: tasks.filter((x) => boardStatus(x.status) === s).length,
-    })),
-  );
-  const agOptions = $derived(
-    (['claude-code', 'codex', 'none'] as const).map((a) => ({
-      value: a as string,
-      label: a === 'none' ? t('board.f.none') : a === 'codex' ? 'Codex' : 'Claude Code',
-      count: tasks.filter((x) => (x.agent ?? 'none') === a).length,
-    })),
-  );
+  const options = $derived(toolbarOptions(milestones, facets));
   const any = $derived(
     filters.milestones.length + filters.statuses.length + filters.agents.length > 0,
   );
@@ -75,7 +49,7 @@
 
   <FilterDrop
     label={t('board.f.milestone')}
-    options={msOptions}
+    options={options.msOptions}
     bind:selected={filters.milestones}
     width={226}
   >
@@ -83,7 +57,7 @@
   </FilterDrop>
   <FilterDrop
     label={t('board.f.status')}
-    options={stOptions}
+    options={options.stOptions}
     bind:selected={filters.statuses}
     width={214}
   >
@@ -95,7 +69,7 @@
   </FilterDrop>
   <FilterDrop
     label={t('board.f.agent')}
-    options={agOptions}
+    options={options.agOptions}
     bind:selected={filters.agents}
     width={206}
   >

@@ -2,10 +2,18 @@
 
 import type { DocEntry } from '../../../shared/ipc';
 import { ARCHITECTURE, fixed } from './model';
+import type { DocumentCatalog, DocumentKind } from '../../../shared/document-catalog';
 
 export class ProjectDocs {
   entries = $state<DocEntry[]>([]);
+  catalog = $state.raw<DocumentCatalog>({
+    revision: 0,
+    counts: { adr: 0, spec: 0, doc: 0 },
+    fixed: [],
+    nextSpec: 'SPEC-0001',
+  });
   loaded = $state(false);
+  loading = $state(false);
   selected = $state(ARCHITECTURE);
   /** Text of the open document as it is on disk. */
   text = $state('');
@@ -15,9 +23,15 @@ export class ProjectDocs {
   conflict = $state<string | undefined>();
   private readonly projectId: string;
   private readonly stop: () => void;
+  private reading = 0;
 
   constructor(projectId: string) {
     this.projectId = projectId;
+    try {
+      this.selected = localStorage.getItem(`skaro.doc.${projectId}`) ?? ARCHITECTURE;
+    } catch {
+      /* Optional viewport preferences. */
+    }
     void this.reload();
     this.stop = window.skaro.on('project.changed', (p) => {
       if (p.projectId === projectId) void this.reload();
@@ -47,18 +61,36 @@ export class ProjectDocs {
   }
 
   async reload(): Promise<void> {
-    this.entries = await window.skaro.invoke('docs.list', this.projectId).catch(() => []);
+    const revision = ++this.reading;
+    this.loading = true;
+    const catalog = await window.skaro.invoke('docs.catalog', this.projectId);
+    if (revision !== this.reading) return;
+    this.catalog = catalog;
+    this.entries = catalog.fixed;
     this.loaded = true;
-    const disk = await this.readDisk(this.selected);
+    const disk = await this.readDisk(this.selected, revision);
+    if (revision !== this.reading) return;
     if (this.editing && disk !== this.text && disk !== this.draft) this.conflict = disk;
     else if (!this.editing) this.text = disk;
+    this.loading = false;
   }
 
   async open(path: string): Promise<void> {
+    const revision = ++this.reading;
+    this.loading = true;
     this.selected = path;
+    try {
+      localStorage.setItem(`skaro.doc.${this.projectId}`, path);
+    } catch {
+      /* Optional viewport preferences. */
+    }
     this.editing = false;
     this.conflict = undefined;
-    this.text = await this.readDisk(path);
+    const text = await this.readDisk(path, revision);
+    if (revision === this.reading) {
+      this.text = text;
+      this.loading = false;
+    }
   }
 
   edit(start?: string): void {
@@ -89,9 +121,22 @@ export class ProjectDocs {
     this.conflict = undefined;
   }
 
-  private async readDisk(path: string): Promise<string> {
-    if (!this.exists(path)) return '';
+  private async readDisk(path: string, revision: number): Promise<string> {
+    const entry = await this.lookup({ path });
+    if (revision !== this.reading) return '';
+    this.entries = [
+      ...this.catalog.fixed,
+      ...(entry && !this.catalog.fixed.some((fixed) => fixed.path === path) ? [entry] : []),
+    ];
+    if (!entry) return '';
     return window.skaro.invoke('docs.read', this.projectId, path).catch(() => '');
+  }
+  lookup(key: { path: string } | { kind: DocumentKind; id: string }) {
+    return window.skaro.invoke('docs.lookup', this.projectId, key);
+  }
+  async page(kind: DocumentKind, start: number) {
+    const entries = await window.skaro.invoke('docs.page', this.projectId, kind, start);
+    return entries.map((entry, offset) => ({ ...entry, id: String(start + offset) }));
   }
 
   dispose(): void {

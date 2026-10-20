@@ -1,4 +1,5 @@
 import { type WriteStream } from 'node:fs';
+import { SessionSecrets } from './private-input';
 import { type AppDb, type AttachmentStore, type RunRecord, type ProjectCheck } from '@skaro/core';
 import type { Grant, McpHttpServer, SkaroScope } from '@skaro/mcp-server';
 import { Timeline, type AgentSession, type TimelineEvent } from '@skaro/timeline';
@@ -26,6 +27,10 @@ export interface TaskRunDeps {
 
 /** A task's latest run, with or without an agent process attached. */
 export class ActiveRun {
+  readonly secrets = new SessionSecrets();
+  get memoryBytes(): number {
+    return this.timeline.retainedBytes;
+  }
   readonly projectId: string;
   readonly taskId: string;
   run: RunRecord;

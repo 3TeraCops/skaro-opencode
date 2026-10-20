@@ -5,19 +5,21 @@ import {
   c4Hash,
   git,
   type AppDb,
+  type C4Package,
 } from '@skaro/core';
 import type { SkaroScope, ToolResult } from '@skaro/mcp-server';
 import type { ProjectContext } from './projects';
 import type { C4ProposalRecord } from './c4-service';
-import { c4ChangeHash, c4ReviewKey } from './c4-review';
+import { c4ChangeHash, c4ReviewKey } from './c4-fingerprint';
 
 /** Send the model once, authored document text and durable proposal facts, without repeated preview payloads. */
 export async function c4Context(
-  context: ProjectContext,
-  db: AppDb,
+  context: Pick<ProjectContext, 'load' | 'invalidate' | 'root'>,
+  db: Pick<AppDb, 'getSetting'>,
   records: C4ProposalRecord[],
   scope: SkaroScope,
   checkout: string,
+  readPackage?: (id: string) => Promise<C4Package>,
 ): Promise<ToolResult> {
   context.invalidate();
   const artifacts = await context.load();
@@ -45,21 +47,32 @@ export async function c4Context(
           4,
           '0',
         ),
-        packages: records.slice(-30).map(({ item, package: pkg }) => ({
-          id: item.id,
-          title: pkg.title,
-          state: item.state,
-          error: item.result?.error,
-          baseRevision: pkg.baseRevision,
-          files: pkg.files.map((f) => ({
-            path: f.path,
-            beforeHash: f.before === null ? null : c4Hash(f.before),
-            afterHash: c4Hash(f.after),
-            ...(['pending', 'accepted'].includes(item.state)
-              ? { content: f.path.endsWith('.json') ? f.after : authoredBody(f.after) }
-              : {}),
+        packages: await Promise.all(
+          records.slice(-30).map(async ({ item, package: pkg, fileIndex }) => ({
+            id: item.id,
+            title: pkg.title,
+            state: item.state,
+            error: item.result?.error,
+            baseRevision: pkg.baseRevision,
+            files:
+              ['pending', 'accepted'].includes(item.state) && readPackage
+                ? (await readPackage(item.id)).files.map((f) => ({
+                    path: f.path,
+                    beforeHash: f.before === null ? null : c4Hash(f.before),
+                    afterHash: c4Hash(f.after),
+                    content: f.path.endsWith('.json') ? f.after : authoredBody(f.after),
+                  }))
+                : (fileIndex ??
+                  pkg.files.map((f) => ({
+                    path: f.path,
+                    beforeHash: f.before === null ? null : c4Hash(f.before),
+                    afterHash: c4Hash(f.after),
+                    ...(['pending', 'accepted'].includes(item.state)
+                      ? { content: f.path.endsWith('.json') ? f.after : authoredBody(f.after) }
+                      : {}),
+                  }))),
           })),
-        })),
+        ),
         ...(baseHead
           ? {
               task: {

@@ -1,16 +1,24 @@
 <script lang="ts">
-  import type { FeedRow } from '@skaro/timeline';
+  import type { HistoryRow } from '../../../shared/history';
   import { t, tn } from '@skaro/ui';
   import Chevron from './Chevron.svelte';
-  import { clock } from './context.svelte';
+  import { clock, useFeed } from './context.svelte';
+  const feed = useFeed();
   import FeedRows from './FeedRows.svelte';
+  import PagedFeedRows from './PagedFeedRows.svelte';
   import { clock as formatClock } from './format';
 
   /** "↳ Субагент: описание · 14 действий · 0:40", opening into its own feed (mockup 1a). */
-  let { row, waiting }: { row: Extract<FeedRow, { type: 'task' }>; waiting: ReadonlySet<string> } =
-    $props();
+  let {
+    row,
+    waiting,
+  }: { row: Extract<HistoryRow, { type: 'task' }>; waiting: ReadonlySet<string> } = $props();
 
-  let open = $state(false);
+  // svelte-ignore state_referenced_locally
+  let open = $state(feed.rowState?.get(`open:${row.id}`) ?? false);
+  $effect(() => {
+    feed.rowState?.set(`open:${row.id}`, open);
+  });
   const running = $derived(row.item.status === 'running');
   const elapsed = $derived(
     (row.item.endedAt ?? (running ? clock.now : row.item.startedAt)) - row.item.startedAt,
@@ -36,8 +44,9 @@
   </button>
   {#if open}
     <div class="fd-nested">
-      <FeedRows rows={row.children} {waiting} />
-      {#if summary && !row.children.some((c) => c.type === 'agent')}
+      {#if row.history}<PagedFeedRows source={row.history} {waiting} nested />
+      {:else}<FeedRows rows={row.children} {waiting} nested />{/if}
+      {#if summary && !(row.hasAgentReply ?? row.children.some((c) => c.type === 'agent'))}
         <div class="fd-text">{summary}</div>
       {/if}
     </div>

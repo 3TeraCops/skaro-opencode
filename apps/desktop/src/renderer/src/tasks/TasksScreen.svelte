@@ -28,8 +28,12 @@
   });
   const moves = createBoardMoves({
     projectId: () => projectId,
-    tasks: () => state.shown,
+    get data() {
+      return data;
+    },
+    filters: () => state.filters,
     onopen: (id) => onopen(id),
+    run: (ids, message, assignment) => data.run(ids, message, assignment),
   });
 
   import './tasks-screen.css';
@@ -38,23 +42,22 @@
 <div data-task-tasks-screen class="screen">
   <TasksHeader {state} />
 
-  {#if data.loaded && state.all.length === 0}
+  {#if data.loaded && (state.facets?.total ?? 0) === 0}
     <TasksEmpty {onnew} />
   {:else if state.view === 'board'}
     <Board
       {moves}
-      selected={state.selected}
+      selection={state.selection}
       selecting={state.selecting}
       now={state.now}
       onselect={state.select}
-      onselectmany={state.selectMany}
+      onselectcolumn={state.selectColumn}
       {onopen}
     />
   {:else}
     <List
-      tasks={state.shown}
-      milestones={data.milestones}
-      selected={state.selected}
+      range={state.list}
+      selection={state.selection}
       selecting={state.selecting}
       now={state.now}
       onselect={state.select}

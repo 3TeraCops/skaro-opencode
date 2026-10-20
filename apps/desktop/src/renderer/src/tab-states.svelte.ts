@@ -1,3 +1,4 @@
+import { projectOverview } from './project-overview.svelte';
 // The dot on a project tab (mockups: top bar): an agent works — grey pulse; something waits for
 // the user — blue. Kept current from the project cards.
 
@@ -16,14 +17,10 @@ function stateOf(card: ProjectCard): 'working' | 'attention' | 'none' {
 }
 
 export function watchTabStates(): void {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const load = async () => {
-    const cards = await window.skaro.invoke('projects.overview').catch(() => []);
-    tabStates.byProject = Object.fromEntries(cards.map((c) => [c.id, stateOf(c)]));
-  };
-  void load();
-  window.skaro.on('project.changed', () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => void load(), 400);
+  void projectOverview.load();
+  $effect(() => {
+    tabStates.byProject = Object.fromEntries(
+      projectOverview.cards.map((card) => [card.id, stateOf(card)]),
+    );
   });
 }

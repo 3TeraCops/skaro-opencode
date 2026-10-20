@@ -1,23 +1,11 @@
 <script lang="ts" module>
-  import type { IconName } from '../icons.ts';
-
-  export interface NavItem {
-    id: string;
-    label: string;
-    icon: IconName;
-    tip?: string;
-    count?: number;
-    countTip?: string;
-    /** Tooltip of the collapsed rail item when the count is shown. */
-    railTip?: string;
-    separated?: boolean;
-    /** Optional right-aligned text of a footer action (including "0%"). */
-    trailing?: string;
-  }
+  import type { NavItem as NavItemType } from './nav-model';
+  export type NavItem = NavItemType;
 </script>
 
 <script lang="ts">
   import './nav-panel.css';
+  import type { Snippet } from 'svelte';
   import { t } from '../i18n.svelte.ts';
   import Icon from './Icon.svelte';
   import NavActiveTasks, { type NavTask } from './NavActiveTasks.svelte';
@@ -37,6 +25,8 @@
     collapsed = $bindable(false),
     width = $bindable(216),
     tasks = [],
+    taskCount,
+    taskContent,
     onresize,
     onselect,
     ontask,
@@ -52,6 +42,8 @@
     width?: number;
     /** "Активные": needs an answer, then in review, then in progress. */
     tasks?: NavTask[];
+    taskCount?: number;
+    taskContent?: Snippet<[Snippet<[NavTask]>, boolean]>;
     onresize?: () => void;
     onselect: (id: string) => void;
     ontask?: (id: string) => void;
@@ -92,7 +84,12 @@
       </button>
     {/each}
     <span class="spacer"></span>
-    {#if tasks.length}<NavActiveTasks {tasks} onopen={(id) => ontask?.(id)} />{/if}
+    {#if taskCount ?? tasks.length}<NavActiveTasks
+        {tasks}
+        count={taskCount}
+        content={taskContent}
+        onopen={(id) => ontask?.(id)}
+      />{/if}
     {#if footerItem}
       <div class="sep"></div>
       <button type="button" class="item footer-item" data-tip={footerItem.label} onclick={onfooter}>
@@ -139,7 +136,13 @@
       </button>
     {/each}
     <span class="spacer"></span>
-    {#if tasks.length}<NavActiveTasks {tasks} rail onopen={(id) => ontask?.(id)} />{/if}
+    {#if taskCount ?? tasks.length}<NavActiveTasks
+        {tasks}
+        count={taskCount}
+        content={taskContent}
+        rail
+        onopen={(id) => ontask?.(id)}
+      />{/if}
     {#if footerItem}
       <div class="rail-sep"></div>
       <button

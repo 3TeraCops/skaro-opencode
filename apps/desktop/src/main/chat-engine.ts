@@ -32,7 +32,7 @@ export class ChatEngine {
   readonly documents = new ChatDocuments(this);
   readonly plans = new ChatPlans(this);
   readonly context = new ChatContext(this);
-  readonly sessions = new ChatSessions(this);
+  readonly sessions: ChatSessions;
   readonly history = new ChatHistory(this);
   readonly planning = new ChatPlanning(this);
   readonly planningContinuation = new ChatPlanningContinuation(this);
@@ -42,6 +42,7 @@ export class ChatEngine {
   readonly deps: Deps;
   constructor(deps: Deps) {
     this.deps = deps;
+    this.sessions = new ChatSessions(this);
   }
   listChanged(projectId: string, chatId?: string): void {
     this.deps.emit('chats.changed', { projectId, ...(chatId ? { chatId } : {}) });

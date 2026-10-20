@@ -276,7 +276,7 @@
       ]
     }
   ],
-  "status": "idle",
+  "status": "waiting",
   "session": {
     "nativeSessionId": "01a0d507-53c0-7cd2-b625-637fe58fc5bc",
     "model": "gpt-6-sol",

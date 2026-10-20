@@ -66,7 +66,7 @@
     </div>
 
     {#if timeline && hasFeed}
-      <Feed {timeline} {cwd} {mergeMessage} />
+      <Feed {timeline} history={view.history} historyPage={view.historyPage} {cwd} {mergeMessage} />
     {:else if stage && left > 0}
       <div class="empty">
         <Icon name="tasks" size={30} stroke={1.5} color="var(--sk-text-29)" />

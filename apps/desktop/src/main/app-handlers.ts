@@ -8,20 +8,22 @@ import {
 } from './project-settings';
 import { createFolder, inspectFolder, hasCode } from './new-project';
 import { openEditor, openTerminal } from './external-apps';
-import { projectCards } from './overview';
 import { LOGO_EXTENSIONS, readLogo } from './project-logo';
 import type { Updates } from './update-controller';
 import type { Handlers } from './ipc';
 import type { Services } from './app-services';
+import { background } from './background/client';
 import { collectDiagnostics } from './diagnostics';
 
 export function appHandlers(
-  { appState, db, runs, projects, agents, chats, dataDir }: Services,
+  { appState, db, runs, projects, agents, chats, dataDir, overview }: Services,
   updates: Updates,
   window: () => BrowserWindow | undefined,
   emit: (event: 'project.changed', payload: { projectId: string }) => void,
 ): Pick<
   Handlers,
+  | 'commands.list'
+  | 'session.remember'
   | 'window.minimize'
   | 'window.toggleMaximize'
   | 'window.close'
@@ -40,6 +42,9 @@ export function appHandlers(
   | 'updates.apply'
   | 'app.pickApp'
   | 'projects.list'
+  | 'projects.get'
+  | 'projects.query'
+  | 'projects.page'
   | 'projects.pickFolder'
   | 'projects.inspect'
   | 'projects.defaultParent'
@@ -72,6 +77,8 @@ export function appHandlers(
   | 'agents.limits'
 > {
   return {
+    'session.remember': (key, view) => background(dataDir, 'registry.session', key, view),
+    'commands.list': (projectId, ownerId) => db.commands.forOwner(`${projectId}:${ownerId}`),
     'window.minimize': () => window()?.minimize(),
     'window.toggleMaximize': () => {
       const win = window();
@@ -90,7 +97,7 @@ export function appHandlers(
     'app.setProjectDefaults': (next) =>
       saveAppDefaults(
         projects,
-        db.listProjects().map((p) => p.id),
+        db.shell.list().map((p) => p.id),
         next,
         (value) => appState.setSetting(PROJECT_DEFAULTS_KEY, value),
         appState.getLocale(app.getLocale()),
@@ -114,6 +121,9 @@ export function appHandlers(
       return result.canceled ? undefined : result.filePaths[0];
     },
     'projects.list': () => appState.listProjects(),
+    'projects.get': (id) => appState.project(id),
+    'projects.query': (query) => overview.query(query),
+    'projects.page': (source, start) => overview.page(source, start),
     'projects.pickFolder': async (defaultPath) => {
       const options: Electron.OpenDialogOptions = {
         properties: ['openDirectory', 'createDirectory'],
@@ -139,7 +149,7 @@ export function appHandlers(
       return appState.addProject(path);
     },
     'projects.remove': (id) => appState.removeProject(id),
-    'projects.overview': () => projectCards(db, projects),
+    'projects.overview': () => overview.list(),
     'project.rename': (projectId, name) => appState.renameProject(projectId, name),
     'project.pickLogo': async (projectId) => {
       const options: Electron.OpenDialogOptions = {

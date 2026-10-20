@@ -54,6 +54,10 @@ export class CompletionCoordinator {
     });
   }
 
+  changed(projectId: string): void {
+    this.monitor.changed(projectId);
+  }
+
   start(): void {
     this.monitor.start();
   }
@@ -103,7 +107,7 @@ export class CompletionCoordinator {
         summary,
         verification,
       }),
-    );
+    ).then(() => this.monitor.changed(projectId));
   }
 
   /** The task whose result is being merged into the base branch right now. */

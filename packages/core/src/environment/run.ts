@@ -14,7 +14,7 @@ export function runShell(
     shell?: CheckShell;
     timeoutMs?: number;
     signal?: AbortSignal;
-    processStarted?: (pid: number) => void;
+    processStarted?: (pid: number) => void | Promise<void>;
     output?: (text: string) => void;
   },
 ): Promise<void> {
@@ -32,6 +32,7 @@ export function runShell(
       ...(options.signal ? { signal: options.signal } : {}),
     });
     let output = '';
+    let admitted = Promise.resolve();
     const append = (chunk: Buffer) => {
       output = (output + chunk.toString()).slice(-OUTPUT_LIMIT);
       options.output?.(output);
@@ -40,11 +41,17 @@ export function runShell(
     child.stderr.on('data', append);
     child.once('error', (error) => reject(new Error(`${label}${error.message}`)));
     child.once('close', (code, signal) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${label}${signal ?? `exit ${code}`}\n${output.trim()}`));
+      void admitted.then(() => {
+        if (code === 0) resolve();
+        else reject(new Error(`${label}${signal ?? `exit ${code}`}\n${output.trim()}`));
+      }, reject);
     });
     try {
-      if (child.pid) options.processStarted?.(child.pid);
+      if (child.pid) admitted = Promise.resolve(options.processStarted?.(child.pid));
+      void admitted.catch((error: unknown) => {
+        child.kill();
+        reject(error);
+      });
     } catch (error) {
       child.kill();
       reject(error);

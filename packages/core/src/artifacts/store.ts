@@ -1,4 +1,5 @@
-import { ArtifactFiles } from './files.ts';
+import { ArtifactFiles, type ArtifactReadCache } from './files.ts';
+export type { ArtifactReadCache } from './files.ts';
 export { SKARO_DIR } from './files.ts';
 export type { NewTask, TaskPatch, NewAdr, NewSpec } from './inputs.ts';
 import * as tasks from './tasks.ts';
@@ -32,9 +33,10 @@ export class ArtifactStore {
     projectRoot: string,
     defaults: () => ConfigDefaults = () => ({}),
     reservedTaskIds: () => string[] = () => [],
+    cache?: ArtifactReadCache,
   ) {
     this.root = projectRoot;
-    this.files = new ArtifactFiles(projectRoot, reservedTaskIds);
+    this.files = new ArtifactFiles(projectRoot, reservedTaskIds, cache);
     this.defaults = defaults;
   }
   readTask(id: string): Promise<Task> {
@@ -106,14 +108,25 @@ export class ArtifactStore {
   writeDoc(path: string, body: string): Promise<Doc> {
     return documents.writeDoc(this.files, path, body);
   }
+  async setDocumentStatus(
+    kind: 'adr' | 'spec',
+    id: string,
+    status: AdrStatus | SpecStatus,
+  ): Promise<void> {
+    if (kind === 'adr') await documents.setAdrStatus(this.files, id, status);
+    else await documents.setSpecStatus(this.files, id, status);
+  }
+  writeDocumentBody(path: string, body: string): Promise<void> {
+    return documents.writeDocumentBody(this.files, path, body);
+  }
   deleteDoc(path: string): Promise<void> {
     return documents.deleteDoc(this.files, path);
   }
   writeConfig(config: ProjectConfig, inherited: InheritableSetting[] = []): Promise<void> {
     return configOps.writeConfig(this.files, config, inherited);
   }
-  load(): Promise<ProjectArtifacts> {
-    return load.load(this.files, this.defaults);
+  load(summary = false): Promise<ProjectArtifacts> {
+    return load.load(this.files, this.defaults, summary);
   }
   watch(onChange: (paths: string[]) => void, debounceMs = 150): () => void {
     return this.files.watch(onChange, debounceMs);

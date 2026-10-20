@@ -50,7 +50,8 @@
     padding: 20px;
     border-radius: 14px;
     background: var(--sk-fill-11);
-    box-shadow: 0 30px 80px var(--sk-black-a60),
+    box-shadow:
+      0 30px 80px var(--sk-black-a60),
       0 0 0 1px var(--sk-white-a4);
     outline: none;
   }

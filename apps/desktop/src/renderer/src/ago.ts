@@ -26,6 +26,15 @@ const MONTHS: Record<string, string[]> = {
   ru: ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'],
   en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
 };
+const times = new Map<string, Intl.DateTimeFormat>();
+function formatTime(at: Date): string {
+  let formatter = times.get(i18n.locale);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(i18n.locale, { hour: '2-digit', minute: '2-digit' });
+    times.set(i18n.locale, formatter);
+  }
+  return formatter.format(at);
+}
 
 /** Short time, and the date ("12 сен") for a week and older (Plan mockup). */
 export function agoOrDate(at: number, now = Date.now()): string {
@@ -41,9 +50,7 @@ export function sentAt(at: number, now = Date.now()): string {
   if (m < 1) return t('ago.now');
   if (m < 60) return t('sent.min', { n: m });
   const d = new Date(at);
-  const time = new Intl.DateTimeFormat(i18n.locale, { hour: '2-digit', minute: '2-digit' }).format(
-    d,
-  );
+  const time = formatTime(d);
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
   const days = Math.round((today.getTime() - new Date(d).setHours(0, 0, 0, 0)) / 86_400_000);

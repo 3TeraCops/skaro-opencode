@@ -1,4 +1,4 @@
-.board > .col > .cards > .board-card {
+.board > .col > .cards .board-card {
   flex: none;
   display: flex;
   flex-direction: column;
@@ -12,36 +12,36 @@
   touch-action: none;
 }
 
-.board > .col > .cards > .board-card:focus-visible {
+.board > .col > .cards .board-card:focus-visible {
   box-shadow: inset 0 0 0 1px var(--sk-accent);
 }
 
-.board > .col > .cards > .board-card:hover {
+.board > .col > .cards .board-card:hover {
   background: var(--sk-fill-18);
 }
 
-.board > .col > .cards > .board-card.selected {
+.board > .col > .cards .board-card.selected {
   background: var(--sk-blue-5);
   box-shadow: inset 0 0 0 1px var(--sk-accent);
 }
 
-.board > .col > .cards > .board-card.dim {
+.board > .col > .cards .board-card.dim {
   opacity: 0.72;
 }
 
-.board > .col > .cards > .board-card .top {
+.board > .col > .cards .board-card .top {
   display: flex;
   align-items: flex-start;
   gap: 8px;
 }
 
-.board > .col > .cards > .board-card .check {
+.board > .col > .cards .board-card .check {
   flex: none;
   margin-top: 1px;
   display: inline-flex;
 }
 
-.board > .col > .cards > .board-card .title {
+.board > .col > .cards .board-card .title {
   flex: 1;
   min-width: 0;
   font-size: var(--sk-fs-6);
@@ -51,20 +51,20 @@
   text-wrap: pretty;
 }
 
-.board > .col > .cards > .board-card .title.muted {
+.board > .col > .cards .board-card .title.muted {
   color: var(--sk-text-12);
 }
 
-.board > .col > .cards > .board-card .lock,
-.board > .col > .cards > .board-card .queue,
-.board > .col > .cards > .board-card .activity {
+.board > .col > .cards .board-card .lock,
+.board > .col > .cards .board-card .queue,
+.board > .col > .cards .board-card .activity {
   flex: none;
   margin-top: 1px;
   display: inline-flex;
   color: var(--sk-text-19);
 }
 
-.board > .col > .cards > .board-card .dot {
+.board > .col > .cards .board-card .dot {
   flex: none;
   margin-top: 4px;
   width: 7px;
@@ -73,48 +73,48 @@
   background: var(--sk-accent);
 }
 
-.board > .col > .cards > .board-card .dot.error {
+.board > .col > .cards .board-card .dot.error {
   background: var(--sk-error);
 }
 
 /* Done in its stage and waiting for the merge: quieter than a blocked card. */
-.board > .col > .cards > .board-card .meta {
+.board > .col > .cards .board-card .meta {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
-.board > .col > .cards > .board-card .meta > .ms {
+.board > .col > .cards .board-card .meta > .ms {
   flex: 1;
   min-width: 0;
 }
 
 /* Waiting its turn in the stage: the task that goes before it. */
-.board > .col > .cards > .board-card .meta > .after {
+.board > .col > .cards .board-card .meta > .after {
   flex: none;
   font-size: var(--sk-fs-3);
   color: var(--sk-text-secondary);
 }
 
-.board > .col > .cards > .board-card .meta > .after > .mono {
+.board > .col > .cards .board-card .meta > .after > .mono {
   font-family: var(--sk-mono);
 }
 
 /* Under the title, which the checkbox pushes right. */
-.board > .col > .cards > .board-card.selecting .meta,
-.board > .col > .cards > .board-card.selecting .bottom {
+.board > .col > .cards .board-card.selecting .meta,
+.board > .col > .cards .board-card.selecting .bottom {
   padding-left: 22px;
 }
 
-.board > .col > .cards > .board-card .meta {
+.board > .col > .cards .board-card .meta {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
-.board > .col > .cards > .board-card .ms {
+.board > .col > .cards .board-card .ms {
   font-size: var(--sk-fs-3);
   color: var(--sk-text-19);
   overflow: hidden;
@@ -122,25 +122,25 @@
   white-space: nowrap;
 }
 
-.board > .col > .cards > .board-card .bottom {
+.board > .col > .cards .board-card .bottom {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.board > .col > .cards > .board-card .time {
+.board > .col > .cards .board-card .time {
   font-size: var(--sk-fs-3);
   color: var(--sk-text-21);
 }
 
-.board > .col > .cards > .board-card .agent {
+.board > .col > .cards .board-card .agent {
   display: inline-flex;
   color: var(--sk-text-19);
 }
 
 /* The copy under the pointer: lifted and tilted. */
-.board > .col > .cards > .board-card.ghost {
+.board > .col > .cards .board-card.ghost {
   background: var(--sk-fill-20);
   box-shadow:
     0 18px 40px var(--sk-black-a60),
@@ -150,6 +150,6 @@
   cursor: grabbing;
 }
 
-.board > .col > .cards > .board-card.dropped {
+.board > .col > .cards .board-card.dropped {
   animation: skDrop 0.42s cubic-bezier(0.2, 0.8, 0.2, 1);
 }

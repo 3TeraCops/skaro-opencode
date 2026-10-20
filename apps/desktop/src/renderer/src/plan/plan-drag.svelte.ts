@@ -3,6 +3,9 @@
 // Space — put) and spoken positions. Milestones change their order; tasks change their place and
 // milestone. What a drop does is decided by the caller.
 
+import { boardPointer } from '../tasks/board-pointer';
+import type { TaskLink } from '../../../shared/plan-catalog';
+import type { TaskSummary } from '../../../shared/ipc';
 import { t } from '@skaro/ui';
 import type { Stage } from './model';
 import { planHit } from './plan-drag-hit';
@@ -17,6 +20,8 @@ export interface PlanDrag {
   index: number;
   /** Where it was taken from: putting it back there changes nothing. */
   origin: number;
+  task?: TaskSummary;
+  dependencies?: TaskLink[];
   keyboard: boolean;
   /** The ghost: size, grab offset and pointer (pointer drags only). */
   w: number;
@@ -27,12 +32,13 @@ export interface PlanDrag {
   y: number;
 }
 
-const THRESHOLD = 5;
 const EDGE = 40;
 
 export function createPlanDrag(options: {
   root: () => HTMLElement | undefined;
   stages: () => Stage[];
+  revealRows: (stage: string, index: number) => Promise<void>;
+  restoreFocus: (drag: PlanDrag) => Promise<void>;
   /** Opens a milestone the keyboard moves a task into. */
   reveal: (id: string) => void;
   ondrop: (drag: PlanDrag) => void;
@@ -42,24 +48,25 @@ export function createPlanDrag(options: {
   let live = $state('');
   let dropTimer: ReturnType<typeof setTimeout> | undefined;
   let frame = 0;
+  let stopPointer: (() => void) | undefined;
 
   // A plan that goes away mid-drag leaves no listeners or cursor behind.
   $effect(() => () => {
     window.removeEventListener('keydown', keys, { capture: true });
     clearTimeout(dropTimer);
+    stopPointer?.();
     end();
   });
 
-  const movable = (): Stage[] => options.stages().filter((s) => !s.loose);
+  const movable = $derived(options.stages().filter((stage) => !stage.loose));
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- Immutable lookup of this snapshot.
+  const byStage = $derived(new Map(options.stages().map((stage) => [stage.milestone.id, stage])));
   const others = (d: PlanDrag): number =>
     d.kind === 'stage'
-      ? movable().length - 1
-      : (options
-          .stages()
-          .find((s) => s.milestone.id === d.to)
-          ?.tasks.filter((x) => x.id !== d.id).length ?? 0);
+      ? movable.length - 1
+      : Math.max(0, (byStage.get(d.to)?.taskCount ?? 0) - Number(d.from === d.to));
   const stageName = (id: string): string => {
-    const m = options.stages().find((s) => s.milestone.id === id)?.milestone;
+    const m = byStage.get(id)?.milestone;
     return m ? (m.id ? `${m.id} · ${m.title}` : m.title) : id;
   };
 
@@ -81,7 +88,10 @@ export function createPlanDrag(options: {
   function retarget(d: PlanDrag, to: string, index: number): void {
     const changed = d.to !== to || d.index !== index;
     drag = { ...d, to, index };
-    if (changed && d.keyboard) announce(drag);
+    if (changed && d.keyboard) {
+      announce(drag);
+      if (d.kind === 'task') void options.revealRows(to, index);
+    }
   }
 
   /** Near the top or bottom edge of the plan the list scrolls. */
@@ -132,79 +142,62 @@ export function createPlanDrag(options: {
     if (keyboard) live = t('plan.dnd.cancelled');
   }
 
-  function indexOf(kind: PlanDrag['kind'], id: string, from: string): number {
-    const list =
-      kind === 'stage'
-        ? movable().map((s) => s.milestone.id)
-        : (options
-            .stages()
-            .find((s) => s.milestone.id === from)
-            ?.tasks.map((x) => x.id) ?? []);
-    return Math.max(0, list.indexOf(id));
+  function indexOf(kind: PlanDrag['kind'], id: string, event: Event): number {
+    if (kind === 'stage')
+      return Math.max(
+        0,
+        movable.findIndex((stage) => stage.milestone.id === id),
+      );
+    return Number(
+      (event.currentTarget as HTMLElement).closest<HTMLElement>('[data-plan-index]')?.dataset[
+        'planIndex'
+      ] ?? 0,
+    );
   }
 
-  /** Pointer down on a milestone or a task: a drag starts after 5px, a shorter press stays a click. */
-  function down(kind: PlanDrag['kind'], id: string, from: string, e: PointerEvent): void {
-    if (e.button !== 0 || drag) return;
-    const el = e.currentTarget as HTMLElement;
-    const r = el.getBoundingClientRect();
-    const sx = e.clientX;
-    const sy = e.clientY;
-    const index = indexOf(kind, id, from);
-    let started = false;
-    const move = (ev: PointerEvent) => {
-      if (!started) {
-        if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < THRESHOLD) return;
-        started = true;
+  function down(
+    kind: PlanDrag['kind'],
+    id: string,
+    from: string,
+    event: PointerEvent,
+    task?: TaskSummary,
+    dependencies?: TaskLink[],
+  ): void {
+    if (event.button !== 0 || drag) return;
+    stopPointer?.();
+    const index = indexOf(kind, id, event);
+    stopPointer = boardPointer(event, {
+      start: (rect, x, y) => {
         drag = {
           kind,
           id,
+          task,
+          dependencies,
           from,
           to: from,
           index,
           origin: index,
           keyboard: false,
-          w: r.width,
-          h: r.height,
-          ox: sx - r.left,
-          oy: sy - r.top,
-          x: ev.clientX,
-          y: ev.clientY,
+          w: rect.width,
+          h: rect.height,
+          ox: x - rect.left,
+          oy: y - rect.top,
+          x,
+          y,
         };
         document.body.style.cursor = 'grabbing';
         frame = requestAnimationFrame(autoscroll);
-      }
-      const d = drag!;
-      drag = { ...d, x: ev.clientX, y: ev.clientY };
-      const h = hit(drag, ev.clientX, ev.clientY);
-      if (h) retarget(drag, h.to, h.index);
-    };
-    const key = (ev: KeyboardEvent) => {
-      if (ev.key !== 'Escape' || !started) return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      stop();
-      cancel();
-    };
-    const up = () => {
-      stop();
-      if (!started) return;
-      // The click that ends a drag does not toggle the milestone or open the task under it.
-      const swallow = (ev: MouseEvent) => ev.stopPropagation();
-      window.addEventListener('click', swallow, { capture: true, once: true });
-      setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 0);
-      if (drag) finish();
-    };
-    const stop = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      window.removeEventListener('pointercancel', up);
-      window.removeEventListener('keydown', key, { capture: true });
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', up);
-    window.addEventListener('keydown', key, { capture: true });
+      },
+      move: (next) => {
+        const d = drag;
+        if (!d) return;
+        drag = { ...d, x: next.clientX, y: next.clientY };
+        const target = hit(drag, next.clientX, next.clientY);
+        if (target) retarget(drag, target.to, target.index);
+      },
+      finish,
+      cancel,
+    });
   }
 
   /** A task moved by the keyboard past the edge of its milestone goes to the neighbour. */
@@ -243,7 +236,7 @@ export function createPlanDrag(options: {
     window.removeEventListener('keydown', keys, { capture: true });
     done();
     const attr = d.kind === 'stage' ? 'data-stage-head' : 'data-row';
-    requestAnimationFrame(() =>
+    void options.restoreFocus(done === cancel ? { ...d, to: d.from } : d).then(() =>
       options
         .root()
         ?.querySelector<HTMLElement>(`[${attr}="${CSS.escape(d.id)}"]`)
@@ -252,13 +245,22 @@ export function createPlanDrag(options: {
   }
 
   /** Space on a focused milestone or task takes it; it leaves the list, its slot moves. */
-  function keydown(kind: PlanDrag['kind'], id: string, from: string, e: KeyboardEvent): void {
+  function keydown(
+    kind: PlanDrag['kind'],
+    id: string,
+    from: string,
+    e: KeyboardEvent,
+    task?: TaskSummary,
+    dependencies?: TaskLink[],
+  ): void {
     if (drag || e.key !== ' ') return;
     e.preventDefault();
-    const index = indexOf(kind, id, from);
+    const index = indexOf(kind, id, e);
     drag = {
       kind,
       id,
+      task,
+      dependencies,
       from,
       to: from,
       index,

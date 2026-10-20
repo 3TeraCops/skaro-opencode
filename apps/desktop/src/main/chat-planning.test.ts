@@ -102,7 +102,7 @@ describe('saved project planning with real persistence', () => {
           w.engine.deps.attachments.save(image),
         ),
       );
-      const reopened = AppDb.open(join(w.root, 'app.sqlite'));
+      const reopened = AppDb.open(join(w.root, 'skaro.db'));
       try {
         const plan = new ChatPlanningStore(reopened, w.live.chat.id).get('dialogue')!;
         expect(

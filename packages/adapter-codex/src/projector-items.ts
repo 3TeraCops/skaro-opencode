@@ -29,7 +29,6 @@ export class CodexItems {
     if (type === 'subAgentActivity')
       return this.state.itemsProjection.onSubAgentActivity(item, turnId);
     if (!parentId && this.state.asyncQuestions.item(item, turnId)) return;
-    if (!parentId && type === 'userMessage') this.state.asyncQuestions.answered();
     // Waiting for subagents is not an action of its own; the subagent task item shows progress.
     if (type === 'collabAgentToolCall' && item['tool'] === 'wait') return;
     const id = str(item['id']) ?? '';

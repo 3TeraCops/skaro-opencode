@@ -6,28 +6,42 @@
     actionGroupState,
     type ActionGroup,
     type ActionRow,
+    type FeedBlock,
   } from '@skaro/timeline';
   import { t } from '@skaro/ui';
   import type { Snippet } from 'svelte';
   import './action-groups-i18n';
   import ActionIcon from './ActionIcon.svelte';
   import DiffBadge from './DiffBadge.svelte';
+  import { useFeed } from './context.svelte';
+  import VirtualBlocks from './VirtualBlocks.svelte';
+  import PagedBlocks from './PagedBlocks.svelte';
+  import type { HistoryBlock, HistorySource } from '../../../shared/history';
+  const feed = useFeed();
 
   let {
     group,
     waiting,
     children,
+    history,
+    presentation,
   }: {
     group: ActionGroup;
     waiting: ReadonlySet<string>;
     children: Snippet<[ActionRow]>;
+    history?: HistorySource;
+    presentation?: HistoryBlock['presentation'];
   } = $props();
 
-  let open = $state(false);
-  const status = $derived(actionGroupState(group, waiting));
-  const parts = $derived(actionGroupSummary(group));
+  // svelte-ignore state_referenced_locally
+  let open = $state(feed.rowState?.get(`open:${group.id}`) ?? false);
+  $effect(() => {
+    feed.rowState?.set(`open:${group.id}`, open);
+  });
+  const status = $derived(presentation?.state ?? actionGroupState(group, waiting));
+  const parts = $derived(presentation?.parts ?? actionGroupSummary(group));
   const kind = $derived(dominantAction(parts));
-  const diff = $derived(actionGroupDiffStats(group));
+  const diff = $derived(presentation?.diff ?? actionGroupDiffStats(group));
   const caption = $derived(
     parts
       .map((part, i) => {
@@ -44,6 +58,7 @@
       .join(' '),
   );
   const listId = $derived(`${group.id}-list`);
+  const blocks = $derived<FeedBlock[]>(group.rows.map((row) => ({ type: 'row', id: row.id, row })));
 </script>
 
 <div class="fd-block gap4" data-action-group={kind}>
@@ -64,7 +79,11 @@
   </button>
   {#if open}
     <div class="fd-sublist" id={listId}>
-      {#each group.rows as row (row.id)}{@render children(row)}{/each}
+      {#snippet renderAction(block: FeedBlock)}{#if block.type === 'row'}{@render children(
+            block.row as ActionRow,
+          )}{/if}{/snippet}
+      {#if history}<PagedBlocks source={history} gap={0} children={renderAction} />
+      {:else}<VirtualBlocks {blocks} gap={0} children={renderAction} />{/if}
     </div>
   {/if}
 </div>
