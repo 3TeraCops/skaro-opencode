@@ -13,6 +13,8 @@ are reserved for that release and are not yet published.
 - Kept unanswered questions visible and blocked dependent work until all answers arrive.
 - Added immediate feedback for submitted messages and task launches.
 - Fixed document tree rows shrinking when expanding a list that overflows the panel.
+- Fixed a first-start race between the project cache and background initialization;
+  startup data no longer uses synchronous renderer IPC.
 
 ## Downloads
 
