@@ -4,22 +4,26 @@ import { agents, watchAgents } from './agents.svelte';
 import { applyFeedFont } from './settings/setting.svelte';
 import { tabStates, watchTabStates } from './tab-states.svelte';
 import { SvelteURLSearchParams } from 'svelte/reactivity';
+import { onMount } from 'svelte';
+import { bootstrap } from './bootstrap';
 
 type View = 'home' | 'project' | 'settings' | 'inventory';
 
 /** Navigation and persisted tabs; views remain composition-only. */
 export function createNavigation() {
-  let projects = $state<ProjectInfo[]>([]);
-  let tabs = $state<TabsState>({ projects: [] });
-  let view = $state<View>('home');
-  let loaded = $state(false);
+  const initial = bootstrap;
+  let projects = $state<ProjectInfo[]>(initial?.projects.map((project) => ({ ...project })) ?? []);
+  let tabs = $state<TabsState>({ ...initial?.tabs, projects: [...(initial?.tabs.projects ?? [])] });
+  let view = $state<View>(initial?.workspace?.view ?? (initial?.tabs.active ? 'project' : 'home'));
+  let loaded = $state(!!initial);
   /** Selected section per project; the panel state is shared by all projects. */
-  let sections = $state<Record<string, string>>({});
+  let sections = $state<Record<string, string>>({ ...initial?.workspace?.sections });
   /** Open task per project ("Задачи" section). */
-  let openTasks = $state<Record<string, string | undefined>>({});
+  let openTasks = $state<Record<string, string | undefined>>({ ...initial?.workspace?.openTasks });
   /** Open chat per project ("Чат" section). */
-  let openChats = $state<Record<string, string | undefined>>({});
-  let panelCollapsed = $state(false);
+  let openChats = $state<Record<string, string | undefined>>({ ...initial?.workspace?.openChats });
+  let panelCollapsed = $state(initial?.panelCollapsed ?? false);
+  if (initial?.feedFont) applyFeedFont(initial.feedFont);
 
   const projectTabs = $derived<ProjectTab[]>(
     tabs.projects
@@ -39,20 +43,39 @@ export function createNavigation() {
     if (agents.none && view !== 'settings' && view !== 'inventory') view = 'settings';
   });
 
-  $effect(() => {
-    void (async () => {
-      projects = await window.skaro.invoke('projects.list');
-      tabs = await window.skaro.invoke('tabs.get');
-      // The UI inventory (all elements for checking against the mockups) opens with ?inventory.
+  onMount(() => {
+    if (initial) return;
+    void Promise.all([
+      window.skaro.invoke('projects.list'),
+      window.skaro.invoke('tabs.get'),
+      window.skaro.invoke('app.getSetting', 'ui.feedFont'),
+      window.skaro.invoke('app.getSetting', 'ui.navCollapsed'),
+      window.skaro.invoke('app.getSetting', 'ui.workspace'),
+    ]).then(([list, savedTabs, font, collapsed, saved]) => {
+      projects = list;
+      tabs = savedTabs;
+      const workspace = saved as import('../../shared/ipc').WorkspaceState | null;
+      if (workspace) {
+        sections = workspace.sections;
+        openTasks = workspace.openTasks;
+        openChats = workspace.openChats;
+      }
       view = new SvelteURLSearchParams(location.search).has('inventory')
         ? 'inventory'
-        : tabs.active
-          ? 'project'
-          : 'home';
-      applyFeedFont((await window.skaro.invoke('app.getSetting', 'ui.feedFont')) as string | null);
-      panelCollapsed = (await window.skaro.invoke('app.getSetting', 'ui.navCollapsed')) === true;
+        : (workspace?.view ?? (tabs.active ? 'project' : 'home'));
+      applyFeedFont(font as string | null);
+      panelCollapsed = collapsed === true;
       loaded = true;
-    })();
+    });
+  });
+
+  $effect(() => {
+    if (!loaded) return;
+    void window.skaro.invoke(
+      'app.setSetting',
+      'ui.workspace',
+      $state.snapshot({ view, sections, openTasks, openChats }),
+    );
   });
 
   // Open tabs survive restarts (plan: stage 4).
@@ -65,7 +88,11 @@ export function createNavigation() {
     if (loaded) void window.skaro.invoke('app.setSetting', 'ui.navCollapsed', panelCollapsed);
   });
 
-  function openProject(id: string): void {
+  async function openProject(id: string): Promise<void> {
+    if (!projects.some((project) => project.id === id)) {
+      const project = await window.skaro.invoke('projects.get', id);
+      projects = [...projects, project];
+    }
     tabs = {
       projects: tabs.projects.includes(id) ? tabs.projects : [...tabs.projects, id],
       active: id,
@@ -96,14 +123,34 @@ export function createNavigation() {
     newProject = true;
   }
 
+  async function refreshProjects(): Promise<void> {
+    const [registry, savedTabs] = await Promise.all([
+      window.skaro.invoke('projects.query', { query: '', sort: 'attention' }),
+      window.skaro.invoke('tabs.get'),
+    ]);
+    const records: ProjectInfo[] = registry.cards.map(({ id, name, path, logo, missing }) => ({
+      id,
+      name,
+      path,
+      logo,
+      missing,
+    }));
+    const extra = await Promise.all(
+      savedTabs.projects
+        .filter((id) => !records.some((record) => record.id === id))
+        .map((id) => window.skaro.invoke('projects.get', id)),
+    );
+    projects = [...records, ...extra];
+    tabs = savedTabs;
+    if (view === 'project' && !savedTabs.active) view = 'home';
+  }
   async function projectRemoved(id: string): Promise<void> {
     closeTab(id);
-    projects = await window.skaro.invoke('projects.list');
+    await refreshProjects();
   }
-
   async function projectAdded(project: ProjectInfo): Promise<void> {
-    projects = await window.skaro.invoke('projects.list');
-    openProject(project.id);
+    await refreshProjects();
+    await openProject(project.id);
   }
 
   return {
@@ -173,8 +220,6 @@ export function createNavigation() {
     addProject,
     projectRemoved,
     projectAdded,
-    refreshProjects: async () => {
-      projects = await window.skaro.invoke('projects.list');
-    },
+    refreshProjects,
   };
 }

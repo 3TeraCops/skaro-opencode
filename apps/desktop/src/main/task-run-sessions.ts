@@ -11,6 +11,7 @@ import { checkoutKey, ownsCheckout, stageIdOf } from './task-stage';
 import type { TaskRunEngine } from './task-run-engine';
 import { handoffRecord } from './task-handoff-record';
 import { taskRunDirectory } from './task-run-directory';
+import { closeSessionLog } from './close-session-log';
 
 const ENVIRONMENT_TOOL_TIMEOUT_MS = 30 * 60_000;
 
@@ -76,7 +77,7 @@ export class TaskRunSessions {
     try {
       session = await this.ctx.deps.agents.adapter(agent).start({
         cwd,
-        processStarted: (pid) => this.ctx.processes.started(run.id, pid),
+        processStarted: (pid, identity) => this.ctx.processes.started(run.id, pid, false, identity),
         ...(settings.model ? { model: settings.model } : {}),
         ...(settings.effort ? { effort: settings.effort } : {}),
         permissionMode: settings.permissionMode,
@@ -120,6 +121,13 @@ export class TaskRunSessions {
         ...(sandbox ? { sandboxVerified: sandbox.holds } : {}),
         ...(sandbox?.mode ? { sandboxMode: sandbox.mode } : {}),
         ...(resume ? { resume } : {}),
+        rawSerialized: (line) => this.ctx.history.writeLine(active, line),
+        rawScope: {
+          startedAt: run.startedAt,
+          segment,
+          ...(run.previousRunId ? { runId: run.id } : {}),
+        },
+        secretValues: () => active.secrets.list(),
         raw: (line) => {
           let meta = line.line;
           if (line.dir === 'meta' && isRunLogMeta(meta) && meta.skaro === 'event') {
@@ -209,7 +217,7 @@ export class TaskRunSessions {
     await this.ctx.integrations.close();
     await this.ctx.merges.close();
     await Promise.all([...this.ctx.active.values()].map((a) => this.detach(a)));
-    for (const active of this.ctx.active.values()) active.log?.end();
+    await Promise.all([...this.ctx.active.values()].map((active) => closeSessionLog(active.log)));
     await this.ctx.environments
       .close()
       .catch((error) => console.error('Environment shutdown:', error));

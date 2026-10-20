@@ -8,6 +8,8 @@ import { handoffRecord } from './task-handoff-record';
 import { CompletionStore } from './completion-store';
 import { ActiveRun } from './task-run-model';
 import type { TaskRunEngine } from './task-run-engine';
+import { QuestionAnswers } from './question-answers';
+import { presentationEvent } from './timeline-presentation';
 
 /** history: a focused part of the task-run controller. */
 export class TaskRunHistory {
@@ -82,6 +84,9 @@ export class TaskRunHistory {
       null,
     );
     this.ctx.events.settleRuntime(active);
+    const answers = new QuestionAnswers(this.ctx.deps.db, `active.${run.id}`);
+    answers.recover(active.timeline.state, (event) => this.skaroEvent(active, event));
+    answers.queue('task.send', projectId, taskId, active.timeline.state);
     return active;
   }
 
@@ -130,7 +135,8 @@ export class TaskRunHistory {
     });
   }
 
-  writeLine(active: ActiveRun, line: RawLine): void {
+  writeLine(active: ActiveRun, line: RawLine | Uint8Array): void {
+    if (!(line instanceof Uint8Array)) line = active.secrets.redact(line);
     if (!active.log) {
       const path = join(this.ctx.deps.dataDir, active.run.logPath);
       mkdirSync(dirname(path), { recursive: true });
@@ -139,7 +145,7 @@ export class TaskRunHistory {
       log.on('error', (error) => console.error(`run log ${path}: ${error.message}`));
       active.log = log;
     }
-    active.log.write(`${JSON.stringify(line)}\n`);
+    active.log.write(line instanceof Uint8Array ? line : `${JSON.stringify(line)}\n`);
   }
 
   flush(active: ActiveRun): void {
@@ -153,7 +159,7 @@ export class TaskRunHistory {
       taskId: active.taskId,
       runId: active.run.id,
       seq: active.seq - events.length,
-      events,
+      events: events.map(presentationEvent),
     });
   }
 }

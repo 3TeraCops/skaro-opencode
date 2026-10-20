@@ -54,13 +54,17 @@ export class CompletionCoordinator {
     });
   }
 
+  changed(projectId: string): void {
+    this.monitor.changed(projectId);
+  }
+
   start(): void {
     this.monitor.start();
   }
 
   async close(): Promise<void> {
     this.closed = true;
-    this.monitor.close();
+    await this.monitor.close();
     await Promise.allSettled(this.pending.values());
   }
 
@@ -103,7 +107,7 @@ export class CompletionCoordinator {
         summary,
         verification,
       }),
-    );
+    ).then(() => this.monitor.changed(projectId));
   }
 
   /** The task whose result is being merged into the base branch right now. */

@@ -1,8 +1,11 @@
+import { OwnerMessages } from '../feed/owner-messages.svelte';
+import { cleanError } from '../feed/action-error';
 import type { AgentModel, InteractionAnswer, PermissionMode } from '@skaro/timeline';
 import { t } from '@skaro/ui';
 import { onDestroy } from 'svelte';
 import type { AgentInfo, AgentSettings, MergeAction, MessageInput } from '../../../shared/ipc';
 import { provideFeed } from '../feed/context.svelte';
+import { historyActions } from '../feed/history-actions';
 import { modelEffort, modelName } from '../feed/format';
 import { TaskSession } from './session.svelte';
 import { TaskStartState } from './task-start-state';
@@ -20,6 +23,23 @@ export function createTaskController(
   void session.reload();
   onDestroy(() => session.dispose());
 
+  const ownerMessages = new OwnerMessages();
+  void window.skaro.invoke('commands.list', projectId, taskId).then((commands) => {
+    ownerMessages.restore(commands);
+    actionError = commands.find((command) => command.error)?.error;
+  });
+  const stopCommands = window.skaro.on('command.changed', (command) => {
+    if (command.owner !== `${projectId}:${taskId}`) return;
+    if (command.state === 'accepted' || command.state === 'delivering')
+      ownerMessages.restore([command]);
+    if (command.state === 'cancelled') ownerMessages.cancel(command.id);
+    if (command.error) {
+      ownerMessages.failed(command.id, command.error);
+      actionError = command.error;
+    }
+  });
+  onDestroy(stopCommands);
+  $effect(() => ownerMessages.reconcile(session.timeline));
   let modal = $state(false);
   let viewer = $state<string | undefined>();
   let actionError = $state<string | undefined>();
@@ -28,10 +48,12 @@ export function createTaskController(
   const startRequest = new TaskStartState(startState);
 
   const view = $derived(session.view);
-  const timeline = $derived(session.timeline);
+  const timeline = $derived(ownerMessages.timeline(session.timeline));
   const hasFeed = $derived(
     !!timeline &&
-      (timeline.items.length > 0 || (!!view?.stage && timeline.interactions.length > 0)),
+      (timeline.items.length > 0 ||
+        !!view?.history?.count ||
+        (!!view?.stage && timeline.interactions.length > 0)),
   );
   const settings = $derived(view?.settings);
   const started = $derived((timeline?.items.length ?? 0) > 0 || view?.queued === true);
@@ -95,14 +117,13 @@ export function createTaskController(
     }
   }
 
-  function cleanError(error: unknown): string {
-    const text = error instanceof Error ? error.message : String(error);
-    return text.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
-  }
-
   async function send(input: MessageInput): Promise<void> {
     // Text typed while a question or a permission is open answers it in the user's own words.
     if (openQuestion?.kind === 'question') {
+      if (openQuestion.questions.length !== 1) {
+        actionError = t('card.question.notReady');
+        throw new Error(actionError);
+      }
       const answer: InteractionAnswer = {
         kind: 'question',
         answers: Object.fromEntries(openQuestion.questions.map((q) => [q.id, [input.text]])),
@@ -112,7 +133,11 @@ export function createTaskController(
     if (openApproval?.kind === 'approval') {
       return respond(openApproval.id, { kind: 'approval', choice: 'deny', message: input.text });
     }
-    await guard(() => window.skaro.invoke('task.send', projectId, taskId, input));
+    await guard(() =>
+      ownerMessages.send(input, (value) =>
+        window.skaro.invoke('task.send', projectId, taskId, value),
+      ),
+    );
   }
 
   async function start(): Promise<void> {
@@ -138,6 +163,14 @@ export function createTaskController(
   }
 
   provideFeed({
+    ...historyActions(
+      projectId,
+      (error) => {
+        actionError = error;
+      },
+      (page) => session.rememberPage(page),
+      () => void session.reload(),
+    ),
     get cwd() {
       return cwd;
     },

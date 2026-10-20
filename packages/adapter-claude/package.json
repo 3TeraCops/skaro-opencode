@@ -5,7 +5,9 @@
   "description": "Claude Code adapter (Agent SDK).",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./projector": "./src/projector.ts",
+    "./adapter": "./src/adapter.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."

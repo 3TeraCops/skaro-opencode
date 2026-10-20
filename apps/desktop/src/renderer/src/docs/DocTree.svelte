@@ -40,12 +40,13 @@
   import type { DocEntry } from '../../../shared/ipc';
   import { recordOf, titleOf } from './model';
   import DocTreeFooter from './DocTreeFooter.svelte';
+  import WindowedContent from '../WindowedContent.svelte';
   import './doc-tree.css';
 </script>
 
-{#snippet item(doc: DocEntry, icon: 'brief' | 'arch' | 'doc' | undefined)}
+{#snippet item(doc: DocEntry, icon: 'brief' | 'arch' | 'doc' | undefined, known = false)}
   {@const on = model.p.docs.selected === doc.path}
-  {@const missing = !model.p.docs.exists(doc.path)}
+  {@const missing = !known && !model.p.docs.exists(doc.path)}
   {@const rec = recordOf(doc)}
   <div
     data-doc-tree
@@ -106,23 +107,47 @@
   <div data-doc-tree class="items" role="tree">
     {@render item(model.fixed[0]!, 'brief')}
     {@render item(model.fixed[1]!, 'arch')}
-    {@render group('adr', model.adrs.length)}
-    {#if model.groups.adr}{#each model.adrs as doc (doc.path)}{@render item(
-          doc,
-          undefined,
-        )}{/each}{/if}
-    {#if model.specs.length}
-      {@render group('specs', model.specs.length)}
-      {#if model.groups.specs}{#each model.specs as doc (doc.path)}{@render item(
-            doc,
-            undefined,
-          )}{/each}{/if}
+    {@render group('adr', model.adrs)}
+    {#if model.groups.adr && model.adrs}
+      <WindowedContent
+        count={model.adrs}
+        revision={docs.catalog.revision}
+        read={(start) => docs.page('adr', start)}
+        scroller=".items"
+        gap={2}
+        estimate={32}
+      >
+        {#snippet children(doc)}{@render item(doc, undefined, true)}{/snippet}
+      </WindowedContent>
     {/if}
-    {@render group('docs', model.free.length)}
-    {#if model.groups.docs}{#each model.free as doc (doc.path)}{@render item(
-          doc,
-          'doc',
-        )}{/each}{/if}
+    {#if model.specs}
+      {@render group('specs', model.specs)}
+      {#if model.groups.specs}
+        <WindowedContent
+          count={model.specs}
+          revision={docs.catalog.revision}
+          read={(start) => docs.page('spec', start)}
+          scroller=".items"
+          gap={2}
+          estimate={32}
+        >
+          {#snippet children(doc)}{@render item(doc, undefined, true)}{/snippet}
+        </WindowedContent>
+      {/if}
+    {/if}
+    {@render group('docs', model.free)}
+    {#if model.groups.docs && model.free}
+      <WindowedContent
+        count={model.free}
+        revision={docs.catalog.revision}
+        read={(start) => docs.page('doc', start)}
+        scroller=".items"
+        gap={2}
+        estimate={32}
+      >
+        {#snippet children(doc)}{@render item(doc, 'doc', true)}{/snippet}
+      </WindowedContent>
+    {/if}
   </div>
   <DocTreeFooter {model} />
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->

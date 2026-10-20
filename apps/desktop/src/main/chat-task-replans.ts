@@ -1,3 +1,4 @@
+import { projectRecords } from './project-records';
 import type { ReplanTasksArgs, SkaroScope, ToolResult } from '@skaro/mcp-server';
 import type { ChatEngine } from './chat-engine';
 import type { LiveChat, ProposalItem } from './chat-model';
@@ -188,7 +189,7 @@ export class ChatTaskReplans {
   }
 
   async recoverAll(): Promise<void> {
-    for (const project of this.ctx.deps.db.listProjects()) {
+    for await (const project of projectRecords(this.ctx.deps.db)) {
       const records = new TaskReplanJournal(this.ctx.deps.db, project.id).list();
       const lock = this.ctx.deps.db.getSetting(taskReplanLockKey(project.id), null);
       for (const chatId of new Set(

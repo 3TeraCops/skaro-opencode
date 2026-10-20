@@ -1,4 +1,5 @@
 import { type WriteStream } from 'node:fs';
+import { SessionSecrets } from './private-input';
 import { type AppDb, type AttachmentStore, type ChatRecord } from '@skaro/core';
 import type { Grant, McpHttpServer, SkaroScope } from '@skaro/mcp-server';
 import {
@@ -29,6 +30,10 @@ export interface Deps {
 }
 
 export class LiveChat {
+  readonly secrets = new SessionSecrets();
+  get memoryBytes(): number {
+    return this.timeline.retainedBytes;
+  }
   readonly projectId: string;
   chat: ChatRecord;
   readonly timeline: Timeline;

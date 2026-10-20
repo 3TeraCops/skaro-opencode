@@ -18,6 +18,7 @@ import { historyPage, historyText } from './task-history-context';
 import { handoffRecord } from './task-handoff-record';
 import { serializeTaskMutation } from './project-task-mutations';
 import { TaskRunEngine } from './task-run-engine';
+import { TaskCatalogService } from './task-catalog-service';
 import { errorText } from './session-log';
 import { startTaskEnvironment } from './task-environment-tool';
 import { configureTaskEnvironment } from './task-environment-config-tool';
@@ -27,6 +28,10 @@ export { requirementsOf } from './task-run-helpers';
 
 /** Public API: composes focused task-run services without owning their workflows. */
 export class TaskRuns {
+  projectChanged(projectId: string): void {
+    this.engine.merges.coordinator.changed(projectId);
+    this.catalog.invalidate(projectId);
+  }
   c4Tool(scope: SkaroScope, action: () => Promise<ToolResult>): Promise<ToolResult> {
     return taskTool(this.engine, scope, action);
   }
@@ -41,7 +46,12 @@ export class TaskRuns {
     const previous = active.timeline.state.items.find((i) => i.id === item.id);
     if (
       previous?.kind === 'proposal' &&
-      JSON.stringify({ ...previous, turnId: '' }) === JSON.stringify({ ...item, turnId: '' })
+      previous.proposal.type === 'architecture' &&
+      item.proposal.type === 'architecture' &&
+      previous.proposal.packageId === item.proposal.packageId &&
+      previous.state === item.state &&
+      previous.result?.error === item.result?.error &&
+      previous.proposal.contentRef === item.proposal.contentRef
     )
       return;
     this.engine.history.skaroEvent(active, {
@@ -53,8 +63,10 @@ export class TaskRuns {
     return this.engine.mergeActions.revert(projectId, taskId, commit);
   }
   private readonly engine: TaskRunEngine;
+  readonly catalog: TaskCatalogService;
   constructor(deps: TaskRunDeps, slots = 3) {
     this.engine = new TaskRunEngine(deps, slots);
+    this.catalog = new TaskCatalogService(this.engine);
   }
   list(projectId: string): Promise<TaskSummary[]> {
     return this.engine.views.list(projectId);
@@ -85,8 +97,8 @@ export class TaskRuns {
     this.engine.deps.db.retireTaskRuns(projectId, taskId);
     this.engine.scheduling.forgetAwaiting(projectId, [taskId]);
   }
-  open(projectId: string, taskId: string): Promise<TaskView> {
-    return this.engine.views.open(projectId, taskId);
+  open(projectId: string, taskId: string, options?: { paged: boolean }): Promise<TaskView> {
+    return this.engine.views.open(projectId, taskId, options);
   }
   openExternal(
     projectId: string,

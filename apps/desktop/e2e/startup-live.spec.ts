@@ -61,19 +61,17 @@ async function idleMetrics(app: ElectronApplication, root: string) {
 }
 
 // eslint-disable-next-line no-empty-pattern
-test('starts on Home, retains tabs and reuses unchanged project artifacts across idle sweeps', async ({}, testInfo) => {
+test('restores the active project and reuses unchanged project artifacts while idle', async ({}, testInfo) => {
   test.setTimeout(180_000);
   let app = await launchApp(userData!, { openSavedProject: false });
   const errors: string[] = [];
   try {
     let page = await app.firstWindow();
     page.on('pageerror', (error) => errors.push(error.message));
-    await expect(page.locator('.bar .home.current')).toBeVisible({ timeout: 60_000 });
     const projects = await page.evaluate(() => window.skaro.invoke('projects.list'));
     const project = projects.find((item) => item.id === projectId);
     expect(project, 'The real project must exist').toBeTruthy();
     const tab = page.getByRole('tab').filter({ hasText: project!.name });
-    await expect(tab).toHaveAttribute('aria-selected', 'false');
     await tab.click();
     await expect(page.locator('.project-nav')).toBeVisible();
     await expect(tab).toHaveAttribute('aria-selected', 'true');
@@ -91,20 +89,15 @@ test('starts on Home, retains tabs and reuses unchanged project artifacts across
     app = await launchApp(userData!, { openSavedProject: false });
     page = await app.firstWindow();
     page.on('pageerror', (error) => errors.push(error.message));
-    await expect(page.locator('.bar .home.current')).toBeVisible({ timeout: 60_000 });
-    await expect(page.locator('.project-nav')).toHaveCount(0);
+    await expect(page.locator('.project-nav')).toBeVisible();
     await expect(page.getByRole('tab').filter({ hasText: project!.name })).toHaveAttribute(
       'aria-selected',
-      'false',
+      'true',
     );
     const restored = await page.evaluate(() => window.skaro.invoke('tabs.get'));
     expect(restored.projects).toEqual(tabs.projects);
-    expect(restored.active).toBeUndefined();
-    await expect(page.locator('.projects .card, .projects .item-row')).toHaveCount(
-      projects.length,
-      { timeout: 30_000 },
-    );
-    await page.screenshot({ path: testInfo.outputPath('home-after-restart.png') });
+    expect(restored.active).toBe(projectId);
+    await page.screenshot({ path: testInfo.outputPath('project-after-restart.png') });
     expect(errors).toEqual([]);
   } finally {
     await app.close();

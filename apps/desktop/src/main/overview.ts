@@ -5,7 +5,8 @@ import { existsSync } from 'node:fs';
 import {
   displayStatus,
   indexTasks,
-  milestoneProgress,
+  indexMilestoneProgress,
+  type ProjectArtifacts,
   type AppDb,
   type ProjectRecord,
 } from '@skaro/core';
@@ -16,13 +17,25 @@ export async function projectCards(db: AppDb, projects: Projects): Promise<Proje
   return Promise.all(db.listProjects().map((p) => projectCard(db, projects, p)));
 }
 
-async function projectCard(
+export async function projectCard(
   db: AppDb,
   projects: Projects,
   project: ProjectRecord,
 ): Promise<ProjectCard> {
-  const runs = db.listRuns(project.id);
-  const chats = [...db.listChats(project.id), ...db.listChats(project.id, { archived: true })];
+  return projectCardFrom(db, project, {
+    summary: () => projects.get(project.id).summary(),
+    branch: () => projects.get(project.id).git.currentBranch(),
+  });
+}
+
+export async function projectCardFrom(
+  db: AppDb,
+  project: ProjectRecord,
+  read: {
+    summary(): Promise<ProjectArtifacts>;
+    branch(): Promise<string | undefined>;
+  },
+): Promise<ProjectCard> {
   const card: ProjectCard = {
     id: project.id,
     name: project.name,
@@ -32,19 +45,13 @@ async function projectCard(
     counts: { working: 0, needs: 0, review: 0, failed: 0, blocked: 0 },
     running: [],
     agent: 'claude-code',
-    activeAt: Math.max(
-      project.createdAt,
-      project.lastOpenedAt ?? 0,
-      ...runs.map((r) => r.endedAt ?? r.startedAt),
-      ...chats.map((c) => c.updatedAt),
-    ),
+    activeAt: Math.max(project.createdAt, project.lastOpenedAt ?? 0, db.shell.activity(project.id)),
   };
   if (card.missing) return card;
 
-  const context = projects.get(project.id);
   const [artifacts, branch] = await Promise.all([
-    context.load().catch(() => undefined),
-    context.git.currentBranch().catch(() => undefined),
+    read.summary().catch(() => undefined),
+    read.branch().catch(() => undefined),
   ]);
   if (branch) card.branch = branch;
   if (!artifacts) return card;
@@ -59,13 +66,16 @@ async function projectCard(
     const state = runtime.get(task.id)?.state;
     const status = displayStatus(task, index, state);
     if (state === 'running' || state === 'waiting') {
-      const run = runs.find((r) => r.taskId === task.id);
-      card.running.push({
-        id: task.id,
-        title: task.title,
-        agent: (run?.agent === 'codex' ? 'codex' : 'claude-code') as AgentId,
-        ...(run?.model ? { model: run.model } : {}),
-      });
+      card.runningTotal = (card.runningTotal ?? 0) + 1;
+      if (card.running.length < 2) {
+        const run = db.shell.runAgent(project.id, task.id);
+        card.running.push({
+          id: task.id,
+          title: task.title,
+          agent: (run?.agent === 'codex' ? 'codex' : 'claude-code') as AgentId,
+          ...(run?.model ? { model: run.model } : {}),
+        });
+      }
     }
     if (status === 'in_progress') card.counts.working++;
     else if (status === 'needs_answer') card.counts.needs++;
@@ -75,9 +85,11 @@ async function projectCard(
   }
 
   // The current milestone: the first one not done yet, else the last one with tasks.
-  const withTasks = artifacts.milestones
-    .map((m) => ({ m, progress: milestoneProgress(m, artifacts.tasks) }))
-    .filter((x) => x.progress.total > 0);
+  const progress = indexMilestoneProgress(artifacts.tasks);
+  const withTasks = artifacts.milestones.flatMap((m) => {
+    const value = progress.get(m.id);
+    return value ? [{ m, progress: value }] : [];
+  });
   const current = withTasks.find((x) => x.progress.status !== 'done') ?? withTasks.at(-1);
   if (current) {
     card.milestone = {

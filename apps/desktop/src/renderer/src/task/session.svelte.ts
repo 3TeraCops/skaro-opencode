@@ -3,6 +3,8 @@
 import type { TimelineState } from '@skaro/timeline';
 import type { TaskView } from '../../../shared/ipc';
 import { TaskFeedState } from './feed-state';
+import { readSession, saveSession } from '../session-snapshot';
+import { currentHistory } from '../history-view';
 
 export class TaskSession {
   readonly projectId: string;
@@ -14,26 +16,50 @@ export class TaskSession {
   private readonly unsubscribe: (() => void)[] = [];
   private reloading: Promise<void> | undefined;
   private reloadAgain = false;
+  private snapshotTimer?: ReturnType<typeof setTimeout>;
+  private generation = 0;
+  rememberPage(page: import('../../../shared/history').HistoryPage): void {
+    if (!this.view) return;
+    this.view = { ...this.view, historyPage: page };
+    this.remember();
+  }
 
   constructor(projectId: string, taskId: string) {
     this.projectId = projectId;
     this.taskId = taskId;
+    this.view = readSession<TaskView>(`task.${projectId}.${taskId}`);
+    this.timeline = this.view?.timeline;
     const mine = (p: { projectId: string; taskId: string }) =>
       p.projectId === projectId && p.taskId === taskId;
     this.unsubscribe.push(
       window.skaro.on('task.events', (batch) => {
         if (!mine(batch)) return;
+        if (this.view?.history) return;
         if (!this.feed.task(batch)) {
           // A new run or a gap: the snapshot is the truth.
           void this.reload();
           return;
         }
         this.timeline = this.feed.state;
+        this.remember();
       }),
       window.skaro.on('integration.events', (batch) => {
         if (!mine(batch)) return;
+        if (this.view?.history) return;
         if (!this.feed.integration(batch)) void this.reload();
         else this.timeline = this.feed.state;
+      }),
+      window.skaro.on('history.changed', (change) => {
+        if (change.owner !== `${projectId}:task:${taskId}`) return;
+        if (!change.view) {
+          void this.reload();
+          return;
+        }
+        if (!this.view?.history || change.view.source.revision < this.view.history.revision) return;
+        this.view = { ...this.view, history: change.view.source, timeline: change.view.timeline };
+        this.generation++;
+        this.timeline = change.view.timeline;
+        this.remember();
       }),
       window.skaro.on('task.changed', (p) => mine(p) && void this.reload()),
       window.skaro.on('project.changed', (p) => p.projectId === projectId && void this.reload()),
@@ -50,11 +76,19 @@ export class TaskSession {
       do {
         this.reloadAgain = false;
         try {
-          const view = await window.skaro.invoke('task.open', this.projectId, this.taskId);
+          const generation = this.generation;
+          let view = await window.skaro.invoke('task.open', this.projectId, this.taskId, {
+            paged: true,
+          });
+          if (generation !== this.generation) view = currentHistory(view, this.view);
           this.view = view;
           this.error = view.error;
-          this.feed.restore(view);
-          this.timeline = this.feed.state;
+          if (view.history) this.timeline = view.timeline;
+          else {
+            this.feed.restore(view);
+            this.timeline = this.feed.state;
+          }
+          this.remember();
         } catch (error) {
           this.error = error instanceof Error ? error.message : String(error);
         }
@@ -64,6 +98,15 @@ export class TaskSession {
   }
 
   dispose(): void {
+    clearTimeout(this.snapshotTimer);
+    this.save();
     for (const off of this.unsubscribe) off();
+  }
+  private save(): void {
+    if (this.view) saveSession(`task.${this.projectId}.${this.taskId}`, this.view, this.timeline);
+  }
+  private remember(): void {
+    clearTimeout(this.snapshotTimer);
+    this.snapshotTimer = setTimeout(() => this.save(), 750);
   }
 }

@@ -40,6 +40,8 @@ export interface StageView {
 }
 
 export interface TaskView {
+  history?: import('./history').HistorySource;
+  historyPage?: import('./history').HistoryPage;
   /** Diagnostic of preparation, including failures before an agent run was created. */
   error?: string;
   /** Services explicitly requested by the owner through a link in the task feed. */
@@ -71,9 +73,37 @@ export interface TaskView {
 }
 
 export interface MessageInput {
+  /** Main-process encrypted continuation of a restored secret question. Never plaintext in IPC. */
+  privateText?: string;
+  /** Stable owner command identity; retries must not deliver the same command twice. */
+  commandId?: string;
   text: string;
   /** Absolute paths of attached images. */
   images?: string[];
+}
+
+export interface WorkspaceState {
+  view: 'home' | 'project' | 'settings' | 'inventory';
+  sections: Record<string, string>;
+  openTasks: Record<string, string | undefined>;
+  openChats: Record<string, string | undefined>;
+}
+
+export interface BootstrapState {
+  chatCatalog?: import('./chat-catalog').ChatCatalog;
+  sessions?: Record<string, ChatView | TaskView>;
+  projectsView?: {
+    query?: string;
+    sort?: import('./project-catalog').ProjectSort;
+    view?: 'grid' | 'list';
+  };
+  locale: 'ru' | 'en';
+  projects: ProjectInfo[];
+  tabs: TabsState;
+  workspace?: WorkspaceState;
+  cards: ProjectCard[];
+  feedFont?: string;
+  panelCollapsed: boolean;
 }
 
 export type MergeAction =
@@ -114,6 +144,8 @@ export interface ChatSummary {
 
 /** Everything the chat screen needs to open a chat. */
 export interface ChatView {
+  historyPage?: import('./history').HistoryPage;
+  history?: import('./history').HistorySource;
   projectId: string;
   chat: ChatSummary;
   settings: ChatSettings;
@@ -166,6 +198,8 @@ export interface ProjectInfo {
 
 /** A project card on "Проекты" (Projects mockup): status, current milestone, running tasks. */
 export interface ProjectCard {
+  refreshing?: boolean;
+  unloaded?: boolean;
   id: string;
   name: string;
   path: string;
@@ -176,6 +210,7 @@ export interface ProjectCard {
   /** The first milestone not done yet (or the last one when all are done). */
   milestone?: { id: string; title: string; done: number; total: number };
   counts: { working: number; needs: number; review: number; failed: number; blocked: number };
+  runningTotal?: number;
   /** Tasks an agent works on now. */
   running: { id: string; title: string; agent: AgentId; model?: string }[];
   /** Default agent of the project. */

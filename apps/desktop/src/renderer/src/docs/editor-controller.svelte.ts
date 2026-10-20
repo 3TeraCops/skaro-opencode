@@ -1,12 +1,12 @@
 import { tick } from 'svelte';
 import { applyFormat, type Format } from './format';
-import { renderDoc } from './render';
+import { DocumentProjection } from './projection.svelte';
 import type { EditorProps } from './editor-props';
 
 export function createEditorController(p: EditorProps) {
   let view = $state<'editor' | 'preview' | 'split'>('split');
   let area: HTMLTextAreaElement | undefined = $state();
-  const rendered = $derived(renderDoc(p.docs.draft));
+  const rendered = new DocumentProjection(() => (view === 'editor' ? '' : p.docs.draft));
 
   $effect(() => {
     area?.focus();

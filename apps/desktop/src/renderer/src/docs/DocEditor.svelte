@@ -59,8 +59,8 @@
   {/if}
   {#if model.view !== 'editor'}
     <DocPage
-      blocks={model.rendered.blocks}
-      headings={model.rendered.headings}
+      projection={model.rendered}
+      copyText={() => model.p.docs.draft}
       editing
       onlink={model.p.onlink}
     />

@@ -1,3 +1,4 @@
+import { projectRecords } from './project-records';
 import { MergeBlockedError } from '@skaro/core';
 import { AUTO_MERGE_KEY } from '../shared/ipc';
 import type { CompletionHooks } from './completion-coordinator';
@@ -29,8 +30,12 @@ export async function returnedToAgent(
 export class CompletionMonitor {
   private readonly attempts = new Map<string, string>();
   private timer: NodeJS.Timeout | undefined;
-  private sweeping = false;
+  private startup: Promise<void> | undefined;
+  private scanning: Promise<void> | undefined;
   private closed = false;
+  private readonly dirty = new Set<string>();
+  private readonly heads = new Map<string, string>();
+  private lastHeadCheck = 0;
   private readonly hooks: CompletionHooks;
   private readonly actions: Actions;
   constructor(hooks: CompletionHooks, actions: Actions) {
@@ -39,16 +44,30 @@ export class CompletionMonitor {
   }
 
   start(): void {
+    if (this.closed || this.timer) return;
     this.timer ??= setInterval(() => {
       void this.sweep();
-    }, 3000);
+    }, 1000);
     this.timer.unref();
+    this.startup = (async () => {
+      for await (const project of projectRecords(this.hooks.deps.db)) {
+        if (this.closed) return;
+        this.dirty.add(project.id);
+      }
+      if (!this.closed) void this.sweep();
+    })();
     void this.sweep();
   }
 
-  close(): void {
+  changed(projectId: string): void {
+    this.dirty.add(projectId);
+    if (this.timer && !this.closed) setImmediate(() => void this.sweep());
+  }
+
+  async close(): Promise<void> {
     this.closed = true;
     clearInterval(this.timer);
+    await Promise.allSettled([this.startup, this.scanning]);
   }
 
   report(projectId: string, taskId: string | undefined, error: unknown): void {
@@ -60,13 +79,40 @@ export class CompletionMonitor {
     this.hooks.failed(projectId, taskId, message);
   }
 
-  private async sweep(): Promise<void> {
-    if (this.sweeping || this.closed) return;
-    this.sweeping = true;
+  private sweep(): Promise<void> {
+    if (this.closed || this.scanning) return this.scanning ?? Promise.resolve();
+    const scanning = this.scan().finally(() => {
+      this.scanning = undefined;
+    });
+    this.scanning = scanning;
+    return scanning;
+  }
+
+  private async scan(): Promise<void> {
     try {
+      if (Date.now() - this.lastHeadCheck > 30_000) {
+        this.lastHeadCheck = Date.now();
+        for await (const project of projectRecords(this.hooks.deps.db)) {
+          if (this.closed) return;
+          const head = await this.hooks.deps.projects
+            .get(project.id)
+            .git.head()
+            .catch(() => '');
+          if (this.closed) return;
+          if (this.heads.get(project.id) !== head) this.dirty.add(project.id);
+          this.heads.set(project.id, head);
+        }
+      }
       await Promise.all(
-        this.hooks.deps.db.listProjects().map(async (project) => {
+        [...this.dirty].slice(0, 2).map(async (id) => {
+          if (this.closed) return;
+          const project = this.hooks.deps.db.getProject(id);
+          if (!project) {
+            this.dirty.delete(id);
+            return;
+          }
           if (this.closed || this.actions.pending(project.id)) return;
+          this.dirty.delete(project.id);
           await this.actions
             .run(project.id, async () => {
               const context = this.hooks.deps.projects.get(project.id);
@@ -86,7 +132,7 @@ export class CompletionMonitor {
                   )
               )
                 return;
-              const artifacts = await context.load();
+              const artifacts = await context.summary();
               const store = new CompletionStore(this.hooks.deps.db, project.id);
               // One conflict at a time: while the agent of a task resolves its conflict, the
               // other tasks wait and are merged onto what it hands back, as their cards say.
@@ -136,7 +182,7 @@ export class CompletionMonitor {
         }),
       );
     } finally {
-      this.sweeping = false;
+      if (this.dirty.size && !this.closed) this.timer?.refresh();
     }
   }
 }

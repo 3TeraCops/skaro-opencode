@@ -3,11 +3,35 @@ import { dirname, join, relative, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 const pending = new Map<string, Promise<unknown>>();
+let sharedLocks: Int32Array | undefined;
+let lockOwner = 1;
+
+/** The desktop passes the same table to its main thread and background workers. */
+export function configureC4Locks(buffer: SharedArrayBuffer, owner: number): void {
+  sharedLocks = new Int32Array(buffer);
+  lockOwner = owner;
+}
+async function locked<T>(root: string, operation: () => Promise<T>): Promise<T> {
+  const locks = sharedLocks;
+  if (!locks) return operation();
+  let hash = 0;
+  const path = process.platform === 'win32' ? root.toLowerCase() : root;
+  for (let i = 0; i < path.length; i++) hash = (hash * 31 + path.charCodeAt(i)) >>> 0;
+  const slot = hash % locks.length;
+  while (Atomics.compareExchange(locks, slot, 0, lockOwner) !== 0)
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  try {
+    return await operation();
+  } finally {
+    Atomics.store(locks, slot, 0);
+    Atomics.notify(locks, slot);
+  }
+}
 
 /** Serialize architecture reads/writes in this service, including interrupted transaction recovery. */
 export async function withC4Lock<T>(root: string, operation: () => Promise<T>): Promise<T> {
   const previous = pending.get(root) ?? Promise.resolve();
-  const current = previous.catch(() => undefined).then(operation);
+  const current = previous.catch(() => undefined).then(() => locked(root, operation));
   pending.set(root, current);
   try {
     return await current;

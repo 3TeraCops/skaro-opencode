@@ -63,6 +63,10 @@
 
     {#if c.missing}
       <ProjectMissing {c} {relocate} {remove} />
+    {:else if c.unloaded}
+      <div class="ok" role="status">
+        <span class="fd-pulse"></span><span class="ms-name">{t('agent.state.checking')}</span>
+      </div>
     {:else}
       <div class="ok">
         {#if marks(c).length}
@@ -105,7 +109,7 @@
     {/if}
 
     <div class="foot">
-      <span class="activity">{ago(c.activeAt, clock.now)}</span>
+      <span class="activity">{c.unloaded ? '' : ago(c.activeAt, clock.now)}</span>
       {#if c.branch || c.missing}
         <span class="branch"><Icon name="branch" size={12} stroke={1.9} />{c.branch ?? '—'}</span>
       {/if}

@@ -11,13 +11,16 @@
   import './feed-layout.css';
   import './feed.css';
   import FeedRows from './FeedRows.svelte';
+  import PagedFeedRows from './PagedFeedRows.svelte';
+  import type { HistorySource } from '../../../shared/history';
   import FormCard from './FormCard.svelte';
   import LiveLine from './LiveLine.svelte';
   import LoginCard from './LoginCard.svelte';
   import MergeCard from './MergeCard.svelte';
   import PermissionCard from './PermissionCard.svelte';
   import PlanCard from './PlanCard.svelte';
-  import QuestionCard from './QuestionCard.svelte';
+  import { installHistoryCopy } from './history-copy.svelte';
+  import { useFeed } from './context.svelte';
 
   /**
    * The agent feed: rows, the live line and unanchored cards. Sticks to the bottom while the
@@ -27,12 +30,30 @@
     timeline,
     cwd,
     mergeMessage,
-  }: { timeline: TimelineState; cwd?: string; mergeMessage: string } = $props();
+    history,
+    historyPage,
+  }: {
+    timeline: TimelineState;
+    cwd?: string;
+    mergeMessage: string;
+    history?: HistorySource;
+    historyPage?: import('../../../shared/history').HistoryPage;
+  } = $props();
 
   const scroll = new FeedScroll();
   let activitySince = $state(Date.now());
 
-  const rows = $derived(feedRows(timeline));
+  const rows = $derived(
+    feedRows(
+      history
+        ? {
+            ...timeline,
+            items: timeline.items.filter((item) => (item as { localEcho?: boolean }).localEcho),
+          }
+        : timeline,
+    ),
+  );
+  installHistoryCopy(() => (history ? rows : undefined), useFeed());
   const waiting = $derived(
     new Set(
       timeline.interactions
@@ -70,12 +91,19 @@
 
   $effect(() => {
     void rows;
+    void history?.revision;
     void timeline.interactions;
     void timeline.activity;
     scroll.updated();
   });
 
-  const lastUser = $derived(rows.findLast((r) => r.type === 'user')?.id);
+  const lastUser = $derived(
+    history
+      ? timeline.items.findLast(
+          (item) => item.kind === 'message' && item.role === 'user' && !item.parentId,
+        )?.id
+      : rows.findLast((r) => r.type === 'user')?.id,
+  );
   $effect(() => scroll.userMessage(lastUser));
 </script>
 
@@ -83,7 +111,8 @@
   <div class="fade"></div>
   <div class="scroller" bind:this={scroll.scroller}>
     <div class="fd-feed" bind:this={scroll.content}>
-      <FeedRows {rows} {waiting} />
+      {#if history}<PagedFeedRows source={history} initial={historyPage} {waiting} />{/if}
+      {#if rows.length}<FeedRows {rows} {waiting} nested={!!history} />{/if}
       {#if showLive}
         <LiveLine {activity} environment={startingEnvironment} since={activitySince} {cwd} />
       {/if}
@@ -95,9 +124,7 @@
         </div>
       {/if}
       {#each timeline.interactions as interaction (interaction.id)}
-        {#if interaction.kind === 'question' && !interaction.itemId}
-          <QuestionCard {interaction} />
-        {:else if interaction.kind === 'plan_approval'}
+        {#if interaction.kind === 'plan_approval'}
           <PlanCard {interaction} />
         {:else if interaction.kind === 'form'}
           <FormCard {interaction} />

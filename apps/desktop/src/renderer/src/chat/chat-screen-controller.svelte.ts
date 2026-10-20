@@ -1,6 +1,6 @@
 import { t } from '@skaro/ui';
 import { onDestroy } from 'svelte';
-import { ChatList } from './session.svelte';
+import { ChatList } from './chat-list.svelte';
 import type { ChatScreenProps } from './chat-screen-props';
 export function createChatScreenController(p: ChatScreenProps) {
   const NEW_CHAT = 'new';
@@ -8,7 +8,6 @@ export function createChatScreenController(p: ChatScreenProps) {
   // The screen is keyed by project.
   // svelte-ignore state_referenced_locally
   const list = new ChatList(p.project.id);
-  void list.reload();
   onDestroy(() => list.dispose());
 
   let tab = $state<'active' | 'archive'>('active');
@@ -16,12 +15,14 @@ export function createChatScreenController(p: ChatScreenProps) {
   // First visit: the latest active chat, or the start screen when there is none.
   $effect(() => {
     if (list.loaded && p.chat === undefined) {
-      p.chat = list.chats.find((c) => !c.archived)?.id ?? NEW_CHAT;
+      p.chat = list.latest ?? NEW_CHAT;
     }
   });
 
-  const archivedCount = $derived(list.chats.filter((c) => c.archived).length);
-  const shown = $derived(list.chats.filter((c) => c.archived === (tab === 'archive')));
+  $effect(() => {
+    list.archived = tab === 'archive';
+  });
+  const archivedCount = $derived(list.archivedCount);
   const archiveTip = $derived(
     tab === 'archive'
       ? t('chat.archive.close')
@@ -47,9 +48,6 @@ export function createChatScreenController(p: ChatScreenProps) {
     },
     get archivedCount() {
       return archivedCount;
-    },
-    get shown() {
-      return shown;
     },
     get archiveTip() {
       return archiveTip;

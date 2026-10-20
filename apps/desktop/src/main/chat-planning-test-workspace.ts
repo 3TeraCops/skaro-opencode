@@ -11,11 +11,12 @@ import { Projects } from './projects';
 import { ChatEngine } from './chat-engine';
 import { LiveChat } from './chat-model';
 import { prepareFixtureArchitecture } from './c4-test-support';
+import { closeBackground } from './background/client';
 
 /** Only real storage/services. No HTTP listener, agent process, mocked API or agent session. */
 export async function planningWorkspace() {
   const root = await mkdtemp(join(tmpdir(), 'skaro-planning-'));
-  const state = new AppState(join(root, 'app.sqlite'));
+  const state = new AppState(join(root, 'skaro.db'));
   const db = state.db;
   const store = new ArtifactStore(join(root, 'project'));
   for (let i = 1; i <= 19; i++) await store.createMilestone({ title: `Этап ${i}` });
@@ -71,6 +72,7 @@ export async function planningWorkspace() {
         await finished(live.log);
       }
       projects.close();
+      await closeBackground();
       db.close();
       if (
         dirname(resolve(root)) !== resolve(tmpdir()) ||

@@ -3,13 +3,14 @@
 // positions. What a move does is decided by the caller (board-moves.ts).
 
 import { t } from '@skaro/ui';
+import { boardPointer } from './board-pointer';
 import type { TaskSummary } from '../../../shared/ipc';
 import type { ColumnKey } from './board-moves';
-import type { Column } from './model';
 
 export interface Drag {
   task: TaskSummary;
   from: ColumnKey;
+  originIndex: number;
   to: ColumnKey;
   /** Position in the target column without the dragged card. */
   index: number;
@@ -24,13 +25,14 @@ export interface Drag {
   y: number;
 }
 
-const THRESHOLD = 5;
 const EDGE = 40;
 const KEYS: ColumnKey[] = ['todo', 'working', 'review', 'done'];
 
 export function createBoardDrag(options: {
   root: () => HTMLElement | undefined;
-  columns: () => Column[];
+  reveal(key: ColumnKey, index: number): Promise<void> | undefined;
+  revealCard(id: string): Promise<void>;
+  columns: () => { key: ColumnKey; count: number }[];
   allowed: (task: TaskSummary, from: ColumnKey, to: ColumnKey) => boolean;
   ondrop: (task: TaskSummary, from: ColumnKey, to: ColumnKey, index: number) => void;
 }) {
@@ -39,24 +41,27 @@ export function createBoardDrag(options: {
   let live = $state('');
   let dropTimer: ReturnType<typeof setTimeout> | undefined;
   let frame = 0;
+  let revealFrame = 0;
+  let stopPointer: (() => void) | undefined;
 
   // A board that goes away mid-drag leaves no listeners or cursor behind.
   $effect(() => () => {
     window.removeEventListener('keydown', keys, { capture: true });
     clearTimeout(dropTimer);
+    stopPointer?.();
     end();
   });
 
-  const others = (key: ColumnKey, id: string): TaskSummary[] =>
-    options
-      .columns()
-      .find((c) => c.key === key)
-      ?.tasks.filter((x) => x.id !== id) ?? [];
+  const others = (key: ColumnKey): number =>
+    Math.max(
+      0,
+      (options.columns().find((col) => col.key === key)?.count ?? 0) - Number(drag?.from === key),
+    );
   const columnName = (key: ColumnKey): string => t(`board.col.${key}`);
   const short = (task: TaskSummary): string => task.id.replace(/^T-0*(\d+)$/, 'T$1');
 
   function announce(d: Drag): void {
-    const total = others(d.to, d.task.id).length + 1;
+    const total = others(d.to) + 1;
     live = d.allowed
       ? t('board.dnd.position', { column: columnName(d.to), n: d.index + 1, total })
       : t('board.dnd.forbidden', { column: columnName(d.to) });
@@ -72,11 +77,13 @@ export function createBoardDrag(options: {
     });
     if (!col) return undefined;
     const cards = [...col.querySelectorAll<HTMLElement>('[data-card]')];
-    let index = cards.length;
+    const position = (card: HTMLElement) =>
+      Number(card.closest<HTMLElement>('[data-task-index]')?.dataset['taskIndex'] ?? 0);
+    let index = cards.length ? position(cards.at(-1)!) + 1 : 0;
     for (let i = 0; i < cards.length; i++) {
       const r = cards[i]!.getBoundingClientRect();
       if (y < r.top + r.height / 2) {
-        index = i;
+        index = position(cards[i]!);
         break;
       }
     }
@@ -88,7 +95,14 @@ export function createBoardDrag(options: {
     const changed = d.to !== to || d.index !== index || d.allowed !== allowed;
     drag = { ...d, to, index, allowed };
     document.body.style.cursor = d.keyboard ? '' : allowed ? 'grabbing' : 'not-allowed';
-    if (changed && d.keyboard) announce(drag);
+    if (changed && d.keyboard) {
+      announce(drag);
+      cancelAnimationFrame(revealFrame);
+      revealFrame = requestAnimationFrame(() => {
+        const current = drag;
+        if (current?.keyboard) void options.reveal(current.to, current.index);
+      });
+    }
   }
 
   /** Near the top or bottom edge of a column the column scrolls. */
@@ -116,6 +130,7 @@ export function createBoardDrag(options: {
 
   function end(): void {
     cancelAnimationFrame(frame);
+    cancelAnimationFrame(revealFrame);
     document.body.style.cursor = '';
   }
 
@@ -150,72 +165,44 @@ export function createBoardDrag(options: {
   /** Pointer down on a card: a drag starts after 5px, a shorter press stays a click. */
   function down(task: TaskSummary, from: ColumnKey, e: PointerEvent): void {
     if (e.button !== 0 || drag) return;
-    const card = e.currentTarget as HTMLElement;
-    const r = card.getBoundingClientRect();
-    const sx = e.clientX;
-    const sy = e.clientY;
-    const index = indexOf(from, task);
-    let started = false;
-    const move = (ev: PointerEvent) => {
-      if (!started) {
-        if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < THRESHOLD) return;
-        started = true;
+    stopPointer?.();
+    const originIndex = Number(
+      (e.currentTarget as HTMLElement).closest<HTMLElement>('[data-task-index]')?.dataset[
+        'taskIndex'
+      ] ?? 0,
+    );
+    stopPointer = boardPointer(e, {
+      start: (r, sx, sy) => {
         drag = {
           task,
           from,
+          originIndex,
           to: from,
-          index,
+          index: originIndex,
           allowed: true,
           keyboard: false,
           w: r.width,
           h: r.height,
           ox: sx - r.left,
           oy: sy - r.top,
-          x: ev.clientX,
-          y: ev.clientY,
+          x: sx,
+          y: sy,
         };
         document.body.style.cursor = 'grabbing';
         frame = requestAnimationFrame(autoscroll);
-      }
-      const d = drag!;
-      drag = { ...d, x: ev.clientX, y: ev.clientY };
-      const h = hit(ev.clientX, ev.clientY);
-      if (h) retarget(drag, h.to, h.index);
-    };
-    const key = (ev: KeyboardEvent) => {
-      if (ev.key !== 'Escape' || !started) return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      stop();
-      cancel();
-    };
-    const up = () => {
-      stop();
-      if (!started) return;
-      // The click that ends a drag does not open the card under the pointer.
-      const swallow = (ev: MouseEvent) => ev.stopPropagation();
-      window.addEventListener('click', swallow, { capture: true, once: true });
-      setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 0);
-      if (drag) finish();
-    };
-    const stop = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      window.removeEventListener('pointercancel', up);
-      window.removeEventListener('keydown', key, { capture: true });
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', up);
-    window.addEventListener('keydown', key, { capture: true });
-  }
-
-  function indexOf(key: ColumnKey, task: TaskSummary): number {
-    const list = options.columns().find((c) => c.key === key)?.tasks ?? [];
-    return Math.max(
-      0,
-      list.findIndex((x) => x.id === task.id),
-    );
+      },
+      move: (event) => {
+        const d = drag;
+        if (!d) return;
+        drag = { ...d, x: event.clientX, y: event.clientY };
+        const target = hit(event.clientX, event.clientY);
+        if (target) retarget(drag, target.to, target.index);
+      },
+      finish: () => {
+        if (drag) finish();
+      },
+      cancel,
+    });
   }
 
   /** Keys while a card is taken from the keyboard: arrows move, Space or Enter put, Esc cancels. */
@@ -231,11 +218,11 @@ export function createBoardDrag(options: {
     if (e.key === ' ' || e.key === 'Enter') release(d.task.id, finish);
     else if (e.key === 'Escape') release(d.task.id, cancel);
     else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      const last = others(d.to, d.task.id).length;
+      const last = others(d.to);
       retarget(d, d.to, Math.max(0, Math.min(last, d.index + (e.key === 'ArrowUp' ? -1 : 1))));
     } else {
       const next = KEYS[KEYS.indexOf(d.to) + (e.key === 'ArrowLeft' ? -1 : 1)];
-      if (next) retarget(d, next, Math.min(d.index, others(next, d.task.id).length));
+      if (next) retarget(d, next, Math.min(d.index, others(next)));
     }
   }
 
@@ -243,7 +230,7 @@ export function createBoardDrag(options: {
   function release(id: string, done: () => void): void {
     window.removeEventListener('keydown', keys, { capture: true });
     done();
-    requestAnimationFrame(() =>
+    void options.revealCard(id).then(() =>
       options
         .root()
         ?.querySelector<HTMLElement>(`[data-card="${CSS.escape(id)}"]`)
@@ -255,11 +242,17 @@ export function createBoardDrag(options: {
   function keydown(task: TaskSummary, from: ColumnKey, e: KeyboardEvent): void {
     if (drag || e.key !== ' ') return;
     e.preventDefault();
+    const originIndex = Number(
+      (e.currentTarget as HTMLElement).closest<HTMLElement>('[data-task-index]')?.dataset[
+        'taskIndex'
+      ] ?? 0,
+    );
     drag = {
       task,
       from,
+      originIndex,
       to: from,
-      index: indexOf(from, task),
+      index: originIndex,
       allowed: true,
       keyboard: true,
       w: 0,

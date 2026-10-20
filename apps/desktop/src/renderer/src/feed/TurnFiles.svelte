@@ -15,6 +15,15 @@
   const feed = useFeed();
   /** The file shown in the diff window, if it is open. */
   let opened = $state<number | undefined>();
+  let root = $state<HTMLDivElement>();
+  $effect(() => {
+    root?.dispatchEvent(
+      new CustomEvent('feed-retain', {
+        bubbles: true,
+        detail: { id: 'file-diff-viewer', active: opened !== undefined },
+      }),
+    );
+  });
 
   const added = $derived(files.reduce((sum, f) => sum + (f.added ?? 0), 0));
   const removed = $derived(files.reduce((sum, f) => sum + (f.removed ?? 0), 0));
@@ -29,7 +38,7 @@
   <span class="chevron"><ChevronRight size={16} strokeWidth={2} /></span>
 {/snippet}
 
-<div class="fd-turn-files">
+<div class="fd-turn-files" bind:this={root}>
   <button type="button" class="line" onclick={() => (opened = 0)}>
     <span class="icon"><Icon name="diffSquare" size={14} stroke={2} /></span>
     <span class="name">{tn('feed.end.files', files.length)}</span>

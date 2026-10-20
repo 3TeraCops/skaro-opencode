@@ -16,7 +16,7 @@
     >
   </div>
   <Toolbar
-    tasks={state.all}
+    facets={state.facets}
     milestones={state.p.data.milestones}
     bind:filters={state.filters}
     bind:view={() => state.view, state.setView}

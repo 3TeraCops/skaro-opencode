@@ -1,5 +1,7 @@
 import type { Handlers } from './ipc';
 import type { Services } from './app-services';
+import { historyReads } from './history-read-service';
+import { clipboard } from 'electron';
 
 export function sessionHandlers({
   runs,
@@ -10,7 +12,15 @@ export function sessionHandlers({
   c4,
 }: Services): Pick<
   Handlers,
+  | 'history.changes'
+  | 'history.page'
+  | 'history.find'
+  | 'history.copy'
+  | 'c4.files'
+  | 'c4.file'
+  | 'c4.content'
   | 'c4.decide'
+  | keyof import('../shared/task-catalog').TaskCatalogMethods
   | 'tasks.list'
   | 'tasks.slots'
   | 'tasks.run'
@@ -25,6 +35,9 @@ export function sessionHandlers({
   | 'stages.run'
   | 'stages.stop'
   | 'docs.list'
+  | 'docs.catalog'
+  | 'docs.page'
+  | 'docs.lookup'
   | 'docs.read'
   | 'docs.write'
   | 'docs.create'
@@ -46,6 +59,7 @@ export function sessionHandlers({
   | 'task.revertMerge'
   | 'task.toggleCriterion'
   | 'chats.list'
+  | keyof import('../shared/chat-catalog').ChatCatalogMethods
   | 'chats.defaults'
   | 'chat.open'
   | 'chat.create'
@@ -57,8 +71,34 @@ export function sessionHandlers({
   | 'chat.proposal'
 > {
   return {
+    'history.changes': (source, start) => historyReads().changes(source, start),
+    'history.page': (source, start, limit) => historyReads().page(source, start, limit),
+    'history.find': (source, id) => historyReads().find(source, id),
+    'history.copy': async (source, pending) => {
+      await clipboard.writeText(await historyReads().copy(source, pending));
+    },
+    'c4.files': (projectId, itemId) => c4.files(projectId, itemId),
+    'c4.file': (projectId, itemId, path, side) => c4.file(projectId, itemId, path, side),
+    'c4.content': (projectId, itemId, side) => c4.content(projectId, itemId, side),
     'c4.decide': (projectId, itemId, action) => c4.decide(projectId, itemId, action),
     'tasks.list': (projectId) => runs.list(projectId),
+    'plan.catalog': (project) => runs.catalog.plan(project),
+    'plan.relations': (project, id) => runs.catalog.relations(project, id),
+    'plan.milestone': (project, id) => runs.catalog.milestone(project, id),
+    'plan.archiveGroup': async (project, milestone, archived) => {
+      await board.archive(
+        project,
+        await runs.catalog.groupIds(project, milestone, !archived),
+        archived,
+      );
+    },
+    'tasks.catalog': (projectId) => runs.catalog.sync(projectId),
+    'tasks.query': (projectId, query) => runs.catalog.query(projectId, query),
+    'tasks.page': (source, start) => runs.catalog.page(source, start),
+    'tasks.find': (source, id) => runs.catalog.find(source, id),
+    'tasks.select': (source) => runs.catalog.select(source),
+    'tasks.selected': (projectId, ids) => runs.catalog.selected(projectId, ids),
+    'tasks.reorder': (source, id, column, index) => runs.catalog.reorder(source, id, column, index),
     'tasks.slots': () => runs.slots(),
     'tasks.run': (projectId, ids, message, assignment) =>
       runs.launch(projectId, ids, message, assignment),
@@ -75,6 +115,9 @@ export function sessionHandlers({
     'stages.run': (projectId, stageId, message) => runs.runStage(projectId, stageId, message),
     'stages.stop': (projectId, stageId) => runs.stopStage(projectId, stageId),
     'docs.list': (projectId) => docs.list(projectId),
+    'docs.catalog': (projectId) => docs.catalog(projectId),
+    'docs.page': (projectId, kind, start) => docs.page(projectId, kind, start),
+    'docs.lookup': (projectId, key) => docs.lookup(projectId, key),
     'docs.read': (projectId, path) => docs.read(projectId, path),
     'docs.write': (projectId, path, text) => docs.write(projectId, path, text),
     'docs.create': (projectId, name) => docs.create(projectId, name),
@@ -87,9 +130,9 @@ export function sessionHandlers({
     'plan.reorder': (projectId, ids) => plan.reorder(projectId, ids),
     'plan.placeTask': (projectId, taskId, milestoneId, index) =>
       plan.placeTask(projectId, taskId, milestoneId, index),
-    'task.open': async (projectId, taskId) => {
+    'task.open': async (projectId, taskId, options) => {
       await c4.restore({ kind: 'task', projectId, taskId });
-      return runs.open(projectId, taskId);
+      return runs.open(projectId, taskId, options);
     },
     'task.send': (projectId, taskId, input) => runs.send(projectId, taskId, input),
     'task.respond': (projectId, taskId, id, answer) => runs.respond(projectId, taskId, id, answer),
@@ -102,10 +145,13 @@ export function sessionHandlers({
     'task.toggleCriterion': (projectId, taskId, index) =>
       runs.toggleCriterion(projectId, taskId, index),
     'chats.list': (projectId) => chats.list(projectId),
+    'chats.query': (projectId, archived) => chats.query(projectId, archived),
+    'chats.page': (source, start) => chats.page(source, start),
+    'chats.find': (source, id) => chats.find(source, id),
     'chats.defaults': (projectId) => chats.defaults(projectId),
-    'chat.open': async (projectId, chatId) => {
+    'chat.open': async (projectId, chatId, options) => {
       await c4.restore({ kind: 'project_chat', projectId, chatId });
-      return chats.open(projectId, chatId);
+      return chats.open(projectId, chatId, options);
     },
     'chat.create': (projectId, settings, input) => chats.create(projectId, settings, input),
     'chat.send': (projectId, chatId, input) => chats.send(projectId, chatId, input),

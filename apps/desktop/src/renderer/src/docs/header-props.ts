@@ -5,6 +5,7 @@ export type HeaderProps = {
   doc: DocEntry;
   now: number;
   /** Tasks that link to the specification. */
+  taskRange?: import('../tasks/range.svelte').TaskRangeState;
   tasks?: { id: string; title: string; status: TaskStatus }[];
   ondiscuss: () => void;
   onedit: () => void;

@@ -1,3 +1,4 @@
+import { assertQuestionsAnswered } from '@skaro/timeline';
 import type { SkaroScope, ToolResult } from '@skaro/mcp-server';
 import type { TaskRunEngine } from './task-run-engine';
 import type { ActiveRun } from './task-run-model';
@@ -22,5 +23,6 @@ export async function taskTool(
   const active = scope.taskId && ctx.active.get(key(scope.projectId, scope.taskId));
   if (!active || active.run.id !== scope.runId || active.switching)
     return { text: 'This session is no longer the current run of the task.', isError: true };
+  assertQuestionsAnswered(active.timeline.state);
   return trackRun(active, action);
 }

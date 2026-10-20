@@ -4,6 +4,7 @@ import { key } from './task-run-helpers';
 import type { ActiveRun } from './task-run-model';
 import type { TaskRunEngine } from './task-run-engine';
 import { readLedger, stageIdOf, writeLedger } from './task-stage';
+import { background } from './background/client';
 import { AUTO_MERGE_KEY } from '../shared/ipc';
 
 /** Milestones schedule tasks; they never create agent sessions or their own chats. */
@@ -83,6 +84,15 @@ export class TaskRunStages {
   }
 
   async list(projectId: string): Promise<StageInfo[]> {
+    if (this.ctx.deps.db.filePath !== ':memory:') {
+      this.ctx.project(projectId);
+      return background(
+        this.ctx.deps.dataDir,
+        'tasks.stages',
+        this.ctx.deps.db.filePath,
+        projectId,
+      );
+    }
     const artifacts = await this.ctx.project(projectId).load();
     const runtime = this.ctx.deps.db.getTaskRuntime(projectId);
     const awaiting = new Set(Object.keys(this.ctx.scheduling.awaiting(projectId)));

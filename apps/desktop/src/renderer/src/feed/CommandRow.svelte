@@ -2,6 +2,7 @@
   import type { FeedRow } from '@skaro/timeline';
   import { t } from '@skaro/ui';
   import ActionIcon from './ActionIcon.svelte';
+  import CommandOutput from './CommandOutput.svelte';
   import { commandState, commandTip } from './command-state';
   import { commandTail } from './command-tail';
   import { clock, useFeed } from './context.svelte';
@@ -16,11 +17,19 @@
 
   const feed = useFeed();
   const item = $derived(row.item);
-  let open = $state(false);
-  let full = $state(false);
+  // svelte-ignore state_referenced_locally
+  let open = $state(feed.rowState?.get(`open:${row.id}`) ?? false);
+  $effect(() => {
+    feed.rowState?.set(`open:${row.id}`, open);
+  });
+  // svelte-ignore state_referenced_locally
+  let full = $state(feed.rowState?.get(`full:${row.id}`) ?? false);
+  $effect(() => {
+    feed.rowState?.set(`full:${row.id}`, full);
+  });
 
   const running = $derived(item.status === 'running');
-  const output = $derived(item.output.replace(/\s+$/, ''));
+  const output = $derived(item.output.trimEnd());
   const excerpt = $derived(commandTail(output));
   const tail = $derived(full ? output : excerpt.text);
   const truncated = $derived(!full && excerpt.truncated);
@@ -75,9 +84,7 @@
   {#if open && expandable}
     <div class="fd-expanded">
       {#if output}
-        <div class="fd-output" class:full>
-          {tail}{#if running && item.outputLive}<span class="fd-cursor"></span>{/if}
-        </div>
+        <CommandOutput output={tail} {full} cursor={running && item.outputLive === true} />
       {/if}
       {#if truncated || full}
         <button type="button" class="fd-link-btn" onclick={() => (full = !full)}

@@ -11,7 +11,11 @@
 
   const feed = useFeed();
   const item = $derived(row.item);
-  let open = $state(false);
+  // svelte-ignore state_referenced_locally
+  let open = $state(feed.rowState?.get(`open:${row.id}`) ?? false);
+  $effect(() => {
+    feed.rowState?.set(`open:${row.id}`, open);
+  });
   const name = $derived(item.server ? `${item.server}.${item.name}` : item.name);
   const hint = $derived(summary(item.input));
   const images = $derived(item.images ?? []);

@@ -1,4 +1,7 @@
-import { isAsyncQuestion, asyncQuestionInput, type InteractionAnswer } from '@skaro/timeline';
+import { QuestionAnswers } from './question-answers';
+import { cancelOwnerMessages, CommandCancelled } from './owner-commands';
+import { withSkaroNote, assertQuestionsAnswered, validateQuestionAnswer } from '@skaro/timeline';
+import { isAsyncQuestion, type InteractionAnswer } from '@skaro/timeline';
 import type { MessageInput } from '../shared/ipc';
 import { withoutSecrets } from './session-log';
 import { key } from './task-run-helpers';
@@ -35,9 +38,17 @@ export class TaskRunMessages {
 
   /** Straight to the agent: only for a turn that holds its slot. */
   async deliver(active: ActiveRun, input: MessageInput): Promise<void> {
+    input = active.secrets.input(input);
+    assertQuestionsAnswered(active.timeline.state);
     const session = await this.ctx.sessions.attach(active);
-    if (active.timeline.state.status === 'idle') await session.send(input);
-    else await session.steer(input);
+    assertQuestionsAnswered(active.timeline.state);
+    if (input.commandId && this.ctx.deps.db.commands.get(input.commandId)?.state === 'cancelled')
+      throw new CommandCancelled();
+    const message = input.commandId
+      ? { ...input, text: withSkaroNote(`command_id: ${input.commandId}`, input.text) }
+      : input;
+    if (active.timeline.state.status === 'idle') await session.send(message);
+    else await session.steer(message);
   }
 
   async respond(
@@ -59,13 +70,21 @@ export class TaskRunMessages {
     answer: InteractionAnswer,
   ): Promise<void> {
     const interaction = active.timeline.state.interactions.find((i) => i.id === interactionId);
-    if (isAsyncQuestion(interaction)) {
-      await this.turn(active, asyncQuestionInput(interaction, answer));
-      this.ctx.history.skaroEvent(active, {
-        t: 'interaction.closed',
-        id: interactionId,
-        resolution: 'answered',
-      });
+    validateQuestionAnswer(interaction, answer);
+    if (interaction?.kind === 'question' && answer.kind === 'question')
+      active.secrets.remember(
+        interaction.questions.filter((q) => q.secret).flatMap((q) => answer.answers[q.id] ?? []),
+      );
+    if (
+      interaction?.kind === 'question' &&
+      (isAsyncQuestion(interaction) ||
+        !active.session ||
+        !active.timeline.state.turns.some((turn) => !turn.outcome))
+    ) {
+      const mailbox = new QuestionAnswers(this.ctx.deps.db, `active.${active.run.id}`);
+      mailbox.accept(interaction, answer, (event) => this.ctx.history.skaroEvent(active, event));
+      mailbox.queue('task.send', active.projectId, active.taskId, active.timeline.state);
+      return;
     } else {
       if (!active.session) throw new Error('The agent session has ended');
       const nativeId = active.run.previousRunId
@@ -91,6 +110,8 @@ export class TaskRunMessages {
   }
 
   async interrupt(projectId: string, taskId: string): Promise<void> {
+    cancelOwnerMessages(projectId, taskId);
+    this.ctx.startup.delivered(projectId, taskId);
     await this.ctx.integrations.controls.interrupt(projectId, taskId);
     const k = key(projectId, taskId);
     if (this.ctx.handoff.changing(this.ctx.active.get(k)))

@@ -6,7 +6,7 @@ import { SKARO_DIR, type ArtifactStore } from '@skaro/core';
 export function watchProjectArtifacts(
   root: string,
   store: ArtifactStore,
-  onChange: () => void,
+  onChange: (paths?: string[]) => void,
 ): () => void {
   let parent: FSWatcher | undefined;
   let stopArtifacts: (() => void) | undefined;
@@ -19,8 +19,8 @@ export function watchProjectArtifacts(
     if (closed) return;
     try {
       if (statSync(join(root, SKARO_DIR)).isDirectory()) {
-        stopArtifacts = store.watch(() => {
-          if (!closed) onChange();
+        stopArtifacts = store.watch((paths) => {
+          if (!closed) onChange(paths);
         });
       }
     } catch {

@@ -4,13 +4,18 @@ import { hasCode } from './new-project';
 import { chatInstructions, importInstructions } from './prompt';
 import { errorText } from './session-log';
 import { LiveChat } from './chat-model';
+import { closeSessionLog } from './close-session-log';
+import { TaskRunProcesses } from './task-run-processes';
+import { CommandCancelled } from './owner-commands';
 
 import type { ChatEngine } from './chat-engine';
 
 export class ChatSessions {
   private readonly ctx: ChatEngine;
+  private readonly processes: TaskRunProcesses;
   constructor(ctx: ChatEngine) {
     this.ctx = ctx;
+    this.processes = new TaskRunProcesses(ctx.deps.db);
   }
   // ── sessions ─────────────────────────────────────────────────────────────
 
@@ -22,8 +27,10 @@ export class ChatSessions {
 
   async startSession(live: LiveChat): Promise<AgentSession> {
     const { projectId, chat } = live;
+    await this.processes.stop(`chat.${chat.id}`);
     const context = this.ctx.project(projectId);
-    const artifacts = await context.load();
+    // Instructions use presence, ids and configuration; document bodies remain available to tools.
+    const artifacts = await context.summary();
     const agent = chat.agent as AgentId;
     await this.ctx.settings.ensureAgent(agent);
     const settings = await this.ctx.settings.withDefaults(
@@ -38,6 +45,7 @@ export class ChatSessions {
         : undefined;
     const adapter = this.ctx.deps.agents.adapter(agent);
     const resume = chat.nativeSessionId;
+    if (live.chat.archived) throw new CommandCancelled();
 
     const segment = live.segments++;
     this.ctx.history.writeLine(live, {
@@ -71,6 +79,8 @@ export class ChatSessions {
     try {
       session = await adapter.start({
         cwd: context.root,
+        processStarted: (pid, identity) =>
+          this.processes.started(`chat.${chat.id}`, pid, false, identity),
         ...(settings.model ? { model: settings.model } : {}),
         ...(settings.effort ? { effort: settings.effort } : {}),
         permissionMode: settings.permissionMode ?? 'ask',
@@ -90,13 +100,22 @@ export class ChatSessions {
         ...(resume ? { resume } : {}),
         raw: (line) =>
           this.ctx.history.writeLine(live, { ...line, ts: Date.now() - chat.createdAt }),
+        rawSerialized: (line) => this.ctx.history.writeLine(live, line),
+        rawScope: { startedAt: chat.createdAt },
+        secretValues: () => live.secrets.list(),
         context: this.ctx.deps.attachments.context(),
       });
     } catch (error) {
-      live.grant.revoke();
+      live.grant?.revoke();
       live.grant = undefined;
       if (resume) this.ctx.history.notice(live, 'session_lost', 'error', errorText(error));
       throw error;
+    }
+    if (live.chat.archived) {
+      await session.close();
+      live.grant?.revoke();
+      live.grant = undefined;
+      throw new CommandCancelled();
     }
     live.session = session;
     if (resume) this.ctx.history.notice(live, 'session_restored', 'info', '');
@@ -132,11 +151,12 @@ export class ChatSessions {
     live.grant?.revoke();
     live.grant = undefined;
     await session?.close().catch(() => undefined);
+    await this.processes.stop(`chat.${live.chat.id}`);
     this.ctx.history.flush(live);
   }
 
   async close(): Promise<void> {
     await Promise.all([...this.ctx.live.values()].map((l) => this.detach(l)));
-    for (const live of this.ctx.live.values()) live.log?.end();
+    await Promise.all([...this.ctx.live.values()].map((live) => closeSessionLog(live.log)));
   }
 }

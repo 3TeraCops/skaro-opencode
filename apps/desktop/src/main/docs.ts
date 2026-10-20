@@ -1,7 +1,6 @@
 // "Документы" (Documents mockup): brief, architecture, ADRs, specifications and free documents
 // in .skaro/.
 
-import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SKARO_DIR, type Adr, type AdrStatus, type Spec, type SpecStatus } from '@skaro/core';
 import type { DocEntry, DocRecord, Events, EventName } from '../shared/ipc';
@@ -21,73 +20,44 @@ export class Docs {
   constructor(deps: Deps) {
     this.deps = deps;
   }
+  catalog(projectId: string) {
+    return this.deps.projects.get(projectId).documentCatalog();
+  }
+  page(projectId: string, kind: import('../shared/document-catalog').DocumentKind, start: number) {
+    return this.deps.projects.get(projectId).documentPage(kind, start);
+  }
+  lookup(
+    projectId: string,
+    key: Parameters<import('../shared/document-catalog').DocumentCatalogMethods['docs.lookup']>[1],
+  ) {
+    return this.deps.projects.get(projectId).documentEntry(key);
+  }
 
+  /** Compatibility for explicit full-list consumers; normal navigation uses bounded pages. */
   async list(projectId: string): Promise<DocEntry[]> {
     const context = this.deps.projects.get(projectId);
-    const artifacts = await context.load();
-    const edited = async (path: string) =>
-      (await stat(join(context.root, path)).catch(() => undefined))?.mtimeMs ?? 0;
-    const entries: DocEntry[] = [];
-    for (const doc of [artifacts.brief, artifacts.architecture]) {
-      if (!doc) continue;
-      entries.push({
-        kind: doc.kind,
-        path: doc.path,
-        title: doc.title,
-        editedAt: await edited(doc.path),
-      });
-    }
-    for (const adr of artifacts.adrs) {
-      entries.push({
-        kind: 'adr',
-        path: adr.path,
-        title: adr.title,
-        editedAt: await edited(adr.path),
-        adr: record(adr),
-      });
-    }
-    for (const spec of artifacts.specs) {
-      entries.push({
-        kind: 'spec',
-        path: spec.path,
-        title: spec.title,
-        editedAt: await edited(spec.path),
-        spec: record(spec),
-      });
-    }
-    for (const doc of artifacts.docs) {
-      entries.push({
-        kind: 'doc',
-        path: doc.path,
-        title: doc.path.split('/').pop()!,
-        editedAt: await edited(doc.path),
-      });
-    }
+    const catalog = await context.documentCatalog();
+    const entries = [...catalog.fixed].sort(
+      (a, b) => Number(a.kind === 'architecture') - Number(b.kind === 'architecture'),
+    );
+    for (const kind of ['adr', 'spec', 'doc'] as const)
+      for (let start = 0; start < catalog.counts[kind]; start += 16)
+        entries.push(...(await context.documentPage(kind, start)));
     return entries;
   }
 
   async read(projectId: string, path: string): Promise<string> {
     const context = this.deps.projects.get(projectId);
-    context.invalidate();
-    const artifacts = await context.load();
-    const doc =
-      [artifacts.brief, artifacts.architecture, ...artifacts.docs].find((d) => d?.path === path) ??
-      artifacts.adrs.find((a) => a.path === path) ??
-      artifacts.specs.find((s) => s.path === path);
-    if (!doc) throw new Error(`unknown document ${path}`);
-    return doc.body;
+    this.inner(path);
+    if (!(await context.documentEntry({ path }))) throw new Error(`unknown document ${path}`);
+    return context.readDocument(path);
   }
 
   async write(projectId: string, path: string, text: string): Promise<void> {
     const context = this.deps.projects.get(projectId);
     const inner = this.inner(path);
-    const artifacts = /^(adr|specs)\//.test(inner) ? await context.load() : undefined;
-    const adr = artifacts?.adrs.find((a) => a.path === path);
-    const spec = artifacts?.specs.find((s) => s.path === path);
-    if (adr) await context.store.writeAdr(adr.id, text);
-    else if (spec) await context.store.writeSpec(spec.id, text);
-    else await context.store.writeDoc(inner, text);
-    this.changed(projectId);
+    await context.store.writeDocumentBody(inner, text);
+    this.changed(projectId, [inner]);
   }
 
   async create(projectId: string, name: string): Promise<DocEntry> {
@@ -114,12 +84,12 @@ export class Docs {
   }
 
   async setSpecStatus(projectId: string, specId: string, status: SpecStatus): Promise<void> {
-    await this.deps.projects.get(projectId).store.setSpecStatus(specId, status);
+    await this.deps.projects.get(projectId).store.setDocumentStatus('spec', specId, status);
     this.changed(projectId);
   }
 
   async setAdrStatus(projectId: string, adrId: string, status: AdrStatus): Promise<void> {
-    await this.deps.projects.get(projectId).store.setAdrStatus(adrId, status);
+    await this.deps.projects.get(projectId).store.setDocumentStatus('adr', adrId, status);
     this.changed(projectId);
   }
 
@@ -134,8 +104,8 @@ export class Docs {
     return path.slice(PREFIX.length);
   }
 
-  private changed(projectId: string): void {
-    this.deps.projects.get(projectId).invalidate();
+  private changed(projectId: string, paths?: string[]): void {
+    this.deps.projects.get(projectId).invalidate(paths);
     this.deps.emit('project.changed', { projectId });
   }
 }

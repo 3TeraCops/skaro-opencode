@@ -82,7 +82,13 @@
   </div>
 
   {#if controller.timeline && controller.started}
-    <Feed timeline={controller.timeline} cwd={projectPath} mergeMessage="" />
+    <Feed
+      timeline={controller.timeline}
+      history={controller.view?.history}
+      historyPage={controller.view?.historyPage}
+      cwd={projectPath}
+      mergeMessage=""
+    />
   {:else if controller.running || (controller.view && !controller.archived)}
     <!-- The first message is on its way: the agent is starting. -->
     <div class="empty"><span class="fd-pulse"></span></div>
@@ -95,14 +101,16 @@
       onprefill={(text) => controls?.prefill(text)}
     />
   {:else}
-    <div class="empty"></div>
+    <div class="empty" role="status" aria-label={t('agent.state.checking')}>
+      <span class="fd-pulse"></span>
+    </div>
   {/if}
 
   <ChatControls bind:this={controls} {controller} {projectId} {chatId} {agents} />
 </div>
 
 {#if changedPanel.open}
-  <ChatChangedPanel timeline={controller.timeline} />
+  <ChatChangedPanel timeline={controller.timeline} history={controller.view?.history} />
 {/if}
 
 <ImageViewer bind:src={controller.viewer} />

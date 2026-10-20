@@ -8,9 +8,6 @@ export function createTreeController(p: TreePropsContext) {
   let menu = $state(false);
   let foot: HTMLDivElement | undefined = $state();
 
-  const adrs = $derived(p.docs.entries.filter((d) => d.kind === 'adr'));
-  const specs = $derived(p.docs.entries.filter((d) => d.kind === 'spec'));
-
   $effect(() => {
     if (!menu) return;
     const outside = (e: PointerEvent) => {
@@ -26,7 +23,6 @@ export function createTreeController(p: TreePropsContext) {
       window.removeEventListener('keydown', esc);
     };
   });
-  const free = $derived(p.docs.entries.filter((d) => d.kind === 'doc'));
   const fixed = $derived(p.docs.all.slice(0, 2));
 
   function resize(e: MouseEvent): void {
@@ -88,13 +84,13 @@ export function createTreeController(p: TreePropsContext) {
       foot = value;
     },
     get adrs() {
-      return adrs;
+      return p.docs.catalog.counts.adr;
     },
     get specs() {
-      return specs;
+      return p.docs.catalog.counts.spec;
     },
     get free() {
-      return free;
+      return p.docs.catalog.counts.doc;
     },
     get fixed() {
       return fixed;

@@ -1,6 +1,7 @@
 // Domain: projects, milestones, tasks, statuses, .skaro/ artifacts.
 export * from './artifacts/model.ts';
 export * from './artifacts/frontmatter.ts';
+export { toTask, toAdr, toSpec, toMilestone } from './artifacts/conversion.ts';
 export * from './artifacts/slug.ts';
 export * from './artifacts/store.ts';
 export { readEnvironment } from './artifacts/environment.ts';

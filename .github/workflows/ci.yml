@@ -25,10 +25,14 @@ jobs:
           cache: pnpm
       # The agent probe pulls pinned agent binaries (~300 MB); CI does not need it.
       - run: pnpm install --frozen-lockfile --filter '!@skaro/agent-probe'
+      - name: Install pinned Electron runtime before parallel tests
+        run: pnpm --filter @skaro/desktop exec node -e "require('electron')"
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm -r --parallel --filter '!@skaro/agent-probe' typecheck
       # Unit tests and adapter golden tests (fixtures/golden) run as Vitest projects.
+      - name: Build real background workers for storage integration tests
+        run: pnpm build
       - run: pnpm test
 
   build:

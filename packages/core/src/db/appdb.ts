@@ -1,3 +1,7 @@
+import { DbCollections } from './collections.ts';
+import { DbProjectShell } from './project-shell.ts';
+import { DbCommands } from './commands.ts';
+export type { OwnerCommand } from './commands.ts';
 // Public application database API; persistence is composed by table responsibility.
 import { DatabaseSync } from 'node:sqlite';
 import { MIGRATIONS } from './migrations.ts';
@@ -23,6 +27,10 @@ import { DbEvents } from './events.ts';
 import { DbInteractions } from './interactions.ts';
 
 export class AppDb extends DbTable {
+  readonly commands: DbCommands;
+  readonly collections: DbCollections;
+  readonly shell: DbProjectShell;
+  readonly filePath: string;
   private readonly projects: DbProjects;
   private readonly settings: DbSettings;
   private readonly runtime: DbRuntime;
@@ -32,8 +40,12 @@ export class AppDb extends DbTable {
   private readonly events: DbEvents;
   private readonly interactions: DbInteractions;
 
-  private constructor(db: DatabaseSync, now: () => number) {
+  private constructor(db: DatabaseSync, now: () => number, filePath: string) {
     super(db, now);
+    this.filePath = filePath;
+    this.commands = new DbCommands(db, now);
+    this.collections = new DbCollections(db, now);
+    this.shell = new DbProjectShell(db, now);
     this.projects = new DbProjects(db, now);
     this.settings = new DbSettings(db, now);
     this.runtime = new DbRuntime(db, now);
@@ -44,10 +56,16 @@ export class AppDb extends DbTable {
     this.interactions = new DbInteractions(db, now);
   }
 
+  static readOnly(path: string): AppDb {
+    const db = new DatabaseSync(path, { readOnly: true });
+    db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=5000;');
+    return new AppDb(db, Date.now, path);
+  }
+
   /** Opens (and migrates) the database; `:memory:` for tests. */
   static open(path: string, now: () => number = Date.now): AppDb {
     const db = new DatabaseSync(path);
-    db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+    db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout=5000;');
     const version = Number(
       (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version,
     );
@@ -62,7 +80,7 @@ export class AppDb extends DbTable {
         throw error;
       }
     }
-    return new AppDb(db, now);
+    return new AppDb(db, now, path);
   }
 
   close(): void {
@@ -159,6 +177,10 @@ export class AppDb extends DbTable {
     input: Omit<RunRecord, 'id' | 'startedAt' | 'endedAt' | 'outcome' | 'nativeSessionId'>,
   ): RunRecord {
     return this.runs.createRun(input);
+  }
+
+  latestRun(projectId: string, taskId: string): RunRecord | undefined {
+    return this.runs.latest(projectId, taskId);
   }
 
   getRun(id: string): RunRecord | undefined {

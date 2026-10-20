@@ -1,7 +1,7 @@
 import { mount, unmount } from 'svelte';
 
 /** Mount typed C4 attachments in sanitized Markdown; dispose on every text change. */
-export function mountC4(root: HTMLElement): () => void {
+export function mountC4(root: ParentNode): () => void {
   let disposed = false;
   const components: ReturnType<typeof mount>[] = [];
   const blocks = [...root.querySelectorAll<HTMLElement>('.md-c4')];

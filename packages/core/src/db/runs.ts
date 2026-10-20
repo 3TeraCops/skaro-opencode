@@ -66,6 +66,16 @@ export class DbRuns extends DbTable {
     }
   }
 
+  latest(projectId: string, taskId: string): RunRecord | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM runs WHERE project_id=? AND task_id=? AND retired_at IS NULL
+      ORDER BY started_at DESC,rowid DESC LIMIT 1`,
+      )
+      .get(projectId, taskId) as Row | undefined;
+    return row ? toRun(row) : undefined;
+  }
+
   getRun(id: string): RunRecord | undefined {
     const row = this.db.prepare('SELECT * FROM runs WHERE id = ?').get(id) as Row | undefined;
     return row && toRun(row);

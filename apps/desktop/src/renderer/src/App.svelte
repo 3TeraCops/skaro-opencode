@@ -3,7 +3,7 @@
   import { agents } from './agents.svelte';
   import Home from './screens/Home.svelte';
   import NewProjectModal from './screens/NewProjectModal.svelte';
-  import Inventory from './screens/Inventory.svelte';
+  const loadInventory = () => import('./screens/Inventory.svelte');
   import Project from './screens/Project.svelte';
   import Settings from './screens/Settings.svelte';
   import TitleBar from './TitleBar.svelte';
@@ -55,7 +55,7 @@
     {:else}
       <main class="page">
         {#if nav.view === 'inventory'}
-          <Inventory />
+          {#await loadInventory() then { default: Inventory }}<Inventory />{/await}
         {:else}
           <Home
             projects={nav.projects}

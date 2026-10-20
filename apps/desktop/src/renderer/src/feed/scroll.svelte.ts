@@ -1,4 +1,5 @@
 import { tick } from 'svelte';
+import { layoutFrame } from '../layout-frame';
 
 /** Follow layout changes until the user deliberately scrolls back through the feed. */
 export class FeedScroll {
@@ -10,6 +11,7 @@ export class FeedScroll {
   private lastTop = 0;
   private resumeOnScroll = false;
   private bottomRequested = false;
+  private cancelFollow?: () => void;
 
   constructor() {
     $effect(() => {
@@ -21,6 +23,7 @@ export class FeedScroll {
       observer.observe(scroller);
       scroller.addEventListener('scroll', this.onscroll);
       scroller.addEventListener('scrollend', this.onscrollend);
+      scroller.addEventListener('feed-reveal', this.reading);
       scroller.addEventListener('wheel', this.onwheel, { passive: true });
       scroller.addEventListener('keydown', this.onkeydown);
       scroller.addEventListener('pointerdown', this.onpointerdown);
@@ -30,9 +33,12 @@ export class FeedScroll {
       const frame = requestAnimationFrame(this.follow);
       return () => {
         cancelAnimationFrame(frame);
+        this.cancelFollow?.();
+        this.cancelFollow = undefined;
         observer.disconnect();
         scroller.removeEventListener('scroll', this.onscroll);
         scroller.removeEventListener('scrollend', this.onscrollend);
+        scroller.removeEventListener('feed-reveal', this.reading);
         scroller.removeEventListener('wheel', this.onwheel);
         scroller.removeEventListener('keydown', this.onkeydown);
         scroller.removeEventListener('pointerdown', this.onpointerdown);
@@ -43,10 +49,17 @@ export class FeedScroll {
   }
 
   follow = (): void => {
-    if (this.scroller && this.atBottom) {
-      this.scroller.scrollTop = this.scroller.scrollHeight;
-      this.lastTop = this.scroller.scrollTop;
-    }
+    if (this.cancelFollow || !this.atBottom) return;
+    this.cancelFollow = layoutFrame(() => {
+      this.cancelFollow = undefined;
+      const el = this.scroller;
+      if (!el || !this.atBottom) return;
+      const bottom = Math.max(0, el.scrollHeight - el.clientHeight);
+      return () => {
+        el.scrollTop = bottom;
+        this.lastTop = bottom;
+      };
+    });
   };
 
   updated(): void {
@@ -57,6 +70,12 @@ export class FeedScroll {
     if (this.seenUser !== undefined && id !== this.seenUser) this.atBottom = true;
     this.seenUser = id;
   }
+
+  reading = (): void => {
+    this.atBottom = false;
+    this.resumeOnScroll = false;
+    this.bottomRequested = false;
+  };
 
   onscroll = (): void => {
     const el = this.scroller;
@@ -70,7 +89,7 @@ export class FeedScroll {
     // Scroll events also come from layout/anchoring and our own scrollTop assignments.
     // Only input handlers below suspend following; loading history must not do that.
     if (this.atBottom && distance > 2) this.follow();
-    this.lastTop = el.scrollTop;
+    this.lastTop = top;
   };
 
   onwheel = (event: WheelEvent): void => {

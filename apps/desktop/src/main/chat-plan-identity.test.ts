@@ -63,7 +63,7 @@ it('migrates 28 applied plain refs into a 75-task saved plan and creates only 47
     w.live.log!.end();
     await finished(w.live.log!);
     w.live.log = undefined;
-    const db = AppDb.open(join(w.root, 'app.sqlite'));
+    const db = AppDb.open(join(w.root, 'skaro.db'));
     const reopened = new ChatEngine({ ...w.engine.deps, db });
     try {
       await reopened.views.open(w.live.projectId, w.live.chat.id);

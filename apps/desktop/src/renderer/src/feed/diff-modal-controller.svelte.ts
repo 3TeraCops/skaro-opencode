@@ -3,8 +3,7 @@
 import type { TurnFile } from '@skaro/timeline';
 import { t } from '@skaro/ui';
 import type { FileDiff } from '../../../shared/ipc';
-import { highlightDiff, type Segment } from './diff-highlight';
-import { diffCounts, numberedDiffLines } from './diff-model';
+import { createDiffProjection } from './diff-projection.svelte';
 
 const CODE =
   /\.(c|cc|cjs|cpp|cs|css|go|h|hpp|html|java|js|json|jsx|kt|mjs|php|py|rb|rs|scss|sh|sql|swift|ts|tsx)$/i;
@@ -18,6 +17,7 @@ export function createDiffModalController(options: {
   start: () => number;
   /** The file's current changes in the working folder ("Обновить"). */
   load: (path: string) => Promise<FileDiff>;
+  onerror: (error: string) => void;
 }) {
   // svelte-ignore state_referenced_locally
   let index = $state(options.start());
@@ -26,7 +26,6 @@ export function createDiffModalController(options: {
   let refreshing = $state(false);
   /** Refreshed diffs by path; the turn's own diff until "Обновить". */
   let fresh = $state<Record<string, FileDiff>>({});
-  let colors = $state<(Segment[] | undefined)[] | undefined>();
 
   const file = $derived(options.files()[index]!);
   const refreshed = $derived(fresh[file.path]);
@@ -36,29 +35,18 @@ export function createDiffModalController(options: {
     if (refreshed.status === 'deleted') return 'delete' as const;
     return file.change === 'move' ? ('move' as const) : ('update' as const);
   });
-  const lines = $derived(
-    numberedDiffLines(refreshed ? (refreshed.diff ? [refreshed.diff] : []) : file.diffs, change),
+  const document = createDiffProjection(
+    () => ({
+      diffs: refreshed ? (refreshed.diff ? [refreshed.diff] : []) : file.diffs,
+      change,
+      path: file.movePath ?? file.path,
+    }),
+    options.onerror,
   );
   const counts = $derived.by(() => {
     if (!refreshed && (file.added !== undefined || file.removed !== undefined))
       return { added: file.added ?? 0, removed: file.removed ?? 0 };
-    return diffCounts(lines);
-  });
-
-  // Colours arrive after the lines; a newer file or diff replaces older colours.
-  $effect(() => {
-    const current = lines;
-    const path = file.movePath ?? file.path;
-    colors = undefined;
-    let stale = false;
-    void highlightDiff(path, current)
-      .then((result) => {
-        if (!stale) colors = result;
-      })
-      .catch(() => undefined);
-    return () => {
-      stale = true;
-    };
+    return document.projection?.counts ?? { added: 0, removed: 0 };
   });
 
   function go(next: number): void {
@@ -91,10 +79,16 @@ export function createDiffModalController(options: {
       return change;
     },
     get lines() {
-      return lines;
+      return document.projection?.lines;
     },
     get colors() {
-      return colors;
+      return document.colors;
+    },
+    get width() {
+      return document.projection?.width ?? 0;
+    },
+    get revision() {
+      return document.revision;
     },
     get counts() {
       return counts;

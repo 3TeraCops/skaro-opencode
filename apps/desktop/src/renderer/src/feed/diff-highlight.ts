@@ -11,8 +11,6 @@ export interface Segment {
 }
 
 const THEME = 'skaro-diff';
-/** Beyond this many lines a diff stays plain: colouring would stall the window. */
-const MAX_LINES = 4000;
 
 let core: Promise<HighlighterCore> | undefined;
 let langs: Promise<typeof import('shiki/langs')> | undefined;
@@ -51,14 +49,13 @@ function segments(tokens: ThemedToken[] | undefined): Segment[] | undefined {
 
 /**
  * Colours for the code lines of a diff, by line index; undefined when the language is unknown or
- * the diff is too big. The old side (context and removed lines) and the new side (context and
+ * no grammar is available. The old side (context and removed lines) and the new side (context and
  * added lines) are coloured as two texts, so each keeps its grammar state across lines.
  */
 export async function highlightDiff(
   path: string,
   lines: NumberedLine[],
 ): Promise<(Segment[] | undefined)[] | undefined> {
-  if (lines.length > MAX_LINES) return undefined;
   const lang = await languageOf(path);
   if (!lang) return undefined;
   const hl = await highlighter();

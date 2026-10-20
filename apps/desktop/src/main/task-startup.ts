@@ -21,7 +21,10 @@ export class TaskStartup {
   }
   begin(project: string, task: string, inputs: MessageInput[]): MessageInput[] {
     const saved = this.read(project, task);
-    const combined = [...(saved?.inputs ?? []), ...inputs];
+    const combined = [...(saved?.inputs ?? [])];
+    for (const input of inputs)
+      if (!input.commandId || !combined.some((existing) => existing.commandId === input.commandId))
+        combined.push(input);
     this.db.setSetting(this.key(project, task), {
       inputs: combined,
       error: undefined,

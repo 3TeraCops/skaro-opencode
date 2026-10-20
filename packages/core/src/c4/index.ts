@@ -8,3 +8,4 @@ export * from './project.ts';
 export * from './package.ts';
 export * from './transaction.ts';
 export { withC4Lock } from './io.ts';
+export { configureC4Locks } from './io.ts';

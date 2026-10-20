@@ -1,14 +1,9 @@
+import { restoreHistory } from './restore-history';
 import { join } from 'node:path';
 import type { RunRecord } from '@skaro/core';
-import {
-  continuationTimeline,
-  countSegments,
-  replayRunLog,
-  runEvent,
-  Timeline,
-} from '@skaro/timeline';
+import { continuationTimeline, Timeline } from '@skaro/timeline';
 import type { TaskRunDeps } from './task-run-model';
-import { projectorFor, readRunLog } from './session-log';
+import { scopeTimeline } from '../shared/task-timeline';
 
 /** Follow explicit predecessors only: unrelated historical runs are not part of this chat. */
 export async function loadTaskHistory(deps: TaskRunDeps, run: RunRecord) {
@@ -30,20 +25,31 @@ export async function loadTaskHistory(deps: TaskRunDeps, run: RunRecord) {
   let segments = 0;
   for (const entry of chain) {
     if (entry.previousRunId) timeline = continuationTimeline(timeline.state);
-    const lines = await readRunLog(
+    const restored = await restoreHistory(
+      deps.dataDir,
       join(deps.dataDir, entry.logPath),
+      entry.startedAt,
+      entry.agent,
+      entry.projectId,
       entry.id !== run.id || !!entry.nativeSessionId,
     );
-    const events = replayRunLog(
-      lines,
-      entry.startedAt,
-      projectorFor(entry.agent),
-      (image) => deps.attachments.save(image),
-      (event) => (entry.previousRunId ? runEvent(event, entry.id) : event),
-    );
-    for (const event of events) timeline.apply(event);
-    seq += events.length;
-    segments = countSegments(lines);
+    if (entry.previousRunId) {
+      const scoped = Timeline.restore(scopeTimeline(restored.timeline.state, entry.id));
+      timeline.state.items.push(...scoped.state.items);
+      timeline.state.turns.push(...scoped.state.turns);
+      timeline.state.interactions.push(...scoped.state.interactions);
+      Object.assign(timeline.state, {
+        session: restored.timeline.state.session,
+        status: scoped.state.status,
+        usage: restored.timeline.state.usage,
+        activity: restored.timeline.state.activity,
+        limits: restored.timeline.state.limits,
+        plan: restored.timeline.state.plan,
+      });
+      timeline = Timeline.restore(timeline.state);
+    } else timeline = restored.timeline;
+    seq += restored.seq;
+    segments = restored.segments;
   }
   return { timeline, seq, segments };
 }

@@ -1,9 +1,11 @@
+import { OwnerCommands } from './owner-commands';
+import { closeNativeSessions } from './native/client';
 import { app, BrowserWindow, protocol } from 'electron';
 import { join } from 'node:path';
 import type { EventName, Events } from '../shared/ipc';
-import { registerHandlers, sendEvent } from './ipc';
+import { registerHandlers, sendEvent, type Handlers } from './ipc';
+import { closeBackground } from './background/client';
 import { AppState } from './state';
-import { createServices } from './app-services';
 import { createMainWindow, focusWindow, mainWindow, setWindowState } from './app-window';
 import { registerMedia } from './app-media';
 import { appHandlers } from './app-handlers';
@@ -12,6 +14,8 @@ import { fileHandlers } from './file-handlers';
 import { createUpdates } from './update-service';
 import type { UpdateActivity } from './update-activity';
 import { trace } from './trace';
+import { HistoryReads, setHistoryReads } from './history-read-service';
+import { registerProjectLogos } from './app-logo';
 trace(`main loaded, pid ${process.pid}`);
 // Tests run against their own data dir.
 if (process.env['SKARO_USER_DATA']) {
@@ -24,12 +28,20 @@ app.setName('Skaro');
 // Images in the feed: attachments and project images, never arbitrary files.
 protocol.registerSchemesAsPrivileged([
   { scheme: 'skaro-media', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  { scheme: 'skaro-logo', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
 let state: AppState | undefined;
+let historyReads: HistoryReads | undefined;
 let updateActivity: UpdateActivity | undefined;
+let overview: import('./project-overview').ProjectOverview | undefined;
+let taskRuns: import('./tasks').TaskRuns | undefined;
 function emit<E extends EventName>(event: E, payload: Events[E]): void {
+  historyReads?.observe(event, payload);
   updateActivity?.observe(event, payload);
+  overview?.observe(event, payload);
+  if (event === 'project.changed' || event === 'task.changed')
+    taskRuns?.projectChanged((payload as { projectId: string }).projectId);
   const window = mainWindow();
   if (window) sendEvent(window.webContents, event, payload);
 }
@@ -47,30 +59,79 @@ if (!locked) {
   void app.whenReady().then(async () => {
     trace('app ready');
     const dataDir = app.getPath('userData');
+    trace('opening app state');
     const appState = new AppState(join(dataDir, 'skaro.db'));
+    trace('app state ready');
     state = appState;
+    registerProjectLogos(appState);
+    historyReads = new HistoryReads(dataDir, emit);
+    setHistoryReads(historyReads);
     setWindowState(appState);
-    const services = await createServices(appState, dataDir, emit);
+    let resolveHandlers!: (handlers: Handlers) => void;
+    let rejectHandlers!: (error: unknown) => void;
+    const ready = new Promise<Handlers>((resolve, reject) => {
+      resolveHandlers = resolve;
+      rejectHandlers = reject;
+    });
+    registerHandlers(
+      new Proxy({} as Handlers, {
+        get:
+          (_target, method: string) =>
+          (...args: unknown[]) =>
+            ready.then((handlers) => {
+              const handler = handlers[method as keyof Handlers] as (
+                ...values: unknown[]
+              ) => unknown;
+              return handler(...args);
+            }),
+      }),
+      (sender) => sender === mainWindow()?.webContents,
+    );
+    createMainWindow();
+    // Services and the renderer are independent: history requests must not wait for first paint.
+    const { createServices } = await import('./app-services');
+    const services = await createServices(appState, dataDir, emit).catch((error: unknown) => {
+      rejectHandlers(error);
+      throw error;
+    });
     const { runs, chats, mcp, projects, ci } = services;
+    appState.chatCatalogOverlay = (page) => chats.liveRows(page);
+    overview = services.overview;
+    taskRuns = services.runs;
     const result = await createUpdates({ ...services, emit });
     updateActivity = result.activity;
     const updates = result.updates;
     if (updates.canRunAgents()) void services.agents.refresh();
     const picked = new Set<string>();
     registerMedia(services, picked);
-    registerHandlers(
-      {
-        ...appHandlers(services, updates, mainWindow, emit),
-        ...sessionHandlers(services),
-        ...fileHandlers(services, mainWindow, picked),
-      },
-      (sender) => sender === mainWindow()?.webContents,
-      (method, action) => result.activity.invoke(method, action),
+    const commands = new OwnerCommands(appState.db, (command) => emit('command.changed', command));
+    const handlers = {
+      ...appHandlers(services, updates, mainWindow, emit),
+      ...sessionHandlers(services),
+      ...fileHandlers(services, mainWindow, picked),
+    };
+    commands.start(handlers);
+    const acceptedHandlers = {
+      ...handlers,
+      'chat.send': (project: string, owner: string, input: import('../shared/ipc').MessageInput) =>
+        commands.accept('chat.send', project, owner, input),
+      'task.send': (project: string, owner: string, input: import('../shared/ipc').MessageInput) =>
+        commands.accept('task.send', project, owner, input),
+    };
+    resolveHandlers(
+      new Proxy(acceptedHandlers, {
+        get: (target, method: keyof Handlers) => {
+          if (!Object.hasOwn(target, method)) return undefined;
+          return (...args: unknown[]) =>
+            result.activity.invoke(method, () => {
+              const handler = target[method] as (...values: unknown[]) => unknown;
+              return handler(...args);
+            });
+        },
+      }),
     );
     updates.start();
     trace('handlers registered');
-
-    createMainWindow();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
@@ -84,12 +145,16 @@ if (!locked) {
       updates.stop();
       event.preventDefault();
       // Agent processes and the MCP server stop before the app does.
-      void ci
-        .close()
+      void closeNativeSessions()
+        .then(() => commands.close())
+        .then(() => ci.close())
         .then(() => Promise.allSettled([runs.close(), chats.close(), mcp.close()]))
         .then(() => {
           trace('runs and mcp server closed');
           projects.close();
+          return historyReads?.close().then(() => closeBackground());
+        })
+        .then(() => {
           app.quit();
         });
     });

@@ -120,7 +120,8 @@ it('separates runtime approvals from owner decisions in tasks, chats and imports
     expect(text).toContain('Actually call the structured question tool');
     expect(text).toContain('submit_result does not create a question card');
     expect(text).toContain('without a successful tool invocation');
-    expect(text).toContain('wait for its answer before completing dependent work');
+    expect(text).toContain('suspend this session until every question has been answered');
+    expect(text).toContain('wait for its complete answer before performing any further task work');
     expect(text).toContain('A selected answer does not itself change settings or start services');
   }
 });

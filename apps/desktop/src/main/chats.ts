@@ -12,6 +12,7 @@ import type {
   WriteDocArgs,
 } from '@skaro/mcp-server';
 import { type InteractionAnswer, type Item } from '@skaro/timeline';
+import { assertQuestionsAnswered } from '@skaro/timeline';
 import type {
   ChatSettings,
   ChatSummary,
@@ -22,12 +23,18 @@ import type {
   ProposalAction,
 } from '../shared/ipc';
 import type { Deps } from './chat-model';
+import type { ChatRange } from '../shared/chat-catalog';
+import { background } from './background/client';
 
 import { ChatEngine } from './chat-engine';
 export { titleOf } from './chat-settings-helpers';
 export { projectContextText } from './chat-context-text';
 
 export class ChatSessions implements ProjectToolHandlers {
+  assertMayWork(chatId: string): void {
+    const live = this.engine.live.get(chatId);
+    if (live) assertQuestionsAnswered(live.timeline.state);
+  }
   async architectureEvent(
     scope: SkaroScope,
     item: Extract<Item, { kind: 'proposal' }>,
@@ -37,7 +44,12 @@ export class ChatSessions implements ProjectToolHandlers {
     const previous = live.timeline.state.items.find((i) => i.id === item.id);
     if (
       previous?.kind === 'proposal' &&
-      JSON.stringify({ ...previous, turnId: '' }) === JSON.stringify({ ...item, turnId: '' })
+      previous.proposal.type === 'architecture' &&
+      item.proposal.type === 'architecture' &&
+      previous.proposal.packageId === item.proposal.packageId &&
+      previous.state === item.state &&
+      previous.result?.error === item.result?.error &&
+      previous.proposal.contentRef === item.proposal.contentRef
     )
       return;
     this.engine.history.skaroEvent(live, {
@@ -61,11 +73,38 @@ export class ChatSessions implements ProjectToolHandlers {
   list(projectId: string): ChatSummary[] {
     return this.engine.views.list(projectId);
   }
+  liveRows<T extends { chats: ChatSummary[] }>(page: T): T {
+    return {
+      ...page,
+      chats: page.chats.map((chat) => ({
+        ...chat,
+        live:
+          this.engine.live.get(chat.id)?.timeline.state.status !== undefined &&
+          this.engine.live.get(chat.id)?.timeline.state.status !== 'idle',
+      })),
+    };
+  }
+  async query(projectId: string, archived: boolean) {
+    return this.liveRows(
+      await background(this.engine.deps.dataDir, 'chats.query', projectId, archived),
+    );
+  }
+  async page(source: ChatRange, start: number) {
+    return this.liveRows(await background(this.engine.deps.dataDir, 'chats.page', source, start));
+  }
+  find(source: ChatRange, id: string) {
+    return background(this.engine.deps.dataDir, 'chats.find', source, id);
+  }
+  busy(): boolean {
+    for (const chat of this.engine.live.values())
+      if (chat.timeline.state.status !== 'idle') return true;
+    return false;
+  }
   async defaults(projectId: string): Promise<ChatSettings> {
     return this.engine.views.defaults(projectId);
   }
-  async open(projectId: string, chatId: string): Promise<ChatView> {
-    return this.engine.views.open(projectId, chatId);
+  async open(projectId: string, chatId: string, options?: { paged: boolean }): Promise<ChatView> {
+    return this.engine.views.open(projectId, chatId, options);
   }
   async create(
     projectId: string,

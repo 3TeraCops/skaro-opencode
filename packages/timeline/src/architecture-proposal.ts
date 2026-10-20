@@ -9,4 +9,11 @@ export interface ArchitectureProposal {
   task?: { id: string; runId: string };
   before: string;
   after: string;
+  /** Full immutable package is loaded only by the viewer/domain, never with every feed snapshot. */
+  contentRef?: string;
+  preview?: {
+    added: number;
+    removed: number;
+    lines: ({ gap: true } | { op: '+' | '-' | ' '; text: string })[];
+  };
 }

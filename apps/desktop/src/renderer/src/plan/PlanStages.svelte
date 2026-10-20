@@ -1,7 +1,7 @@
 <script lang="ts">
   import StageCard from './StageCard.svelte';
   import TaskRow from './TaskRow.svelte';
-  import { canArchive, canDelete, type Stage } from './model';
+  import { canArchive, type Stage } from './model';
   import type { PlanController } from './plan-controller.svelte';
   let { model }: { model: PlanController } = $props();
 
@@ -19,7 +19,7 @@
       : undefined,
   );
   const ghostTask = $derived(
-    drag && !drag.keyboard && drag.kind === 'task' ? model.byId.get(drag.id) : undefined,
+    drag && !drag.keyboard && drag.kind === 'task' ? drag.task : undefined,
   );
 </script>
 
@@ -29,18 +29,20 @@
       <div data-plan-screen class="slot" style="height: {drag?.h || 56}px"><span></span></div>
     {/if}
     <StageCard
+      bind:this={model.views[stage.milestone.id]}
       {stage}
+      projectId={model.p.projectId}
+      data={model.p.data}
       archived={model.archiveView}
       open={!!model.openMap?.[stage.milestone.id]}
       hovered={model.hovered}
       up={model.rel.up}
       down={model.rel.down}
-      byId={model.byId}
       {drag}
       dropped={model.dnd.dropped}
       now={model.now}
       canArchive={canArchive(stage)}
-      canDelete={canDelete(stage.milestone.id, model.p.data.tasks)}
+      canDelete={stage.canDelete}
       info={model.archiveView ? undefined : model.info(stage.milestone.id)}
       slotsFree={model.p.data.slotsFree}
       onrun={(action) => model.run(stage.milestone.id, action)}
@@ -70,11 +72,12 @@
     >
       <StageCard
         stage={ghostStage}
+        projectId={model.p.projectId}
+        data={model.p.data}
         ghost
         open={false}
         up={model.rel.up}
         down={model.rel.down}
-        byId={model.byId}
         now={model.now}
         canArchive={false}
         canDelete={false}
@@ -93,7 +96,7 @@
       class="ghost"
       style="left: {drag.x - drag.ox}px; top: {drag.y - drag.oy}px; width: {drag.w}px"
     >
-      <TaskRow task={ghostTask} byId={model.byId} now={model.now} ghost />
+      <TaskRow task={ghostTask} dependencies={drag.dependencies} now={model.now} ghost />
     </div>
   {/if}
   <div data-plan-screen class="live" aria-live="assertive">{model.dnd.live}</div>

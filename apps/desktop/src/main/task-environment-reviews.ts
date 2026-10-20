@@ -142,7 +142,7 @@ export class TaskEnvironmentReviews {
         throw new Error('This task is already completed.');
       await this.ctx.environments.start(review.environment, {
         signal: review.controller.signal,
-        processStarted: (pid) => this.ctx.processes.started(review.id, pid, true),
+        processStarted: (pid) => this.ctx.processes.startedAsync(review.id, pid, true),
         assertActive: () => {
           if (review.cancelled) throw new Error('Environment review cancelled.');
         },

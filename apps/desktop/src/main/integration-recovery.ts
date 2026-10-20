@@ -1,11 +1,12 @@
+import { projectRecords } from './project-records';
 import type { TaskRunEngine } from './task-run-engine';
 import { errorText } from './session-log';
 
 /** Resume preserved startup requests, including the known pre-session dependency failure. */
 export async function recoverIntegrationStarts(ctx: TaskRunEngine): Promise<void> {
-  for (const project of ctx.deps.db.listProjects()) {
+  for await (const project of projectRecords(ctx.deps.db)) {
     try {
-      const artifacts = await ctx.project(project.id).load();
+      const artifacts = await ctx.project(project.id).summary();
       const runtime = ctx.deps.db.getTaskRuntime(project.id);
       for (const task of artifacts.tasks) {
         // Prior versions marked an accepted result as failed: a turn broken after it, its merge.

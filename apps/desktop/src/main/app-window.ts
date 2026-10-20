@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, shell } from 'electron';
+import { app, BrowserWindow, screen, shell, ipcMain } from 'electron';
 import { join } from 'node:path';
 import { windowIcon } from './app-icon';
 import { sendEvent } from './ipc';
@@ -37,6 +37,18 @@ function savedBounds(): Bounds {
 }
 
 export function createMainWindow(): void {
+  const locale = app.getLocale();
+  // Capture the first bounded viewport before background services initialize read models.
+  const initial = state?.bootstrap(locale);
+  let first = true;
+  ipcMain.removeHandler('skaro:bootstrap');
+  ipcMain.handle('skaro:bootstrap', (event) => {
+    // A renderer reload must restore the current workspace, not the window's creation snapshot.
+    if (event.sender !== win?.webContents) return;
+    const snapshot = first ? initial : state?.bootstrap(locale);
+    first = false;
+    return snapshot;
+  });
   const bounds = savedBounds();
   trace('bounds read');
   const mac = process.platform === 'darwin';

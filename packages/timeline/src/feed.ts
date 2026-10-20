@@ -1,3 +1,6 @@
+import { withoutSkaroNote } from './feed-input.ts';
+export { withSkaroNote, withoutSkaroNote } from './feed-input.ts';
+import { fileRow, mergeFile, turnEnd } from './feed-turns.ts';
 // Feed rows: how the timeline is shown (agent-output.md 5, "Лента агента" mockup). Pure and
 // agent-agnostic: the same rows for Claude Code and Codex.
 
@@ -77,16 +80,6 @@ function hidden(item: Item): boolean {
  * Skaro puts the user's decisions on proposals in front of the next message for the agent
  * (agent-output.md 5.4); the feed shows the message as the user wrote it.
  */
-const SKARO_NOTE = /^<skaro-note>[\s\S]*?<\/skaro-note>\s*/;
-
-export function withSkaroNote(note: string, text: string): string {
-  return note.trim() ? `<skaro-note>\n${note.trim()}\n</skaro-note>\n\n${text}` : text;
-}
-
-export function withoutSkaroNote(text: string): string {
-  return text.replace(SKARO_NOTE, '');
-}
-
 function isUserImage(item: Item): item is Of<'image'> {
   return item.kind === 'image' && item.native.type.startsWith('user');
 }
@@ -94,160 +87,128 @@ function isUserImage(item: Item): item is Of<'image'> {
 /** Rows of the main feed (or of one subagent when `parentId` is given). */
 export function feedRows(state: TimelineState, parentId?: string): FeedRow[] {
   const { items: history, cardAnswers } = questionHistory(state.items);
-  const items = history.filter((i) => i.parentId === parentId && !hidden(i));
-  const rows: FeedRow[] = [];
-  const turnEnds = new Map<string, TurnState>();
-  for (const turn of state.turns) if (turn.outcome) turnEnds.set(turn.id, turn);
-  const lastItemOfTurn = new Map<string, number>();
-  items.forEach((item, index) => lastItemOfTurn.set(item.turnId, index));
-
-  items.forEach((item, index) => {
-    const prev = rows.at(-1);
-    switch (item.kind) {
-      case 'message':
-        if (item.role === 'user') {
-          const text = cardAnswers.get(item.id) ?? withoutSkaroNote(item.text);
-          rows.push({
-            type: 'user',
-            id: item.id,
-            item: text === item.text ? item : { ...item, text },
-            images: [],
-            ...(cardAnswers.has(item.id) ? { hidden: true } : {}),
-          });
-        } else {
-          const question = state.interactions.find(
-            (i) => isAsyncQuestion(i) && i.itemId === item.id,
-          );
-          if (isAsyncQuestion(question))
-            rows.push({ type: 'question', id: item.id, item, interaction: question });
-          else rows.push({ type: 'agent', id: item.id, item, final: item.phase === 'final' });
-        }
-        break;
-      case 'image':
-        if (isUserImage(item) && prev?.type === 'user') prev.images.push(item);
-        else rows.push({ type: 'image', id: item.id, item });
-        break;
-      case 'explore':
-        if (prev?.type === 'explore') prev.items.push(item);
-        else rows.push({ type: 'explore', id: item.id, items: [item] });
-        break;
-      case 'file_change':
-        for (const file of item.files) {
-          const last = rows.at(-1);
-          if (last?.type === 'file' && last.path === file.path && file.change === 'update') {
-            mergeFile(last, file, item);
-          } else {
-            rows.push(fileRow(file, item));
-          }
-        }
-        break;
-      case 'task':
-        {
-          const children = feedRows(state, item.id);
-          rows.push({
-            type: 'task',
-            id: item.id,
-            item,
-            children,
-            actions: item.actions ?? state.items.filter((i) => i.parentId === item.id).length,
-          });
-        }
-        break;
-      case 'reasoning':
-        // Only the live "Думает…" line; a finished "Думал 12 с" carries nothing (owner's call).
-        if (item.status === 'running') rows.push({ type: 'reasoning', id: item.id, item });
-        break;
-      case 'command':
-        rows.push({ type: 'command', id: item.id, item });
-        break;
-      case 'tool':
-        rows.push({ type: 'tool', id: item.id, item });
-        break;
-      case 'notice':
-        // «Контекст сжат» says it happened: a compaction still running or failed is no divider.
-        if (item.code !== 'compaction' || item.status === 'done')
-          rows.push({ type: 'notice', id: item.id, item });
-        break;
-      case 'unknown':
-        rows.push({ type: 'unknown', id: item.id, item });
-        break;
-      case 'proposal':
-        rows.push({ type: 'proposal', id: item.id, item });
-        break;
-      case 'import_prep':
-        rows.push({ type: 'import_prep', id: item.id, item });
-        break;
-      case 'decision':
-        // Permissions show on the row they were about; the rest get a summary line.
-        if (!(item.interaction.kind === 'approval' && item.interaction.itemId)) {
-          rows.push({ type: 'decision', id: item.id, item });
-        }
-        break;
-    }
-    const turn = turnEnds.get(item.turnId);
-    if (parentId === undefined && turn && lastItemOfTurn.get(item.turnId) === index) {
-      rows.push(
-        turnEnd(
-          turn,
-          items.filter((i) => i.turnId === turn.id),
-        ),
-      );
-    }
-  });
-  return rows;
-}
-
-function fileRow(file: FileChange, item: Of<'file_change'>): FileRow {
-  return {
-    type: 'file',
-    id: `${item.id}:${file.path}`,
-    path: file.path,
-    change: file.change,
-    ...(file.movePath ? { movePath: file.movePath } : {}),
-    ...(file.added !== undefined ? { added: file.added } : {}),
-    ...(file.removed !== undefined ? { removed: file.removed } : {}),
-    diffs: file.diff ? [file.diff] : [],
-    status: item.status,
-    items: [item],
-  };
-}
-
-function mergeFile(row: FileRow, file: FileChange, item: Of<'file_change'>): void {
-  if (file.added !== undefined) row.added = (row.added ?? 0) + file.added;
-  if (file.removed !== undefined) row.removed = (row.removed ?? 0) + file.removed;
-  if (file.diff) row.diffs.push(file.diff);
-  row.items.push(item);
-  // The row shows the latest state: a pending or failed edit wins over earlier done ones.
-  row.status = item.status;
-}
-
-function turnEnd(turn: TurnState, items: Item[]): FeedRow {
-  let start = Infinity;
-  let end = 0;
-  const files = new Map<string, TurnFile>();
-  for (const item of items) {
-    start = Math.min(start, item.startedAt);
-    end = Math.max(end, item.endedAt ?? item.startedAt);
-    if (item.kind === 'file_change' && item.status === 'done') {
-      for (const f of item.files) {
-        const file: TurnFile = files.get(f.path) ?? { path: f.path, change: f.change, diffs: [] };
-        if (file.change !== 'add' || f.change === 'delete') file.change = f.change;
-        if (f.movePath) file.movePath = f.movePath;
-        if (f.added !== undefined) file.added = (file.added ?? 0) + f.added;
-        if (f.removed !== undefined) file.removed = (file.removed ?? 0) + f.removed;
-        if (f.diff) file.diffs.push(f.diff);
-        files.set(f.path, file);
-      }
+  const byParent = new Map<string | undefined, Item[]>();
+  const byTurn = new Map<string, Item[]>();
+  const questions = new Map(state.interactions.filter(isAsyncQuestion).map((i) => [i.itemId, i]));
+  const itemTurns = new Map(state.items.map((item) => [item.id, item.turnId]));
+  const waitingTurns = new Set(
+    state.interactions
+      .filter((i) => i.kind === 'question')
+      .map(
+        (i) =>
+          ('itemId' in i && i.itemId ? itemTurns.get(i.itemId) : undefined) ??
+          state.turns.at(-1)?.id,
+      ),
+  );
+  for (const item of history) {
+    if (hidden(item)) continue;
+    const siblings = byParent.get(item.parentId) ?? [];
+    siblings.push(item);
+    byParent.set(item.parentId, siblings);
+    if (!item.parentId) {
+      const turn = byTurn.get(item.turnId) ?? [];
+      turn.push(item);
+      byTurn.set(item.turnId, turn);
     }
   }
-  return {
-    type: 'turn_end',
-    id: `end:${turn.id}`,
-    turn,
-    durationMs: Number.isFinite(start) ? Math.max(0, end - start) : 0,
-    files: [...files.values()],
-    ...(turn.usage ? { tokens: turn.usage.inputTokens + turn.usage.outputTokens } : {}),
-  };
+  return rowsFor(parentId);
+  function rowsFor(parentId?: string): FeedRow[] {
+    const items = byParent.get(parentId) ?? [];
+    const rows: FeedRow[] = [];
+    const turnEnds = new Map<string, TurnState>();
+    for (const turn of state.turns)
+      if (turn.outcome && !waitingTurns.has(turn.id)) turnEnds.set(turn.id, turn);
+    const lastItemOfTurn = new Map<string, number>();
+    items.forEach((item, index) => lastItemOfTurn.set(item.turnId, index));
+
+    items.forEach((item, index) => {
+      const prev = rows.at(-1);
+      switch (item.kind) {
+        case 'message':
+          if (item.role === 'user') {
+            const text = cardAnswers.get(item.id) ?? withoutSkaroNote(item.text);
+            rows.push({
+              type: 'user',
+              id: item.id,
+              item: text === item.text ? item : { ...item, text },
+              images: [],
+              ...(cardAnswers.has(item.id) ? { hidden: true } : {}),
+            });
+          } else {
+            const question = questions.get(item.id);
+            if (isAsyncQuestion(question))
+              rows.push({ type: 'question', id: item.id, item, interaction: question });
+            else rows.push({ type: 'agent', id: item.id, item, final: item.phase === 'final' });
+          }
+          break;
+        case 'image':
+          if (isUserImage(item) && prev?.type === 'user') prev.images.push(item);
+          else rows.push({ type: 'image', id: item.id, item });
+          break;
+        case 'explore':
+          if (prev?.type === 'explore') prev.items.push(item);
+          else rows.push({ type: 'explore', id: item.id, items: [item] });
+          break;
+        case 'file_change':
+          for (const file of item.files) {
+            const last = rows.at(-1);
+            if (last?.type === 'file' && last.path === file.path && file.change === 'update') {
+              mergeFile(last, file, item);
+            } else {
+              rows.push(fileRow(file, item));
+            }
+          }
+          break;
+        case 'task':
+          {
+            const children = rowsFor(item.id);
+            rows.push({
+              type: 'task',
+              id: item.id,
+              item,
+              children,
+              actions: item.actions ?? byParent.get(item.id)?.length ?? 0,
+            });
+          }
+          break;
+        case 'reasoning':
+          // Only the live "Думает…" line; a finished "Думал 12 с" carries nothing (owner's call).
+          if (item.status === 'running') rows.push({ type: 'reasoning', id: item.id, item });
+          break;
+        case 'command':
+          rows.push({ type: 'command', id: item.id, item });
+          break;
+        case 'tool':
+          rows.push({ type: 'tool', id: item.id, item });
+          break;
+        case 'notice':
+          // «Контекст сжат» says it happened: a compaction still running or failed is no divider.
+          if (item.code !== 'compaction' || item.status === 'done')
+            rows.push({ type: 'notice', id: item.id, item });
+          break;
+        case 'unknown':
+          rows.push({ type: 'unknown', id: item.id, item });
+          break;
+        case 'proposal':
+          rows.push({ type: 'proposal', id: item.id, item });
+          break;
+        case 'import_prep':
+          rows.push({ type: 'import_prep', id: item.id, item });
+          break;
+        case 'decision':
+          // Permissions show on the row they were about; the rest get a summary line.
+          if (!(item.interaction.kind === 'approval' && item.interaction.itemId)) {
+            rows.push({ type: 'decision', id: item.id, item });
+          }
+          break;
+      }
+      const turn = turnEnds.get(item.turnId);
+      if (parentId === undefined && turn && lastItemOfTurn.get(item.turnId) === index) {
+        rows.push(turnEnd(turn, byTurn.get(turn.id) ?? []));
+      }
+    });
+    return rows;
+  }
 }
 
 /** Permission decisions by the item they were about: "разрешено" / "запрещено" (mockup 4f). */

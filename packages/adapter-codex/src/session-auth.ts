@@ -3,13 +3,19 @@ import type { AgentErrorCategory } from '@skaro/timeline';
 /** Shared by the adapter's sessions; a successful login invalidates existing processes. */
 export class CodexAuthRevision {
   private value = 0;
+  private readonly shared?: Int32Array;
+
+  constructor(buffer?: SharedArrayBuffer) {
+    if (buffer) this.shared = new Int32Array(buffer);
+  }
 
   get current(): number {
-    return this.value;
+    return this.shared ? Atomics.load(this.shared, 0) : this.value;
   }
 
   signedIn(): void {
-    this.value++;
+    if (this.shared) Atomics.add(this.shared, 0, 1);
+    else this.value++;
   }
 }
 

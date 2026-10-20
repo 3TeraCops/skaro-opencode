@@ -3,7 +3,6 @@
   import { t } from '@skaro/ui';
   import ActionIcon from './ActionIcon.svelte';
   import DiffLines from './DiffLines.svelte';
-  import { fileDiffLines } from './diff-model';
   import { useFeed } from './context.svelte';
   import { displayPath } from './format';
 
@@ -11,7 +10,11 @@
   let { row, waiting = false }: { row: FileRow; waiting?: boolean } = $props();
 
   const feed = useFeed();
-  let open = $state(false);
+  // svelte-ignore state_referenced_locally
+  let open = $state(feed.rowState?.get(`open:${row.id}`) ?? false);
+  $effect(() => {
+    feed.rowState?.set(`open:${row.id}`, open);
+  });
 
   const path = $derived(displayPath(row.path, feed.cwd));
   const label = $derived(
@@ -23,8 +26,6 @@
   const failed = $derived(row.status === 'failed');
   const pending = $derived(waiting || row.status === 'queued');
   const hasDiff = $derived(row.diffs.some((d) => d.trim()));
-
-  const lines = $derived(fileDiffLines(row));
 
   const tip = $derived(
     pending
@@ -80,7 +81,7 @@
   </button>
   {#if open && hasDiff}
     <div class="fd-expanded">
-      <DiffLines {lines} />
+      <DiffLines {row} />
     </div>
   {/if}
 </div>

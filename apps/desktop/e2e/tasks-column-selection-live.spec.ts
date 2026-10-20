@@ -64,6 +64,17 @@ test('column selection follows visible tasks and preserves selection in other co
     await expect(cards.locator('[role="checkbox"][aria-checked="true"]')).toHaveCount(count);
     await otherAll.click();
     await expect(otherAll).toBeChecked();
+    // Two real UI actions before the worker response: the later single-card intent must win.
+    await first.evaluate(async (column) => {
+      (column.querySelector('.head [role="checkbox"]') as HTMLElement).click();
+      await Promise.resolve();
+      (column.querySelector('[data-card] [role="checkbox"]') as HTMLElement).click();
+    });
+    await expect(cards.locator('[role="checkbox"][aria-checked="true"]')).toHaveCount(1);
+    await expect(all).not.toBeChecked();
+    await expect(otherAll).toBeChecked();
+    await all.click();
+    await expect(cards.locator('[role="checkbox"][aria-checked="true"]')).toHaveCount(count);
     await cards.first().getByRole('checkbox').click();
     await expect(all).not.toBeChecked();
     await all.click();

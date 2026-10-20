@@ -4,21 +4,26 @@
   import { tocPanel } from '../side-panels.svelte';
   import DocArticle from './DocArticle.svelte';
   import type { Block, Heading } from './render';
+  import type { DocumentProjection } from './projection.svelte';
 
   /**
    * A scrolling document page: the article and "На странице" beside it (Documents mockup), shown
    * by the button at the top right.
    */
   let {
-    blocks,
-    headings,
+    blocks = [],
+    headings = [],
+    projection,
+    copyText,
     editing = false,
     header,
     empty,
     onlink,
   }: {
-    blocks: Block[];
-    headings: Heading[];
+    blocks?: Block[];
+    headings?: Heading[];
+    projection?: DocumentProjection;
+    copyText?: () => string;
     /** The preview of the editor: tighter padding, no table of contents. */
     editing?: boolean;
     header?: Snippet;
@@ -28,9 +33,11 @@
 
   let root: HTMLDivElement | undefined = $state();
   let active = $state<string | undefined>();
+  let article = $state<DocArticle>();
+  const outline = $derived(projection?.view?.headings ?? headings);
 
-  const current = $derived(active ?? headings[0]?.hid);
-  const toc = $derived(!editing && headings.length >= 3);
+  const current = $derived(active ?? outline[0]?.hid);
+  const toc = $derived(!editing && outline.length >= 3);
 
   export function top(): void {
     root?.scrollTo({ top: 0 });
@@ -48,7 +55,9 @@
     if (cur) active = cur;
   }
 
-  function go(hid: string): void {
+  async function go(hid: string): Promise<void> {
+    const position = outline.find((heading) => heading.hid === hid)?.position;
+    if (projection && position !== undefined) await article?.reveal(position);
     const target = root?.querySelector<HTMLElement>(`[data-hid="${hid}"]`);
     if (target) root?.scrollTo({ top: Math.max(0, target.offsetTop - 24), behavior: 'smooth' });
     active = hid;
@@ -65,14 +74,16 @@
       <div data-doc-page class="wrap" class:editing>
         <article data-doc-page>
           {@render header?.()}
-          <DocArticle {blocks} {onlink} />
-          {#if editing && !blocks.length}<span data-doc-page class="blank">{t('docs.blank')}</span
+          <DocArticle bind:this={article} {blocks} {projection} {copyText} {onlink} />
+          {#if editing && !(projection?.view?.count ?? blocks.length)}<span
+              data-doc-page
+              class="blank">{t('docs.blank')}</span
             >{/if}
         </article>
         {#if toc && tocPanel.open}
           <nav data-doc-page>
             <span data-doc-page class="toc-title">{t('docs.toc')}</span>
-            {#each headings as h (h.hid)}
+            {#each outline as h (h.hid)}
               <div
                 data-doc-page
                 class="toc-item"

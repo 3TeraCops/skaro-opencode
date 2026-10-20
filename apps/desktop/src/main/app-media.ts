@@ -2,14 +2,16 @@ import { net, protocol } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { within, readImage } from './files';
+import { projectRecords } from './project-records';
 import type { Services } from './app-services';
 
 export function registerMedia({ attachments, dataDir, db }: Services, picked: Set<string>): void {
-  const imageAllowed = (abs: string) =>
-    picked.has(abs) ||
-    within(attachments.dir, abs) ||
-    within(join(dataDir, 'worktrees'), abs) ||
-    db.listProjects().some((p) => within(p.path, abs));
+  const imageAllowed = async (abs: string): Promise<boolean> => {
+    if (picked.has(abs) || within(attachments.dir, abs) || within(join(dataDir, 'worktrees'), abs))
+      return true;
+    for await (const project of projectRecords(db)) if (within(project.path, abs)) return true;
+    return false;
+  };
 
   protocol.handle('skaro-media', async (request) => {
     const url = new URL(request.url);

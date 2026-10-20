@@ -3,3 +3,4 @@ export * from './projector.ts';
 export * from './rpc.ts';
 export * from './session.ts';
 export * from './adapter.ts';
+export { CodexAuthRevision } from './session-auth.ts';

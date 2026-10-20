@@ -1,13 +1,16 @@
 import { t, tn } from '@skaro/ui';
-import type { TaskAssignment } from '../../../shared/ipc';
-import { applyFilters, needsYou, type BulkAction, type Filters } from './model';
+import type { TaskAssignment, TaskSummary } from '../../../shared/ipc';
+import { type BulkAction, type Filters } from './model';
+import { TaskRangeState } from './range.svelte';
+import { TaskSelection } from './task-selection.svelte';
 import type { TasksProps } from './tasks-props';
-import { selectTasks } from './selection';
+import type { TaskRange } from '../../../shared/task-catalog';
 
 export function createTasksController(p: TasksProps) {
   let view = $state<'board' | 'list'>('board');
   let filters = $state<Filters>({ query: '', milestones: [], statuses: [], agents: [] });
-  let selected = $state<string[]>([]);
+  const selection = new TaskSelection(p.projectId, p.data);
+  const list = new TaskRangeState(p.data, () => ({ ...filters, kind: 'list' }));
   /** "Выбрать несколько": cards show checkboxes and a click selects instead of opening. */
   let selecting = $state(false);
   let dialog = $state<Exclude<BulkAction, 'run'> | undefined>();
@@ -24,41 +27,32 @@ export function createTasksController(p: TasksProps) {
       .then((v) => (view = v === 'list' ? 'list' : 'board'));
   });
 
-  const all = $derived(p.data.tasks.filter((x) => !x.archived));
-  const shown = $derived(applyFilters(all, filters));
-  const picked = $derived(all.filter((x) => selected.includes(x.id)));
+  const picked = $derived(selection.picked);
+  const facets = $derived(p.data.catalog?.facets);
   const subtitle = $derived(
     [
-      tn('board.count', all.length),
-      tn('board.running', all.filter((x) => x.status === 'in_progress').length),
-      tn('board.waiting', all.filter(needsYou).length),
+      tn('board.count', facets?.total ?? 0),
+      tn('board.running', facets?.working ?? 0),
+      tn('board.waiting', facets?.attention ?? 0),
     ].join(' · '),
   );
-
-  // Tasks that left the board (deleted, archived) leave the selection too.
-  $effect(() => {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- Local membership index, rebuilt on every effect.
-    const ids = new Set(all.map((x) => x.id));
-    if (selected.some((id) => !ids.has(id))) selected = selected.filter((id) => ids.has(id));
-  });
 
   function setView(next: 'board' | 'list'): void {
     view = next;
     void window.skaro.invoke('app.setSetting', `tasks.${p.projectId}.view`, next);
   }
 
-  function select(id: string, on: boolean): void {
-    selectMany([id], on);
+  function select(id: string, on: boolean, task?: TaskSummary): void {
+    selection.select(id, on, task);
   }
-
-  function selectMany(ids: string[], on: boolean): void {
-    selected = selectTasks(selected, ids, on);
+  function selectColumn(source: TaskRange, on: boolean): void {
+    void selection.column(source, on);
   }
 
   /** Leaving the mode drops the selection: without checkboxes there is nothing to show it. */
   function toggleSelecting(): void {
     selecting = !selecting;
-    if (!selecting) selected = [];
+    if (!selecting) selection.clear();
   }
 
   /** "Запустить" starts at once, each task with its own agent and model; the rest ask first. */
@@ -72,7 +66,7 @@ export function createTasksController(p: TasksProps) {
     await run().catch(() => undefined);
   }
 
-  const ids = () => $state.snapshot(selected);
+  const ids = () => $state.snapshot(selection.ids);
 
   function bulk(milestone?: string): Promise<void> {
     const kind = dialog;
@@ -82,14 +76,14 @@ export function createTasksController(p: TasksProps) {
       if (kind === 'unblock') await window.skaro.invoke('tasks.unblock', p.projectId, ids());
       if (kind === 'move' && milestone)
         await window.skaro.invoke('tasks.move', p.projectId, ids(), milestone);
-      if (kind === 'delete' || kind === 'archive') selected = [];
+      if (kind === 'delete' || kind === 'archive') selection.clear();
     });
   }
 
   function run(): Promise<void> {
     return act(async () => {
-      await window.skaro.invoke('tasks.run', p.projectId, ids(), t('task.start.message'));
-      selected = [];
+      await p.data.run(ids(), t('task.start.message'));
+      selection.clear();
     });
   }
 
@@ -112,10 +106,11 @@ export function createTasksController(p: TasksProps) {
       filters = value;
     },
     get selected() {
-      return selected;
+      return selection.ids;
     },
-    set selected(value: typeof selected) {
-      selected = value;
+    set selected(value: string[]) {
+      if (value.length) selection.ids = value;
+      else selection.clear();
     },
     get selecting() {
       return selecting;
@@ -129,11 +124,10 @@ export function createTasksController(p: TasksProps) {
     get now() {
       return now;
     },
-    get all() {
-      return all;
-    },
-    get shown() {
-      return shown;
+    list,
+    selection,
+    get facets() {
+      return facets;
     },
     get picked() {
       return picked;
@@ -143,7 +137,7 @@ export function createTasksController(p: TasksProps) {
     },
     setView,
     select,
-    selectMany,
+    selectColumn,
     toggleSelecting,
     action,
     bulk,

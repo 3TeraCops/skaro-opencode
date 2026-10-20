@@ -1,3 +1,5 @@
+import { OwnerMessages } from '../feed/owner-messages.svelte';
+import { cleanError } from '../feed/action-error';
 import type { AgentModel, InteractionAnswer, PermissionMode } from '@skaro/timeline';
 import { t } from '@skaro/ui';
 import { onDestroy } from 'svelte';
@@ -11,6 +13,7 @@ import type {
 import { provideFeed } from '../feed/context.svelte';
 import { modelEffort, modelName } from '../feed/format';
 import { ChatSession } from './session.svelte';
+import { historyActions } from '../feed/history-actions';
 export function createChatController(
   projectId: string,
   projectPath: string,
@@ -33,6 +36,24 @@ export function createChatController(
       .catch(() => (draft = { agent: 'claude-code' }));
   }
 
+  const ownerMessages = new OwnerMessages();
+  if (chatId)
+    void window.skaro.invoke('commands.list', projectId, chatId).then((commands) => {
+      ownerMessages.restore(commands);
+      actionError = commands.find((command) => command.error)?.error;
+    });
+  const stopCommands = window.skaro.on('command.changed', (command) => {
+    if (command.owner !== `${projectId}:${chatId}`) return;
+    if (command.state === 'accepted' || command.state === 'delivering')
+      ownerMessages.restore([command]);
+    if (command.state === 'cancelled') ownerMessages.cancel(command.id);
+    if (command.error) {
+      ownerMessages.failed(command.id, command.error);
+      actionError = command.error;
+    }
+  });
+  onDestroy(stopCommands);
+  $effect(() => ownerMessages.reconcile(session?.timeline));
   let modal = $state(false);
   /** Proposal item of the import whose review screen is open (ImportReview mockup). */
   let reviewing = $state<string | undefined>();
@@ -46,11 +67,11 @@ export function createChatController(
   let actionError = $state<string | undefined>();
 
   const view = $derived(session?.view);
-  const timeline = $derived(session?.timeline);
+  const timeline = $derived(ownerMessages.timeline(session?.timeline));
   const settings = $derived(view?.settings ?? draft);
   const archived = $derived(view?.chat.archived === true);
   const running = $derived(timeline !== undefined && timeline.status !== 'idle');
-  const started = $derived((timeline?.items.length ?? 0) > 0);
+  const started = $derived(!!timeline?.items.length || !!view?.history?.count);
   const agentInfo = $derived(getAgents().find((a) => a.id === settings?.agent));
   const title = $derived(view?.chat.title ?? t('chat.new'));
   const openQuestion = $derived(timeline?.interactions.find((i) => i.kind === 'question'));
@@ -91,23 +112,24 @@ export function createChatController(
     }
   }
 
-  function cleanError(error: unknown): string {
-    const text = error instanceof Error ? error.message : String(error);
-    return text.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
-  }
-
   async function send(input: MessageInput): Promise<void> {
     if (!chatId) {
       if (!draft) return;
       const settings = draft;
       await guard(async () => {
-        const chat = await window.skaro.invoke('chat.create', projectId, settings, input);
+        const chat = await ownerMessages.send(input, (value) =>
+          window.skaro.invoke('chat.create', projectId, settings, value),
+        );
         oncreated(chat.id);
       });
       return;
     }
     // Text typed while a question or a permission is open answers it in the user's own words.
     if (openQuestion?.kind === 'question') {
+      if (openQuestion.questions.length !== 1) {
+        actionError = t('card.question.notReady');
+        throw new Error(actionError);
+      }
       return respond(openQuestion.id, {
         kind: 'question',
         answers: Object.fromEntries(openQuestion.questions.map((q) => [q.id, [input.text]])),
@@ -117,7 +139,9 @@ export function createChatController(
       return respond(openApproval.id, { kind: 'approval', choice: 'deny', message: input.text });
     }
     const id = chatId;
-    await guard(() => window.skaro.invoke('chat.send', projectId, id, input));
+    await guard(() =>
+      ownerMessages.send(input, (value) => window.skaro.invoke('chat.send', projectId, id, value)),
+    );
   }
 
   function respond(id: string, answer: InteractionAnswer): Promise<void> {
@@ -167,6 +191,14 @@ export function createChatController(
   }
 
   provideFeed({
+    ...historyActions(
+      projectId,
+      (error) => {
+        actionError = error;
+      },
+      (page) => session?.rememberPage(page),
+      () => void session?.reload(),
+    ),
     get cwd() {
       return projectPath;
     },

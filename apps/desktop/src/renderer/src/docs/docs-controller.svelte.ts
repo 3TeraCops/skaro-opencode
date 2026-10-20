@@ -1,8 +1,9 @@
+import { TaskRangeState } from '../tasks/range.svelte';
 import { onDestroy } from 'svelte';
 import { ProjectDocs } from './data.svelte';
 import type DocPage from './DocPage.svelte';
 import { adrLink, BRIEF, specLink } from './model';
-import { renderDoc } from './render';
+import { DocumentProjection } from './projection.svelte';
 import { createTreePreferences } from './tree-preferences.svelte';
 import type { DocsProps } from './docs-props';
 
@@ -27,21 +28,14 @@ export function createDocsController(p: DocsProps) {
   let now = $state(Date.now());
 
   const doc = $derived(docs.current);
-  const rendered = $derived(renderDoc(docs.text));
+  const rendered = new DocumentProjection(() => docs.text);
   const missing = $derived(doc ? !docs.exists(doc.path) : false);
-  const specTasks = $derived(
-    doc?.spec
-      ? p.tasks.tasks
-          .filter((x) => x.spec?.id === doc.spec!.id && !x.archived)
-          .map((x) => ({ id: x.id, title: x.title, status: x.status }))
-      : [],
+  const specTasks = new TaskRangeState(
+    p.tasks,
+    () => ({ spec: doc?.spec?.id }),
+    () => !!doc?.spec,
   );
-  const nextSpec = $derived(
-    `SPEC-${String(Math.max(0, ...docs.entries.map((d) => Number(d.spec?.id ?? 0))) + 1).padStart(
-      4,
-      '0',
-    )}`,
-  );
+  const nextSpec = $derived(docs.catalog.nextSpec);
 
   $effect(() => {
     const timer = setInterval(() => (now = Date.now()), 60_000);
@@ -51,14 +45,14 @@ export function createDocsController(p: DocsProps) {
   // A document asked for from outside (a task's specification) is shown once it is listed.
   let opened: string | undefined;
   $effect(() => {
-    if (!docs.loaded || !p.open || opened === p.open || !docs.exists(p.open)) return;
+    if (!docs.loaded || !p.open || opened === p.open) return;
     opened = p.open;
     void docs.open(p.open);
   });
 
   // The first document shown is the architecture, or the brief when there is none.
   $effect(() => {
-    if (!docs.loaded || (p.open && p.open !== opened)) return;
+    if (!docs.loaded || docs.loading || (p.open && p.open !== opened)) return;
     if (!docs.exists(docs.selected) && docs.exists(BRIEF) && docs.selected !== BRIEF) {
       void docs.open(BRIEF);
     }
@@ -87,13 +81,13 @@ export function createDocsController(p: DocsProps) {
     pending = undefined;
   }
 
-  function link(href: string): void {
+  async function link(href: string): Promise<void> {
     const adr = adrLink(href);
     const spec = specLink(href);
     const target = adr
-      ? docs.entries.find((d) => d.adr?.id === adr)
+      ? await docs.lookup({ kind: 'adr', id: adr })
       : spec
-        ? docs.entries.find((d) => d.spec?.id === spec)
+        ? await docs.lookup({ kind: 'spec', id: spec })
         : undefined;
     if (target) select(target.path);
     else if (/^https?:\/\//i.test(href)) void window.skaro.invoke('shell.openExternal', href);

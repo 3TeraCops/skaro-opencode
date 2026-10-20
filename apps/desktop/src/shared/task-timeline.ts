@@ -1,4 +1,4 @@
-import { Timeline, type TimelineState } from '@skaro/timeline';
+import { Timeline, runEvent, type TimelineState } from '@skaro/timeline';
 import type { AgentId } from './ipc-entities';
 
 export interface IntegrationTimeline {
@@ -11,11 +11,27 @@ export interface IntegrationTimeline {
   timeline: TimelineState;
 }
 
+export function scopeTimeline(state: TimelineState, id: string): TimelineState {
+  return {
+    ...state,
+    items: state.items.map((item) => {
+      const event = runEvent({ t: 'item.upsert', item }, id);
+      return event.t === 'item.upsert' ? event.item : item;
+    }),
+    turns: state.turns.map((turn) => ({ ...turn, id: turn.id ? `${id}:${turn.id}` : '' })),
+    interactions: state.interactions.map((interaction) => {
+      const event = runEvent({ t: 'interaction.opened', interaction }, id);
+      return event.t === 'interaction.opened' ? event.interaction : interaction;
+    }),
+  };
+}
+
 /** Isolated histories cannot close each other's interactions or replace an idle task's model. */
 export function composeTaskTimeline(
   base: TimelineState | undefined,
   integrations: IntegrationTimeline[],
 ) {
+  if (base && !integrations.length) return { ...base };
   const state = base
     ? {
         ...base,
@@ -33,5 +49,6 @@ export function composeTaskTimeline(
         Object.assign(state, { [field]: source.timeline[field] });
   }
   state.items.sort((a, b) => a.startedAt - b.startedAt);
+  if (state.interactions.some((i) => i.kind === 'question')) state.status = 'waiting';
   return state;
 }

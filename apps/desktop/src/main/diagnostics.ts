@@ -1,3 +1,4 @@
+import { projectRecords } from './project-records';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
@@ -23,7 +24,7 @@ export async function collectDiagnostics(
     unknown: [],
   };
   const counts = new Map<string, Diagnostics['unknown'][number]>();
-  for (const project of db.listProjects()) {
+  for await (const project of projectRecords(db)) {
     const records = [
       ...db.listRuns(project.id),
       ...db.listChats(project.id),

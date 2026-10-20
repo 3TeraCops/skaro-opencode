@@ -1,12 +1,13 @@
 <script lang="ts">
+  import LoadingView from './LoadingView.svelte';
   import type { AgentInfo, ProjectInfo } from '../../../shared/ipc';
   import type { ProjectTasks } from '../tasks/data.svelte';
-  import ChatScreen from '../chat/ChatScreen.svelte';
-  import DocsScreen from '../docs/DocsScreen.svelte';
-  import PlanScreen from '../plan/PlanScreen.svelte';
-  import TaskScreen from '../task/TaskScreen.svelte';
-  import TasksScreen from '../tasks/TasksScreen.svelte';
-  import ProjectParams from '../params/ProjectParams.svelte';
+  const loadChatScreen = () => import('../chat/ChatScreen.svelte');
+  const loadDocsScreen = () => import('../docs/DocsScreen.svelte');
+  const loadPlanScreen = () => import('../plan/PlanScreen.svelte');
+  const loadTaskScreen = () => import('../task/TaskScreen.svelte');
+  const loadTasksScreen = () => import('../tasks/TasksScreen.svelte');
+  const loadProjectParams = () => import('../params/ProjectParams.svelte');
 
   let {
     project,
@@ -48,33 +49,45 @@
 
 {#if task && !stage && section === 'tasks'}
   {#key task}
-    <TaskScreen
-      projectId={project.id}
-      taskId={task}
-      {agents}
-      {ontasks}
-      onplan={ontasks}
-      onopen={openTask}
-      onspec={openDoc}
-    />
+    {#await loadTaskScreen()}<LoadingView />{:then { default: TaskScreen }}
+      <TaskScreen
+        projectId={project.id}
+        taskId={task}
+        {agents}
+        {ontasks}
+        onplan={ontasks}
+        onopen={openTask}
+        onspec={openDoc}
+      />
+    {/await}
   {/key}
 {:else if section === 'docs'}
-  <DocsScreen
-    projectId={project.id}
-    open={doc}
-    tasks={data}
-    onchat={newChat}
-    ontask={openTask}
-    {onimport}
-  />
+  {#await loadDocsScreen()}<LoadingView />{:then { default: DocsScreen }}
+    <DocsScreen
+      projectId={project.id}
+      open={doc}
+      tasks={data}
+      onchat={newChat}
+      ontask={openTask}
+      {onimport}
+    />
+  {/await}
 {:else if section === 'plan'}
-  <PlanScreen projectId={project.id} {data} onopen={openTask} onchat={newChat} />
+  {#await loadPlanScreen()}<LoadingView />{:then { default: PlanScreen }}
+    <PlanScreen projectId={project.id} {data} onopen={openTask} onchat={newChat} />
+  {/await}
 {:else if section === 'params'}
-  <ProjectParams {project} {onremove} {onchanged} />
+  {#await loadProjectParams()}<LoadingView />{:then { default: ProjectParams }}
+    <ProjectParams {project} {onremove} {onchanged} />
+  {/await}
 {:else if section === 'chat'}
   {#key project.id}
-    <ChatScreen {project} {agents} bind:chat onsection={go} {onimport} />
+    {#await loadChatScreen()}<LoadingView />{:then { default: ChatScreen }}
+      <ChatScreen {project} {agents} bind:chat onsection={go} {onimport} />
+    {/await}
   {/key}
 {:else}
-  <TasksScreen projectId={project.id} {data} onopen={openTask} onnew={newChat} />
+  {#await loadTasksScreen()}<LoadingView />{:then { default: TasksScreen }}
+    <TasksScreen projectId={project.id} {data} onopen={openTask} onnew={newChat} />
+  {/await}
 {/if}

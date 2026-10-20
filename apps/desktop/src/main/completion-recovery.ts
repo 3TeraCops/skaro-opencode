@@ -32,7 +32,7 @@ export async function reconcileCompletions(
     if (await containsCommit(context, op.base, op.commit))
       await finishCompletion(hooks, context, store, op);
   }
-  const artifacts = await context.load();
+  const artifacts = await context.summary();
   for (const task of artifacts.tasks) {
     const result = store.result(task.id);
     if (!result?.pendingReview || hooks.busy(context.id, task.id)) continue;
@@ -56,7 +56,7 @@ export async function reconcileCompletions(
     context.invalidate();
     hooks.deps.emit('project.changed', { projectId: context.id });
   }
-  const current = await context.load();
+  const current = await context.summary();
   for (const task of current.tasks.filter((item) => item.status === 'review' && !item.archived)) {
     if (hooks.busy(context.id, task.id)) continue;
     // Reverted historical merges are never inferred as completed from ancestry alone.

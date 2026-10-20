@@ -144,7 +144,10 @@ it('controls a candidate still in flight from the chat of any of its tasks', asy
     kind: 'question',
     answers: { order: ['the first one'] },
   });
-  expect(integrations.store.inputs(saved.id).at(-1)).toEqual({ text: 'the first one' });
+  expect(integrations.store.inputs(saved.id).at(-1)).toEqual({
+    commandId: 'answers-question',
+    text: 'Which behavior goes first?\nthe first one',
+  });
   expect((await chat()).timeline.interactions).toEqual([]);
 
   await engine!.messages.interrupt(f.projectId, second.id);

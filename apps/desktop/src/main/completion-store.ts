@@ -94,12 +94,11 @@ export class CompletionStore {
   }
 
   operations(): CompletionOperation[] {
-    return this.db.getSetting<CompletionOperation[]>(this.operationKey(), []);
+    return this.db.collections.all<CompletionOperation>(this.operationKey());
   }
 
   save(operation: CompletionOperation): void {
-    const operations = this.operations().filter((item) => item.id !== operation.id);
-    this.db.setSetting(this.operationKey(), [...operations, operation]);
+    this.db.collections.put(this.operationKey(), operation);
   }
 
   create(base: string, results: TaskResult[], strategy: CompletionOperation['strategy']) {

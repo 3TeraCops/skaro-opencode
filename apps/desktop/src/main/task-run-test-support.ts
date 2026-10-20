@@ -8,6 +8,7 @@ import { AgentManager } from './agents';
 import { Projects } from './projects';
 import { TaskRuns, type TaskRunDeps } from './tasks';
 import { prepareFixtureArchitecture, reviewFixtureResult } from './c4-test-support';
+import { closeBackground } from './background/client';
 
 export let dir: string;
 export let repo: string;
@@ -38,7 +39,7 @@ beforeEach(async () => {
   await prepareFixtureArchitecture(repo);
   await git(repo, ['add', '-A']);
   await git(repo, ['commit', '-qm', 'init']);
-  db = AppDb.open(':memory:');
+  db = AppDb.open(join(dir, 'skaro.db'));
   projectId = db.addProject({ name: 'Runtime safety', path: repo }).id;
   projects = new Projects(db, () => undefined);
   await projects
@@ -104,6 +105,7 @@ export async function expectMergedWithoutCard(): Promise<string> {
 afterEach(async () => {
   await tasks?.close();
   projects?.close();
+  await closeBackground();
   db?.close();
   const cleanup = resolve(dir);
   const inside = relative(resolve(tmpdir()), cleanup);

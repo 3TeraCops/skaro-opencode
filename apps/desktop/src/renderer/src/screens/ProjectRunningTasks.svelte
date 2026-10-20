@@ -3,6 +3,7 @@
   import type { ProjectCard } from '../../../shared/ipc';
   import { agentLine } from './project-card-format';
   let { c }: { c: ProjectCard } = $props();
+  const total = $derived(c.runningTotal ?? c.running.length);
 </script>
 
 <div class="runs">
@@ -16,7 +17,7 @@
       >
     </div>
   {/each}
-  {#if c.running.length > 2}
-    <div class="more">{t('projects.moreRuns', { n: c.running.length - 2 })}</div>
+  {#if total > 2}
+    <div class="more">{t('projects.moreRuns', { n: total - 2 })}</div>
   {/if}
 </div>

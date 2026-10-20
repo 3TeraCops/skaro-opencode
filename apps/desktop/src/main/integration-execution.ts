@@ -15,6 +15,14 @@ export async function executeIntegration(
 ): Promise<void> {
   const integration = ctx.integrations;
   try {
+    if (
+      (await integration.history.state(op)).state.interactions.some((i) => i.kind === 'question')
+    ) {
+      op.state = 'waiting';
+      integration.service.save(op);
+      integration.setRuntime(op, 'waiting');
+      return;
+    }
     integration.setRuntime(op, 'running');
     await integration.history.announce(
       op,

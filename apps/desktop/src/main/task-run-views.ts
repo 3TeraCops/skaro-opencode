@@ -1,19 +1,12 @@
-import { currentActivity } from '@skaro/timeline';
-import { stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { TaskListViews } from './task-list-views';
+import { presentationState } from './timeline-presentation';
+import { historyReads } from './history-read-service';
+import { emptyTimeline } from '@skaro/timeline';
+import { retireTaskHistories } from './task-memory';
 import { indexTasks, type ProjectArtifacts, type RunRecord, type Task } from '@skaro/core';
 import type { AgentId, AgentSettings, TaskAssignment, TaskSummary, TaskView } from '../shared/ipc';
 import { toggleCriterion } from './task-body';
-import {
-  key,
-  settingsKey,
-  awaitingKey,
-  findTask,
-  ref,
-  runInfo,
-  summary,
-  detail,
-} from './task-run-helpers';
+import { key, settingsKey, awaitingKey, findTask, ref, runInfo, detail } from './task-run-helpers';
 import type { TaskRunEngine } from './task-run-engine';
 import { orderedStageTasks, stageInfo } from './stage-views';
 import { waitsInStage } from './task-stage-waits';
@@ -29,7 +22,6 @@ import {
   integrationCandidate,
   integrationWorking,
 } from './integration-model';
-import { taskMergeStates } from './task-merge-state';
 
 /** views: a focused part of the task-run controller. */
 export class TaskRunViews {
@@ -38,57 +30,24 @@ export class TaskRunViews {
     this.ctx = ctx;
   }
 
-  async list(projectId: string): Promise<TaskSummary[]> {
-    const context = this.ctx.project(projectId);
-    const artifacts = await context.load();
-    const runtime = this.ctx.deps.db.getTaskRuntime(projectId);
-    const index = indexTasks(artifacts.tasks);
-    const runs = this.ctx.deps.db.listRuns(projectId);
-    const merges = taskMergeStates(this.ctx, projectId, artifacts);
-    return Promise.all(
-      artifacts.tasks.map(async (task) => {
-        const run = runs.find((r) => r.taskId === task.id);
-        const file = await stat(join(context.root, task.path)).catch(() => undefined);
-        const updatedAt = Math.max(file?.mtimeMs ?? 0, run?.endedAt ?? run?.startedAt ?? 0);
-        const state = runtime.get(task.id)?.state;
-        const result = summary(task, artifacts, index, state, {
-          ...this.assigned(projectId, task, run, artifacts),
-          updatedAt,
-        });
-        const active = this.ctx.active.get(key(projectId, task.id));
-        if (result.status === 'in_progress' && active)
-          result.activity = currentActivity(active.timeline.state);
-        // The card of the task says how its merge stands and what it waits for.
-        const merging = merges.get(task.id);
-        if (merging) result.merge = merging.merge;
-        if (merging?.mergeAfter) result.mergeAfter = merging.mergeAfter;
-        if (merging?.merge === 'running' && merging.operation)
-          result.activity = await this.ctx.integrations.history.activity(merging.operation);
-        return { ...result, ...waitsInStage(this.ctx, projectId, task, artifacts, runtime) };
-      }),
-    );
+  list(projectId: string): Promise<TaskSummary[]> {
+    return new TaskListViews(this.ctx).list(projectId);
+  }
+  assigned(projectId: string, task: Task, run: RunRecord | undefined, artifacts: ProjectArtifacts) {
+    return new TaskListViews(this.ctx).assigned(projectId, task, run, artifacts);
   }
 
-  assigned(
-    projectId: string,
-    task: Task,
-    run: RunRecord | undefined,
-    artifacts: ProjectArtifacts,
-  ): { agent?: AgentId; model?: string } {
-    const saved = this.ctx.deps.db.getSetting<TaskAgentPreferences | null>(
-      settingsKey(projectId, task.id),
-      null,
-    );
-    if (saved?.followProject && !run) return taskAgentPreferences(artifacts.config, task, saved);
-    const agent = saved?.agent ?? run?.agent ?? task.agent;
-    if (agent !== 'claude-code' && agent !== 'codex') return {};
-    const model = saved?.model ?? run?.model ?? task.model;
-    return { agent, ...(model ? { model } : {}) };
-  }
-
-  async open(projectId: string, taskId: string): Promise<TaskView> {
+  async open(projectId: string, taskId: string, options?: { paged: boolean }): Promise<TaskView> {
     let active = await this.ctx.history.restore(projectId, taskId);
-    const artifacts = await this.ctx.project(projectId).load();
+    void retireTaskHistories(this.ctx, key(projectId, taskId)).catch((error: unknown) =>
+      console.error('Task history retirement:', error),
+    );
+    const context = this.ctx.project(projectId);
+    const listed = await context.summary();
+    const subject = findTask(listed, taskId);
+    const spec = listed.specs.find((entry) => entry.id === subject.spec);
+    const artifacts = listed;
+    const requirements = spec ? await context.documentRequirements(spec.path) : {};
     const task = findTask(artifacts, taskId);
     if (active) active = await this.ctx.handoff.recover(active, false);
     if (active) {
@@ -116,13 +75,35 @@ export class TaskRunViews {
     );
     const stage = subjectStage(artifacts, taskId);
     const index = indexTasks(artifacts.tasks);
-    const shown = detail(task, artifacts, runtime, active?.run);
+    const shown = { ...detail(task, artifacts, runtime, active?.run), ...requirements };
     const integration = await this.ctx.integrations.history.project(
       projectId,
       taskId,
       active?.timeline.state,
     );
     const integrations = this.ctx.integrations.store.all(projectId);
+    const read = options?.paged
+      ? await historyReads().syncTask(
+          `${projectId}:task:${taskId}`,
+          active?.run.id ?? '',
+          integration.revision,
+          [
+            {
+              id: 'base',
+              seq: active?.seq ?? 0,
+              live: !!active?.session,
+              timeline: integration.sources.base ?? emptyTimeline(),
+            },
+            ...integration.sources.integrations.map((source) => ({
+              id: `integration-${source.id}`,
+              seq: source.seq,
+              live: source.live,
+              timeline: source.timeline,
+            })),
+          ],
+          integration.timeline,
+        )
+      : undefined;
     return {
       projectId,
       environmentReview: this.ctx.reviews.state(projectId, taskId),
@@ -143,9 +124,18 @@ export class TaskRunViews {
         : {}),
       settings,
       ...(active ? { run: runInfo(active) } : {}),
-      timeline: integration.timeline,
+      timeline: read?.timeline ?? presentationState(integration.timeline),
+      ...(read ? { history: read.source, historyPage: read.page } : {}),
       timelineRevision: integration.revision,
-      timelineSources: integration.sources,
+      timelineSources: read
+        ? undefined
+        : {
+            base: integration.sources.base && presentationState(integration.sources.base),
+            integrations: integration.sources.integrations.map((source) => ({
+              ...source,
+              timeline: presentationState(source.timeline),
+            })),
+          },
       executionWorktree: integrationCandidate(integrations, taskId)?.worktree,
       error: shown.status === 'failed' ? this.ctx.startup.error(projectId, taskId) : undefined,
       seq: active?.seq ?? 0,

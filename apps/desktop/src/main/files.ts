@@ -2,8 +2,8 @@
 // feed. Paths from the renderer are always resolved inside a known folder.
 
 import { execFile } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import { extname, isAbsolute, normalize, relative, resolve, sep } from 'node:path';
 import type { PathSuggestion } from '../shared/ipc';
 
@@ -104,13 +104,13 @@ export function resolveInside(cwd: string, path: string): string {
 /** Image bytes for `skaro-media:` URLs, only from the allowed folders or picked files. */
 export async function readImage(
   path: string,
-  allowed: (abs: string) => boolean,
+  allowed: (abs: string) => boolean | Promise<boolean>,
 ): Promise<{ bytes: Buffer; mime: string } | undefined> {
   const abs = resolve(path);
   const mime = IMAGE_TYPES[extname(abs).toLowerCase()];
-  if (!mime || !allowed(abs)) return undefined;
+  if (!mime || !(await allowed(abs))) return undefined;
   try {
-    if (!statSync(abs).isFile()) return undefined;
+    if (!(await stat(abs)).isFile()) return undefined;
     return { bytes: await readFile(abs), mime };
   } catch {
     return undefined;

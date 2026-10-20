@@ -29,6 +29,7 @@ import { trace } from './trace';
 import { CiRuns } from './ci-runs';
 import { C4Service } from './c4-service';
 import { proposeC4Specification } from './c4-specification';
+import { ProjectOverview } from './project-overview';
 
 export async function createServices(
   appState: AppState,
@@ -37,11 +38,13 @@ export async function createServices(
 ) {
   const db = appState.db;
   const attachments = new AttachmentStore(join(dataDir, 'attachments'));
-  const projects = new Projects(db, (projectId) => emit('project.changed', { projectId }));
+  const projects = new Projects(db, (projectId) => emit('project.changed', { projectId }), dataDir);
+  const overview = new ProjectOverview(db, projects, (card) => emit('projects.card', card));
   const agents = new AgentManager({
     // Development and tests share one download of the agents.
     agentsDir: process.env['SKARO_AGENTS_DIR'] ?? join(dataDir, 'agents'),
     scratchDir: join(dataDir, 'scratch'),
+    attachmentsDir: attachments.dir,
     store: appState,
     openUrl: (url) => void shell.openExternal(url),
     onChange: (list) => emit('agents.changed', list),
@@ -133,6 +136,9 @@ export async function createServices(
   });
   trace('task runs created');
   const c4 = new C4Service({
+    assertMayWork: (scope) => {
+      if (scope.chatId) chats.assertMayWork(scope.chatId);
+    },
     db,
     projects,
     locale: () => appState.getLocale(app.getLocale()),
@@ -143,7 +149,13 @@ export async function createServices(
     changed: (projectId) => emit('project.changed', { projectId }),
     stageImport: (args, scope) => chats.stageC4(args, scope),
   });
-  await chats.recoverReplans();
+  // Recovery must not hold the first frame or the owner's navigation behind old histories.
+  setImmediate(
+    () =>
+      void chats
+        .recoverReplans()
+        .catch((error: unknown) => console.error('Replan recovery:', error)),
+  );
   const ci = new CiRuns(db, projects, async (scope, text, error) => {
     if (scope.kind === 'task' && scope.taskId)
       await runs.operationNotice(scope.projectId, scope.taskId, text, error);
@@ -152,6 +164,7 @@ export async function createServices(
   });
 
   return {
+    overview,
     c4,
     appState,
     dataDir,

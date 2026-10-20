@@ -11,28 +11,48 @@ declare const window: Window & { skaro: SkaroApi };
 test('opens the frameless main window with the Skaro top bar', async () => {
   const app = await launchApp();
   const page = await app.firstWindow();
+  page.on('pageerror', (error) => console.error('Window renderer error:', error));
+  try {
+    await expect(page).toHaveTitle('Skaro');
+    await expect(page.getByRole('button', { name: /Главная|Home/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Настройки|Settings/ })).toBeVisible();
 
-  await expect(page).toHaveTitle('Skaro');
-  await expect(page.getByRole('button', { name: /Главная|Home/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Настройки|Settings/ })).toBeVisible();
+    // Renderer is isolated: no Node globals leak into the page, only the typed bridge.
+    const isolation = await page.evaluate(() => ({
+      node: 'require' in globalThis || 'process' in globalThis,
+      bridge: typeof window.skaro?.invoke,
+    }));
+    expect(isolation).toEqual({ node: false, bridge: 'function' });
 
-  // Renderer is isolated: no Node globals leak into the page, only the typed bridge.
-  const isolation = await page.evaluate(() => ({
-    node: 'require' in globalThis || 'process' in globalThis,
-    bridge: typeof window.skaro?.invoke,
-  }));
-  expect(isolation).toEqual({ node: false, bridge: 'function' });
-
-  // Methods outside the whitelist are refused.
-  const refused = await page.evaluate(() =>
-    (window.skaro.invoke as (method: string) => Promise<unknown>)('fs.readFile').then(
-      () => 'allowed',
-      (e: Error) => e.message,
-    ),
-  );
-  expect(refused).toContain('unknown method');
-
-  await app.close();
+    // Methods outside the whitelist are refused.
+    const refused = await page.evaluate(() =>
+      (window.skaro.invoke as (method: string) => Promise<unknown>)('fs.readFile').then(
+        () => 'allowed',
+        (e: Error) => e.message,
+      ),
+    );
+    expect(refused).toContain('unknown method');
+  } catch (error) {
+    console.log(
+      'Window startup state:',
+      await page.evaluate(async () => ({
+        url: location.href,
+        ready: document.readyState,
+        body: document.body.innerHTML.slice(0, 1000),
+        bridge: typeof window.skaro,
+        bootstrap: await Promise.race([
+          window.skaro.bootstrapReady?.catch((error: unknown) => ({ error: String(error) })),
+          new Promise((resolve) => setTimeout(() => resolve('still pending'), 1000)),
+        ]),
+        scripts: [...document.scripts].map((script) => script.src),
+        resources: performance.getEntriesByType('resource').map((entry) => entry.name),
+      })),
+    );
+    await page.screenshot({ path: test.info().outputPath('failed-window.png') });
+    throw error;
+  } finally {
+    await app.close();
+  }
 });
 
 test('restores project tabs on Home after a restart', async () => {

@@ -1,3 +1,4 @@
+import { CHAT_CATALOG_MIGRATION } from './chat-catalog-migration.ts';
 export const MIGRATIONS: string[] = [
   `
   CREATE TABLE projects (
@@ -107,4 +108,13 @@ export const MIGRATIONS: string[] = [
     WHERE retired_at IS NOT NULL;
   DELETE FROM task_runtime WHERE run_id IN (SELECT id FROM runs WHERE retired_at IS NOT NULL);
   `,
+  `CREATE TABLE owner_commands (
+    id TEXT PRIMARY KEY, owner TEXT NOT NULL, method TEXT NOT NULL, args TEXT NOT NULL,
+    state TEXT NOT NULL, error TEXT, updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX owner_commands_pending ON owner_commands(state, updated_at);`,
+  `CREATE TABLE collection_records (collection TEXT NOT NULL, id TEXT NOT NULL, value TEXT NOT NULL,
+    PRIMARY KEY(collection,id));
+   CREATE TABLE collection_migrations (key TEXT PRIMARY KEY);`,
+  CHAT_CATALOG_MIGRATION,
 ];

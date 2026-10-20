@@ -1,4 +1,7 @@
 import { indexTasks, isBlocked, startBlocker } from '@skaro/core';
+import { randomUUID } from 'node:crypto';
+import { CommandCancelled } from './owner-commands';
+import { hasOwnerCommand } from './owner-command-history';
 import type { MessageInput, RunSlots, TaskAssignment } from '../shared/ipc';
 import { createTaskRun } from './task-run-create';
 import { checkoutKey, ownsCheckout } from './task-stage';
@@ -157,7 +160,9 @@ export class TaskRunScheduling {
     findTask(await this.ctx.project(projectId).store.load(), taskId);
     const k = key(projectId, taskId);
     await this.ctx.stages.sync(projectId, taskId);
-    this.ctx.queuedInputs.set(k, [...(this.ctx.queuedInputs.get(k) ?? []), input]);
+    const accepted = { ...input, commandId: input.commandId ?? randomUUID() };
+    this.ctx.startup.begin(projectId, taskId, [accepted]);
+    this.ctx.queuedInputs.set(k, [...(this.ctx.queuedInputs.get(k) ?? []), accepted]);
     this.ctx.queue.enqueue([k]);
     this.ctx.changed(projectId, taskId);
   }
@@ -202,12 +207,24 @@ export class TaskRunScheduling {
 
   /** Holds the slot until the turn ends; later messages of the batch join the running turn. */
   private async runTurn(active: ActiveRun, inputs: MessageInput[]): Promise<void> {
+    inputs = inputs.filter((input) => !hasOwnerCommand(active.timeline.state, input.commandId));
+    if (!inputs.length) {
+      this.ctx.startup.delivered(active.projectId, active.taskId);
+      this.ctx.events.settleRuntime(active);
+      return;
+    }
     this.ctx.environments.touch(checkoutKey(active));
     const done = new Promise<void>((resolve) => (active.release = resolve));
     try {
       for (const input of inputs) await this.ctx.messages.deliver(active, input);
       this.ctx.startup.delivered(active.projectId, active.taskId);
     } catch (error) {
+      if (error instanceof CommandCancelled) {
+        active.release?.();
+        active.release = undefined;
+        this.ctx.setRuntime(active.projectId, active.taskId, 'idle', active.run.id);
+        return;
+      }
       active.release = undefined;
       this.ctx.events.failTurn(active, error);
       throw error;

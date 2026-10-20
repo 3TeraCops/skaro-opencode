@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentSession } from '@skaro/timeline';
-import { runEvent } from '@skaro/timeline';
+import { runEvent, withSkaroNote } from '@skaro/timeline';
+import { hasOwnerCommand } from './owner-command-history';
 import type { TaskRunEngine } from './task-run-engine';
 import { integrationInstructions } from './integration-prompt';
 import { integrationEnvironmentKey, type IntegrationOperation } from './integration-model';
@@ -76,8 +77,8 @@ export async function runIntegrationWorker(
       instructions: integrationInstructions(op, context.root, artifacts),
       env: environment.variables,
       resume: op.nativeAgent === settings.agent ? op.nativeSessionId : undefined,
-      processStarted: (pid) => {
-        ctx.processes.started(worker, pid);
+      processStarted: (pid, identity) => {
+        ctx.processes.started(worker, pid, false, identity);
         ctx.integrations.assertExecuting(op);
       },
       sandboxVerified: sandbox?.holds,
@@ -93,15 +94,26 @@ export async function runIntegrationWorker(
         playwright: await taskBrowserServer(ctx.deps.dataDir, worker),
       },
       raw: (line) => history.raw(op, line),
+      rawSerialized: (line) => history.raw(op, line),
+      secretValues: () => history.secrets(op).list(),
       context: ctx.deps.attachments.context(),
     });
     publishSession({ session, worker, operation: op });
     ctx.integrations.assertExecuting(op);
-    const inputs = ctx.integrations.store.inputs(op.id);
+    const pending = ctx.integrations.store.inputs(op.id);
+    const timeline = (await history.state(op)).state;
+    const inputs = pending
+      .filter((input) => !hasOwnerCommand(timeline, input.commandId))
+      .map((input) => history.secrets(op).input(input));
     const automatic = inputs.length === 0;
     const text = automatic
       ? 'Continue the saved integration.'
-      : inputs.map((input) => input.text).join('\n');
+      : withSkaroNote(
+          inputs
+            .flatMap((input) => (input.commandId ? [`command_id: ${input.commandId}`] : []))
+            .join('\n'),
+          inputs.map((input) => input.text).join('\n'),
+        );
     pump = (async () => {
       try {
         for await (const event of session!.events) {
@@ -128,6 +140,12 @@ export async function runIntegrationWorker(
             await history.drain(op);
             // The turn ended before the agent took Skaro's message; the turn answering it follows.
             if (event.outcome === 'done' && unstarted.waiting) continue;
+            if ((await history.state(op)).state.interactions.some((i) => i.kind === 'question')) {
+              op.state = 'waiting';
+              ctx.integrations.service.save(op);
+              finish();
+              continue;
+            }
             if (event.outcome === 'interrupted') {
               op.state = 'paused';
               ctx.integrations.service.save(op);
@@ -151,7 +169,7 @@ export async function runIntegrationWorker(
       text,
       images: inputs.flatMap((input) => input.images ?? []),
     });
-    ctx.integrations.store.delivered(op.id, inputs.length);
+    ctx.integrations.store.delivered(op.id, pending.length);
     await ended;
     if (op.state !== 'ready' && op.state !== 'paused') {
       // The agent ended its turn on a question or a report: repeating the turn changes nothing,

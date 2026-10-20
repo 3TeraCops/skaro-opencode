@@ -1,74 +1,47 @@
 import { expect, it } from 'vitest';
-import { Timeline, type AsyncQuestion, type TimelineEvent } from '@skaro/timeline';
-import { TaskRunMessages } from './task-run-messages';
-import { ChatConversation } from './chat-conversation';
+import { DatabaseSync } from 'node:sqlite';
+import { join } from 'node:path';
+import { AttachmentStore } from '@skaro/core';
+import { Timeline, replayRunLog, validateQuestionAnswer } from '@skaro/timeline';
+import { projectorFor, readRunLog } from './session-log';
 
-// Exercise only the existing response methods with inert callbacks; no API or agent is launched.
-const question: AsyncQuestion = {
-  kind: 'question',
-  id: 'async-call',
-  delivery: 'async',
-  questions: [
-    { id: '0', header: '', text: 'Какой контур?', multi: false, allowFreeText: true, options: [] },
-  ],
-};
+const profile = process.env['SKARO_RESPONSIVENESS_PROFILE'];
+const chatId = process.env['SKARO_QUESTION_CHAT'];
 
-it.each(['task', 'chat'] as const)(
-  'answers a persisted %s card without requiring a still-running agent process',
-  async (kind) => {
-    const timeline = Timeline.from([
-      { t: 'turn.started', turnId: 't1' },
-      { t: 'interaction.opened', interaction: question },
-      { t: 'turn.completed', turnId: 't1', outcome: 'done' },
-    ]);
-    const context = { timeline, operations: new Set<Promise<unknown>>() };
-    const sent: unknown[] = [];
-    const events: TimelineEvent[] = [];
-    const base = {
-      restore: async () => context,
-      skaroEvent: (_context: unknown, event: TimelineEvent) => {
-        events.push(event);
-        timeline.apply(event);
-      },
-    };
-    const host =
-      kind === 'task'
-        ? {
-            ctx: {
-              history: base,
-              active: new Map(),
-              integrations: { controls: { respond: async () => false } },
-            },
-            // The answer starts a turn of its own: it takes a slot like any other message.
-            turn: async (_active: unknown, input: unknown) => {
-              sent.push(input);
-            },
-          }
-        : {
-            ctx: { history: base },
-            send: async (_projectId: string, _chatId: string, input: unknown) => {
-              sent.push(input);
-            },
-          };
-    const method =
-      kind === 'task' ? TaskRunMessages.prototype.respond : ChatConversation.prototype.respond;
-    Object.setPrototypeOf(
-      host,
-      kind === 'task' ? TaskRunMessages.prototype : ChatConversation.prototype,
-    );
-    await method.call(host as never, 'project', 'conversation', question.id, {
-      kind: 'question',
-      answers: { '0': ['Штатный контур'] },
-    });
-    expect(sent).toEqual([{ text: 'Штатный контур' }]);
-    expect(timeline.state.interactions).toHaveLength(0);
-    expect(events).toContainEqual({
-      t: 'interaction.closed',
-      id: question.id,
-      resolution: 'answered',
-    });
-    expect(timeline.state.items).toContainEqual(
-      expect.objectContaining({ kind: 'decision', interaction: question, turnId: '' }),
-    );
+// Replay a recorded real native question. No generated project, fixture, fake host or API.
+it.skipIf(!profile || !chatId)(
+  'keeps the real question pending across native turn completion and snapshot restoration',
+  async () => {
+    const db = new DatabaseSync(join(profile!, 'skaro.db'), { readOnly: true });
+    try {
+      const chat = db.prepare('SELECT * FROM chats WHERE id=?').get(chatId!);
+      if (!chat) throw new Error('The real chat is missing from the copied profile');
+      const attachments = new AttachmentStore(join(profile!, 'attachments'));
+      const events = replayRunLog(
+        await readRunLog(join(profile!, String(chat['log_path'])), true),
+        Number(chat['created_at']),
+        projectorFor(String(chat['agent'])),
+        attachments.context().attachImage,
+      );
+      const opened = events.findIndex(
+        (event) => event.t === 'interaction.opened' && event.interaction.kind === 'question',
+      );
+      expect(opened).toBeGreaterThanOrEqual(0);
+      const completed = events.findIndex(
+        (event, i) => i > opened && event.t === 'turn.completed' && !event.continuing,
+      );
+      expect(completed).toBeGreaterThan(opened);
+      const timeline = Timeline.from(events.slice(0, completed + 1));
+      expect(timeline.state.status).toBe('waiting');
+      const restored = Timeline.restore(structuredClone(timeline.state));
+      expect(restored.state.interactions).toEqual(timeline.state.interactions);
+      expect(restored.state.status).toBe('waiting');
+      const question = restored.state.interactions.find((i) => i.kind === 'question')!;
+      expect(() => validateQuestionAnswer(question, { kind: 'question', answers: {} })).toThrow(
+        'Answer every question',
+      );
+    } finally {
+      db.close();
+    }
   },
 );

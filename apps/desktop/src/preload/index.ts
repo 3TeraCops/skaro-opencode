@@ -13,6 +13,8 @@ const methods = new Set<string>(METHODS);
 const events = new Set<string>(EVENTS);
 
 const api: SkaroApi = {
+  // The first frame awaits a bounded snapshot without blocking renderer IPC or debugging.
+  bootstrapReady: ipcRenderer.invoke('skaro:bootstrap'),
   platform: process.platform,
   pathOf: (file) => webUtils.getPathForFile(file),
   invoke: (method, ...args) => {

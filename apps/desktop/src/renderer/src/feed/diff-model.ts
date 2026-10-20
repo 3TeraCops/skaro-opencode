@@ -63,7 +63,7 @@ function parseDiffs(
   return out;
 }
 
-export function fileDiffLines(row: FileRow): DiffLine[] {
+export function fileDiffLines<Row extends Pick<FileRow, 'diffs' | 'change'>>(row: Row): DiffLine[] {
   return parseDiffs(row.diffs, row.change, false);
 }
 

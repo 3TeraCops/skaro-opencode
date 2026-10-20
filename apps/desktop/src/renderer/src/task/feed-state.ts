@@ -14,11 +14,11 @@ export class TaskFeedState {
       this.runId = view.run?.id;
       this.seq = view.seq;
       this.base = view.timelineSources?.base
-        ? Timeline.restore(structuredClone(view.timelineSources.base))
+        ? Timeline.restore(view.timelineSources.base)
         : view.timelineSources
           ? new Timeline()
           : view.timeline
-            ? Timeline.restore(structuredClone(view.timeline))
+            ? Timeline.restore(view.timeline)
             : new Timeline();
     }
     const next = new Map<string, { seq: number; live: boolean; timeline: Timeline }>();
@@ -31,7 +31,7 @@ export class TaskFeedState {
           : {
               seq: source.seq,
               live: source.live,
-              timeline: Timeline.restore(structuredClone(source.timeline)),
+              timeline: Timeline.restore(source.timeline),
             },
       );
     }

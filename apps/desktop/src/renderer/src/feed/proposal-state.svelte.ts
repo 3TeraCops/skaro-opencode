@@ -11,6 +11,19 @@ export class ProposalState {
   private readonly getRow: () => Extract<FeedRow, { type: 'proposal' }>;
   constructor(getRow: () => Extract<FeedRow, { type: 'proposal' }>) {
     this.getRow = getRow;
+    const draft = this.feed.rowDrafts?.get(getRow().id);
+    if (draft) {
+      this.selection = draft.selection;
+      this.adrTitle = draft.title;
+      this.adrBody = draft.body;
+    }
+  }
+  remember(): void {
+    this.feed.rowDrafts?.set(this.row.id, {
+      selection: this.selection,
+      title: this.adrTitle,
+      body: this.adrBody,
+    });
   }
   get row() {
     return this.getRow();
@@ -26,6 +39,16 @@ export class ProposalState {
   adrTitle = $state('');
   adrBody = $state('');
   diff = $derived.by(() => {
+    if (this.proposal.type === 'architecture' && this.proposal.preview) {
+      const preview = this.proposal.preview;
+      return {
+        stats: { added: preview.added, removed: preview.removed },
+        lines: preview.lines
+          .slice(0, MAX_LINES)
+          .map((l) => ('gap' in l ? { gap: true, op: ' ', text: '' } : { gap: false, ...l })),
+        more: preview.lines.length > MAX_LINES,
+      };
+    }
     if (
       this.proposal.type !== 'doc' &&
       this.proposal.type !== 'task' &&

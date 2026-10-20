@@ -54,13 +54,18 @@ export interface SessionOptions {
   /** Extra variables of the agent's process and of the commands it runs. */
   env?: Record<string, string>;
   /** Records OS process ownership synchronously before admitting task work. */
-  processStarted?: (pid: number) => void;
+  processStarted?: (pid: number, identity?: { birth: string; platform: string }) => void;
   /** Whether the agent sandbox holds the workspace boundary (self-check, D-28). */
   sandboxVerified?: boolean;
   /** Agent-specific sandbox setting chosen by the self-check (Codex on Windows: elevated/unelevated). */
   sandboxMode?: string;
   /** Receives every native line, before parsing (principle P2). */
   raw: (line: RawLine) => void;
+  /** Optional worker sink: receives an already encoded line without main-thread JSON work. */
+  rawSerialized?: (line: Uint8Array) => void;
+  rawScope?: { startedAt: number; segment?: number; runId?: string };
+  /** Values accepted through secret questions, redacted before leaving the session worker. */
+  secretValues?: () => string[];
   /** Time and attachments for the projection. */
   context: ProjectionContext;
 }

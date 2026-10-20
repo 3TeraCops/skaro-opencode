@@ -1,4 +1,5 @@
 import type { SkaroScope, ToolResult } from '@skaro/mcp-server';
+import { assertQuestionsAnswered } from '@skaro/timeline';
 import { LiveChat } from './chat-model';
 import { projectContextText } from './chat-context-text';
 
@@ -82,6 +83,7 @@ export class ChatContext {
     if (!live || live.projectId !== scope.projectId || !live.session) {
       throw new Error('This chat session is no longer active.');
     }
+    assertQuestionsAnswered(live.timeline.state);
     return live;
   }
 }

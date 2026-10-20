@@ -1,8 +1,11 @@
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { background } from './background/client';
+import { presentationEvent } from './timeline-presentation';
+import { SessionSecrets } from './private-input';
+import { scopeTimeline } from '../shared/task-timeline';
 import { dirname, join } from 'node:path';
 import {
   Timeline,
-  isAsyncQuestion,
   runEvent,
   currentActivity,
   type Item,
@@ -21,6 +24,7 @@ import { composeTaskTimeline, type IntegrationTimeline } from '../shared/task-ti
 import type { Events } from '../shared/ipc';
 
 interface Journal {
+  secrets: SessionSecrets;
   pending: TimelineEvent[];
   snapshot: Promise<{ timeline: Timeline; seq: number }>;
   writing?: Promise<void>;
@@ -53,11 +57,14 @@ export class IntegrationHistory {
     let journal = this.journals.get(op.id);
     if (!journal) {
       journal = {
+        secrets: new SessionSecrets(),
         pending: [],
-        snapshot: this.readEvents(op).then((events) => ({
-          timeline: Timeline.from(events.map((event) => runEvent(event, `integration-${op.id}`))),
-          seq: events.length,
-        })),
+        snapshot: background(this.store.dataDir, 'history.canonical', this.path(op), '').then(
+          (snapshot) => ({
+            timeline: Timeline.restore(snapshot.timeline),
+            seq: snapshot.seq,
+          }),
+        ),
       };
       this.journals.set(op.id, journal);
       const created = journal;
@@ -68,17 +75,17 @@ export class IntegrationHistory {
     return journal;
   }
 
-  raw(op: IntegrationOperation, line: RawLine): void {
+  raw(op: IntegrationOperation, line: RawLine | Uint8Array): void {
     const journal = this.journal(op);
     journal.raw ??= new IntegrationRawLog(join(dirname(this.path(op)), 'raw.jsonl'));
-    journal.raw.append(line);
+    journal.raw.append(line instanceof Uint8Array ? line : journal.secrets.redact(line));
   }
 
   /** Live producers never wait for one filesystem round trip per token or output line. */
   enqueue(op: IntegrationOperation, event: TimelineEvent): void {
     const journal = this.journal(op);
     if (journal.error) throw journal.error;
-    journal.pending.push(event);
+    journal.pending.push(journal.secrets.redact(event));
     if (journal.pending.length >= 256 && !journal.writing) {
       clearTimeout(journal.timer);
       journal.timer = undefined;
@@ -108,8 +115,10 @@ export class IntegrationHistory {
       await appendFile(this.path(op), events.map((event) => JSON.stringify(event) + '\n').join(''));
       const before = currentActivity(snapshot.timeline.state);
       const seq = snapshot.seq;
-      const scoped = events.map((event) => runEvent(event, `integration-${op.id}`));
-      for (const event of scoped) snapshot.timeline.apply(event);
+      const scoped = events.map((event) =>
+        presentationEvent(runEvent(event, `integration-${op.id}`)),
+      );
+      for (const event of events) snapshot.timeline.apply(event);
       snapshot.seq += events.length;
       op.sequence = snapshot.seq;
       this.store.save(op);
@@ -156,6 +165,7 @@ export class IntegrationHistory {
   }
 
   async close(op: IntegrationOperation): Promise<void> {
+    if (!this.journals.has(op.id)) return;
     await this.drain(op);
     const journal = this.journal(op);
     await journal.raw?.close();
@@ -228,7 +238,7 @@ export class IntegrationHistory {
         live: !!op.worker,
         ...(op.nativeAgent ? { agent: op.nativeAgent } : {}),
         ...(op.nativeEffort ? { effort: op.nativeEffort } : {}),
-        timeline: structuredClone(snapshot.timeline.state),
+        timeline: scopeTimeline(snapshot.timeline.state, `integration-${op.id}`),
       });
     }
     return {
@@ -239,9 +249,9 @@ export class IntegrationHistory {
   }
 
   async recover(op: IntegrationOperation): Promise<void> {
-    const timeline = Timeline.from(await this.events(op));
+    const timeline = await this.state(op);
     for (const interaction of timeline.state.interactions)
-      if (interaction.kind !== 'merge' && !isAsyncQuestion(interaction))
+      if (interaction.kind !== 'merge' && interaction.kind !== 'question')
         await this.event(op, {
           t: 'interaction.closed',
           id: interaction.id,
@@ -257,8 +267,15 @@ export class IntegrationHistory {
 
   /** Skaro stops the process tree of a finished resolver: its background commands ended too. */
   async settleBackground(op: IntegrationOperation): Promise<void> {
-    for (const item of Timeline.from(await this.events(op)).state.items)
+    for (const item of (await this.state(op)).state.items)
       if (inBackground(item)) await this.event(op, { t: 'item.upsert', item: abandoned(item) });
+  }
+  async state(op: IntegrationOperation): Promise<Timeline> {
+    await this.drain(op);
+    return (await this.journal(op).snapshot).timeline;
+  }
+  secrets(op: IntegrationOperation): SessionSecrets {
+    return this.journal(op).secrets;
   }
 }
 

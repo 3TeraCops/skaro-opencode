@@ -1,8 +1,6 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname } from 'node:path';
+import { background } from './background/client';
 import {
-  c4Hash,
-  git,
   validateC4Code,
   realizeC4,
   validateC4Model,
@@ -18,44 +16,8 @@ export interface C4TaskReview extends ReviewC4Args {
   baseHead: string;
   modelHash: string;
 }
-export const c4ReviewKey = (projectId: string, taskId: string) =>
-  `c4.review.${projectId}.${taskId}`;
-
-/** Includes staged, unstaged and untracked code, using the task's real Git checkout. */
-export async function c4ChangeHash(root: string, baseHead: string, head?: string): Promise<string> {
-  const diff = await git(root, [
-    'diff',
-    '--binary',
-    baseHead,
-    ...(head ? [head] : []),
-    '--',
-    '.',
-    ':(exclude).skaro',
-  ]);
-  const others = head
-    ? { stdout: '' }
-    : await git(root, [
-        'ls-files',
-        '--others',
-        '--exclude-standard',
-        '-z',
-        '--',
-        '.',
-        ':(exclude).skaro',
-      ]);
-  const files = await Promise.all(
-    others.stdout
-      .split('\0')
-      .filter(Boolean)
-      .sort()
-      .map(async (path) => [path, c4Hash((await readFile(join(root, path))).toString('base64'))]),
-  );
-  return c4Hash(JSON.stringify({ diff: diff.stdout, files }));
-}
-
-export function c4ArchitectureHash(artifacts: ProjectArtifacts): string {
-  return c4Hash(JSON.stringify({ model: artifacts.c4, problems: artifacts.c4Problems }));
-}
+import { c4ArchitectureHash, c4ChangeHash, c4ReviewKey } from './c4-fingerprint';
+export { c4ArchitectureHash, c4ChangeHash, c4ReviewKey } from './c4-fingerprint';
 
 export function c4CoverageProblems(
   artifacts: ProjectArtifacts,
@@ -130,10 +92,7 @@ export async function assertC4TaskReview(
   if (!review || (runId && review.runId !== runId))
     throw new Error(`${taskId}: call review_c4 with code evidence before submitting the result`);
   const problems = c4CoverageProblems(artifacts, taskId, review);
-  const packages = db.getSetting<import('./c4-service').C4ProposalRecord[]>(
-    `c4.proposals.${context.id}`,
-    [],
-  );
+  const packages = await background(dirname(db.filePath), 'c4.list', context.id, taskId);
   if (
     packages.some(
       (p) => p.package.task?.id === taskId && ['pending', 'accepted'].includes(p.item.state),

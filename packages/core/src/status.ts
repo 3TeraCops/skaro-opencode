@@ -88,20 +88,30 @@ export interface MilestoneProgress {
   status: 'todo' | 'in_progress' | 'done';
 }
 
+/** A board/registry refresh aggregates every milestone in one pass over task metadata. */
+export function indexMilestoneProgress(tasks: readonly Task[]): Map<string, MilestoneProgress> {
+  const result = new Map<string, MilestoneProgress>();
+  for (const task of tasks) {
+    if (!task.milestone || task.archived || task.status === 'cancelled') continue;
+    const progress: MilestoneProgress = result.get(task.milestone) ?? {
+      done: 0,
+      total: 0,
+      status: 'todo',
+    };
+    progress.total++;
+    if (task.status === 'done') progress.done++;
+    if (task.status !== 'todo') progress.status = 'in_progress';
+    result.set(task.milestone, progress);
+  }
+  for (const progress of result.values())
+    if (progress.total === progress.done) progress.status = 'done';
+  return result;
+}
 export function milestoneProgress(
   milestone: Pick<Milestone, 'id'>,
   tasks: readonly Task[],
 ): MilestoneProgress {
-  const own = tasks.filter(
-    (t) => t.milestone === milestone.id && !t.archived && t.status !== 'cancelled',
-  );
-  const done = own.filter((t) => t.status === 'done').length;
-  const started = own.some((t) => t.status !== 'todo');
-  return {
-    done,
-    total: own.length,
-    status: own.length > 0 && done === own.length ? 'done' : started ? 'in_progress' : 'todo',
-  };
+  return indexMilestoneProgress(tasks).get(milestone.id) ?? { done: 0, total: 0, status: 'todo' };
 }
 
 /** Dependency cycles, each as a list of task ids (first id repeated at the end). */

@@ -26,6 +26,7 @@ import { readCodexLimits } from './limits.ts';
 import { CodexAuthRevision } from './session-auth.ts';
 
 export interface CodexAdapterConfig {
+  authRevision?: CodexAuthRevision;
   /** Installed pinned binary, or undefined when not installed yet. */
   binary: () => Promise<CodexBinary | undefined>;
   /** Opens a URL in the system browser (sign-in). */
@@ -38,10 +39,11 @@ export class CodexAdapter implements AgentAdapter {
   readonly id = 'codex' as const;
   readonly adapterVersion = CODEX_ADAPTER_VERSION;
   private readonly config: CodexAdapterConfig;
-  private readonly authRevision = new CodexAuthRevision();
+  private readonly authRevision: CodexAuthRevision;
 
   constructor(config: CodexAdapterConfig) {
     this.config = config;
+    this.authRevision = config.authRevision ?? new CodexAuthRevision();
   }
 
   async status(): Promise<AgentStatus> {

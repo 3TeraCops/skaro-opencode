@@ -18,7 +18,7 @@ export interface IntegrationDeps {
   project: (id: string) => ProjectContext;
   pending: (op: IntegrationOperation) => void;
   changed: (op: IntegrationOperation) => void;
-  processStarted?: (op: IntegrationOperation, pid: number) => void;
+  processStarted?: (op: IntegrationOperation, pid: number) => void | Promise<void>;
   stopProcesses?: (op: IntegrationOperation) => Promise<void>;
 }
 

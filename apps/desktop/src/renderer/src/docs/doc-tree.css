@@ -52,6 +52,7 @@
 }
 
 .group[data-doc-tree] {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -96,6 +97,7 @@
 }
 
 .item[data-doc-tree] {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 9px;
