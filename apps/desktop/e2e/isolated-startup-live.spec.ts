@@ -63,6 +63,29 @@ test('restores a deep saved chat and paints the indexed chat catalog after a ful
       }),
     );
     await page.screenshot({ path: info.outputPath('restored-test-project.png') });
+    await page
+      .locator('.project-nav')
+      .getByRole('button', { name: 'Документы', exact: true })
+      .click();
+    await expect
+      .poll(() =>
+        page.evaluate(async (project) => {
+          const saved = (await window.skaro.invoke(
+            'app.getSetting',
+            'ui.workspace',
+          )) as WorkspaceState;
+          return saved.sections[project];
+        }, project!),
+      )
+      .toBe('docs');
+    await page.reload();
+    expect(
+      await page.evaluate(async (project) => {
+        const initial = await window.skaro.bootstrapReady;
+        return initial?.workspace?.sections[project];
+      }, project!),
+    ).toBe('docs');
+    await expect(page.locator('[data-doc-article].blocks .md').first()).toBeVisible();
   } finally {
     await app.close();
   }

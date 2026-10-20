@@ -1,9 +1,10 @@
 import { projectOverview } from '../project-overview.svelte';
+import { bootstrap } from '../bootstrap';
 import type { ProjectCard } from '../../../shared/ipc';
 import type { ProjectRange, ProjectSort } from '../../../shared/project-catalog';
 export type { ProjectSort } from '../../../shared/project-catalog';
 export type ProjectView = 'grid' | 'list';
-let preferences = window.skaro.bootstrap?.projectsView;
+let preferences = bootstrap?.projectsView;
 let viewport: ProjectCard[] | undefined;
 function firstCards() {
   if (viewport) return viewport;
@@ -45,7 +46,7 @@ export class ProjectsBoardState {
       this.remember();
       void this.reload();
     });
-    if (!window.skaro.bootstrap)
+    if (!bootstrap)
       void window.skaro.invoke('app.getSetting', 'ui.projects').then((value) => {
         const saved = value as { sort?: ProjectSort; view?: ProjectView } | null;
         if (saved?.sort) this.sort = saved.sort;

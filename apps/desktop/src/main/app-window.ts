@@ -38,10 +38,16 @@ function savedBounds(): Bounds {
 
 export function createMainWindow(): void {
   const locale = app.getLocale();
-  ipcMain.removeAllListeners('skaro:bootstrap');
-  ipcMain.on('skaro:bootstrap', (event) => {
+  // Capture the first bounded viewport before background services initialize read models.
+  const initial = state?.bootstrap(locale);
+  let first = true;
+  ipcMain.removeHandler('skaro:bootstrap');
+  ipcMain.handle('skaro:bootstrap', (event) => {
     // A renderer reload must restore the current workspace, not the window's creation snapshot.
-    event.returnValue = event.sender === win?.webContents ? state?.bootstrap(locale) : undefined;
+    if (event.sender !== win?.webContents) return;
+    const snapshot = first ? initial : state?.bootstrap(locale);
+    first = false;
+    return snapshot;
   });
   const bounds = savedBounds();
   trace('bounds read');

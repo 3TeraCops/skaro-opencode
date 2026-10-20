@@ -1,11 +1,12 @@
 import type { ProjectCard } from '../../shared/ipc';
+import { bootstrap } from './bootstrap';
 
 /** A small cache shared by tab indicators and the first registry viewport. */
 class ProjectOverview {
   cards = $state.raw<ProjectCard[]>(
-    (window.skaro.bootstrap?.projects ?? []).map(
+    (bootstrap?.projects ?? []).map(
       (project) =>
-        window.skaro.bootstrap?.cards.find((card) => card.id === project.id) ?? {
+        bootstrap?.cards.find((card) => card.id === project.id) ?? {
           ...project,
           unloaded: true,
           refreshing: true,
@@ -18,7 +19,7 @@ class ProjectOverview {
   );
   private loading?: Promise<void>;
   private listening = false;
-  private readonly tabs = new Set(window.skaro.bootstrap?.tabs.projects ?? []);
+  private readonly tabs = new Set(bootstrap?.tabs.projects ?? []);
   load(): Promise<void> {
     if (!this.listening) {
       this.listening = true;

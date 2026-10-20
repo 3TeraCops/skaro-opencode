@@ -271,6 +271,7 @@ export const EVENT_CHANNEL = 'skaro:event';
 /** What the renderer sees as `window.skaro`. */
 export interface SkaroApi {
   readonly bootstrap?: import('./ipc-sessions').BootstrapState;
+  readonly bootstrapReady?: Promise<import('./ipc-sessions').BootstrapState | undefined>;
   readonly platform: string;
   /** Path on disk of a file or a folder dropped into the window. */
   pathOf(file: File): string;

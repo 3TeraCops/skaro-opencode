@@ -1,5 +1,6 @@
 import type { ChatSummary } from '../../../shared/ipc';
 import type { ChatRange, ChatCatalog } from '../../../shared/chat-catalog';
+import { bootstrap } from '../bootstrap';
 
 let bootstrapAvailable = true;
 
@@ -20,7 +21,7 @@ export class ChatList {
   private timer?: ReturnType<typeof setTimeout>;
   constructor(projectId: string) {
     this.projectId = projectId;
-    const initial = bootstrapAvailable ? window.skaro.bootstrap?.chatCatalog : undefined;
+    const initial = bootstrapAvailable ? bootstrap?.chatCatalog : undefined;
     if (initial?.source.projectId === projectId && !initial.source.archived) {
       bootstrapAvailable = false;
       this.accept(initial);

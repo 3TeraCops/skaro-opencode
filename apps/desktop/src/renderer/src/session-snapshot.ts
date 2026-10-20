@@ -1,6 +1,7 @@
 import type { ChatView, TaskView } from '../../shared/ipc';
 import type { TimelineState } from '@skaro/timeline';
 import type { HistoryPage } from '../../shared/history';
+import { bootstrap } from './bootstrap';
 
 const VERSION = 'skaro.session.v1.';
 const MAX_BYTES = 256_000;
@@ -36,7 +37,7 @@ function viewport(state: TimelineState): TimelineState {
 }
 export function readSession<T extends ChatView | TaskView>(key: string): T | undefined {
   try {
-    const cached = sessions.get(key) ?? window.skaro.bootstrap?.sessions?.[key];
+    const cached = sessions.get(key) ?? bootstrap?.sessions?.[key];
     if (cached) return cached as T;
     const raw = localStorage.getItem(VERSION + key);
     return raw ? (JSON.parse(raw) as T) : undefined;

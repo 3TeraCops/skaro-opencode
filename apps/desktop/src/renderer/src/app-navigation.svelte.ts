@@ -5,12 +5,13 @@ import { applyFeedFont } from './settings/setting.svelte';
 import { tabStates, watchTabStates } from './tab-states.svelte';
 import { SvelteURLSearchParams } from 'svelte/reactivity';
 import { onMount } from 'svelte';
+import { bootstrap } from './bootstrap';
 
 type View = 'home' | 'project' | 'settings' | 'inventory';
 
 /** Navigation and persisted tabs; views remain composition-only. */
 export function createNavigation() {
-  const initial = window.skaro.bootstrap;
+  const initial = bootstrap;
   let projects = $state<ProjectInfo[]>(initial?.projects.map((project) => ({ ...project })) ?? []);
   let tabs = $state<TabsState>({ ...initial?.tabs, projects: [...(initial?.tabs.projects ?? [])] });
   let view = $state<View>(initial?.workspace?.view ?? (initial?.tabs.active ? 'project' : 'home'));

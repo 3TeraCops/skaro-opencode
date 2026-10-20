@@ -26,7 +26,7 @@ test('queries every real project and preserves the established grid, list and se
       const cards = [...first.cards];
       for (let start = 48; start < first.source.count; start += 48)
         cards.push(...(await window.skaro.invoke('projects.page', first.source, start)));
-      return { projects, cards, bootstrap: window.skaro.bootstrap };
+      return { projects, cards, bootstrap: await window.skaro.bootstrapReady };
     });
     expect(actual.cards.map((card) => card.id).sort()).toEqual(
       actual.projects.map((project) => project.id).sort(),

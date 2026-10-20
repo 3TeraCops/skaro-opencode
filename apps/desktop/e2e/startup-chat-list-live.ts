@@ -5,7 +5,7 @@ declare const window: Window & { skaro: SkaroApi };
 
 /** Inspect real preload data and real visible rows; never delay or replace backend replies. */
 export async function restoredChatList(app: ElectronApplication, page: Page, project: string) {
-  const catalog = await page.evaluate(() => window.skaro.bootstrap?.chatCatalog);
+  const catalog = await page.evaluate(async () => (await window.skaro.bootstrapReady)?.chatCatalog);
   expect(catalog?.source.projectId).toBe(project);
   expect(catalog?.source.archived).toBe(false);
   expect(catalog?.start).toBe(0);

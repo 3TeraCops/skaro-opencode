@@ -7,8 +7,9 @@ import type { ProjectCard } from '../shared/ipc';
 export function cachedProjectCards(appDb: string, ids: string[]): ProjectCard[] {
   const path = join(dirname(appDb), 'registry.db');
   if (!existsSync(path)) return [];
-  const db = new DatabaseSync(path, { readOnly: true });
+  let db: DatabaseSync | undefined;
   try {
+    db = new DatabaseSync(path, { readOnly: true });
     if (
       !db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_cards'").get()
     )
@@ -18,7 +19,15 @@ export function cachedProjectCards(appDb: string, ids: string[]): ProjectCard[] 
       const row = query.get(id);
       return row ? [JSON.parse(String(row['value'])) as ProjectCard] : [];
     });
+  } catch (error) {
+    // A worker may be initializing this optional read model. The indexed async
+    // query still loads every card; waiting on its lock must not block first paint.
+    if (error && typeof error === 'object' && 'errcode' in error) {
+      const code = Number(error.errcode) & 255;
+      if (code === 5 || code === 6) return [];
+    }
+    throw error;
   } finally {
-    db.close();
+    db?.close();
   }
 }
