@@ -57,6 +57,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile --filter '!@skaro/agent-probe'
+      - name: Install pinned Electron runtime before parallel tests
+        run: pnpm --filter @skaro/desktop exec node -e "require('electron')"
       # This is a release preparation run; the owner permits full checks before a release.
       - run: pnpm lint
       - run: pnpm format:check
