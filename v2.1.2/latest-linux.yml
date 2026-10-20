@@ -1,0 +1,5 @@
+version: 2.1.2
+files:
+  - url: https://github.com/dartdavros/skaro/releases/download/v2.1.2/Skaro-2.1.2-linux-x86_64.AppImage
+    sha512: zMnBa6LqdXAxndAfUusAbj1PhAsvmcgWVOMz0LXQVsbEFEWefLz0wY9QN1EndoiHai9VYXmEWMs9iFo0gSJpng==
+    size: 137012604
