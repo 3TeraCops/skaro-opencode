@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AgentLogo, Icon, t } from '@skaro/ui';
+  import { AgentLogo, Icon, ViewSwitch, t } from '@skaro/ui';
   import type { MilestoneInfo } from '../../../shared/ipc';
   import type { TaskFacets } from '../../../shared/task-catalog';
   import FilterDrop from './FilterDrop.svelte';
@@ -115,22 +115,12 @@
   </button>
 
   <div data-task-toolbar class="spacer"></div>
-  <div data-task-toolbar class="seg">
-    <button
-      data-task-toolbar
-      type="button"
-      class:active={view === 'board'}
-      onclick={() => (view = 'board')}
-    >
-      <Icon name="board" size={13} stroke={2} />{t('board.view.board')}
-    </button>
-    <button
-      data-task-toolbar
-      type="button"
-      class:active={view === 'list'}
-      onclick={() => (view = 'list')}
-    >
-      <Icon name="list" size={13} stroke={2} />{t('board.view.list')}
-    </button>
-  </div>
+  <ViewSwitch
+    value={view}
+    options={[
+      { id: 'board', label: t('board.view.board'), icon: 'board' },
+      { id: 'list', label: t('board.view.list'), icon: 'list' },
+    ]}
+    onchange={(next) => (view = next as 'board' | 'list')}
+  />
 </div>

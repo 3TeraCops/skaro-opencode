@@ -3,6 +3,11 @@
 import { addMessages } from '@skaro/ui';
 
 addMessages('ru', {
+  'chat.clear': 'Очистить историю чата',
+  'chat.clear.action': 'Очистить',
+  'chat.clear.busy': 'Остановите агента или дождитесь завершения, чтобы очистить историю',
+  'chat.clear.confirm':
+    'История и контекст беседы будут очищены. Файлы и выполненные изменения в проекте сохранятся.',
   'chat.new': 'Новый чат',
   'chat.new.tip': 'Начать новый чат',
   'chat.archive.open': 'Архив чатов',
@@ -139,6 +144,11 @@ addMessages('ru', {
 });
 
 addMessages('en', {
+  'chat.clear': 'Clear chat history',
+  'chat.clear.action': 'Clear',
+  'chat.clear.busy': 'Stop the agent or wait for it to finish before clearing history',
+  'chat.clear.confirm':
+    'The conversation history and context will be cleared. Files and changes already made to the project will be kept.',
   'chat.new': 'New chat',
   'chat.new.tip': 'Start a new chat',
   'chat.archive.open': 'Chat archive',

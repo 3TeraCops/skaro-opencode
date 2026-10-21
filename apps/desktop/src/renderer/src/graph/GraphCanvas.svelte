@@ -5,6 +5,7 @@
   import C4CanvasTools from '../c4/C4CanvasTools.svelte';
   import { LiveGraph } from '../graph-preview/live-graph';
   import { renderGraph } from './render-data';
+  import LoadingView from '../screens/LoadingView.svelte';
   import type { ProjectGraph } from './data.svelte';
   let {
     page,
@@ -136,7 +137,8 @@
     </div>
   {:else if !page.nodes.length}<div class="graph-error">
       <Banner kind="info" text={t('graph.noData')} />
-    </div>{/if}
+    </div>
+  {:else if !layoutReady}<LoadingView overlay />{/if}
   <C4CanvasTools
     {zoom}
     min={1 / 3}

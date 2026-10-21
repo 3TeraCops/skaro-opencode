@@ -2,12 +2,14 @@
   import { t } from '@skaro/ui';
   import type { TaskDetail } from '../../../shared/ipc';
   import TaskPanelIcon from './TaskPanelIcon.svelte';
+  import type { Snippet } from 'svelte';
   let {
     task,
     plan = false,
     expandable = true,
     onexpand,
     ontasks,
+    actions,
   }: {
     task: TaskDetail;
     /** The screen of a stage: its crumbs lead back to "План" and are always shown. */
@@ -16,6 +18,7 @@
     expandable?: boolean;
     onexpand: () => void;
     ontasks: () => void;
+    actions?: Snippet | undefined;
   } = $props();
 </script>
 
@@ -32,6 +35,7 @@
     <span class="slash">·</span>
     <span class="name">{task.title}</span>
   </div>
+  {@render actions?.()}
   {#if expandable}
     <button
       type="button"

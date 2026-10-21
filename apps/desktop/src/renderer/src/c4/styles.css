@@ -81,6 +81,7 @@
   color: var(--sk-link);
 }
 .c4-canvas {
+  position: relative;
   flex: 1;
   min-width: 0;
   width: 100%;
@@ -108,11 +109,6 @@
   padding: 16px;
   color: var(--sk-error);
   overflow-wrap: anywhere;
-  font-size: var(--sk-fs-5);
-}
-.c4-loading {
-  padding: 22px;
-  color: var(--sk-text-secondary);
   font-size: var(--sk-fs-5);
 }
 @media (prefers-reduced-motion: reduce) {

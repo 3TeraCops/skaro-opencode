@@ -27,6 +27,7 @@ import type { ChatRange } from '../shared/chat-catalog';
 import { background } from './background/client';
 
 import { ChatEngine } from './chat-engine';
+import { clearChat } from './chat-clear';
 export { titleOf } from './chat-settings-helpers';
 export { projectContextText } from './chat-context-text';
 
@@ -132,6 +133,9 @@ export class ChatSessions implements ProjectToolHandlers {
   }
   async archive(projectId: string, chatId: string, archived: boolean): Promise<void> {
     return this.engine.conversation.archive(projectId, chatId, archived);
+  }
+  clear(projectId: string, chatId: string): Promise<void> {
+    return clearChat(this.engine, projectId, chatId);
   }
   async proposal(
     projectId: string,

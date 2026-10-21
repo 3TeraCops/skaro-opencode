@@ -110,35 +110,3 @@ input[data-task-toolbar]:focus {
 .spacer[data-task-toolbar] {
   flex: 1;
 }
-
-.seg[data-task-toolbar] {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 8px;
-  background: var(--sk-deep);
-}
-
-.seg[data-task-toolbar] button:where([data-task-toolbar]) {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 27px;
-  padding: 0 11px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--sk-text-17);
-  font-size: var(--sk-fs-5);
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.seg[data-task-toolbar] button.active:where([data-task-toolbar]) {
-  background: var(--sk-bg);
-  color: var(--sk-text-2);
-  box-shadow: 0 1px 2px var(--sk-black-a35);
-}

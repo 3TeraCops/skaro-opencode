@@ -44,7 +44,7 @@ export async function createUpdates(options: {
     return ids.filter((_id, index) => found[index] !== undefined);
   };
   const current = await currentBundle(app.getVersion(), process.resourcesPath, app.isPackaged);
-  const driver = new UpdateDriver(platform, app.isPackaged);
+  const driver = new UpdateDriver(platform, app.isPackaged, app.getPath('exe'));
   const updates = new Updates({
     current,
     platform,

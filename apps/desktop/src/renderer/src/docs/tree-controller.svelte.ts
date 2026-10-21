@@ -3,7 +3,23 @@ import type { DocEntry } from '../../../shared/ipc';
 import type { TreePropsContext } from './tree-props';
 
 export function createTreeController(p: TreePropsContext) {
-  let groups = $state({ adr: true, specs: true, docs: true });
+  const key = `skaro.doc.groups.${p.docs.projectId}`;
+  const initialGroups = { adr: true, specs: true, docs: true };
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) ?? '{}');
+    for (const group of ['adr', 'specs', 'docs'] as const)
+      if (typeof saved?.[group] === 'boolean') initialGroups[group] = saved[group];
+  } catch {
+    /* Optional presentation preferences. */
+  }
+  let groups = $state(initialGroups);
+  $effect(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(groups));
+    } catch {
+      /* Storage availability must not prevent navigation. */
+    }
+  });
   let resizing = $state(false);
   let menu = $state(false);
   let foot: HTMLDivElement | undefined = $state();

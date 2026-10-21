@@ -4,6 +4,27 @@ import { type Row, toRun } from './rows.ts';
 import { randomUUID } from 'node:crypto';
 
 export class DbRuns extends DbTable {
+  clearHistory(id: string, logPath: string, integrations: string[]): void {
+    const run = this.getRun(id);
+    if (!run) throw new Error('The run is not found');
+    this.transaction(() => {
+      this.db
+        .prepare(
+          'UPDATE runs SET log_path=?,native_session_id=NULL,previous_run_id=NULL,handoff=NULL WHERE id=?',
+        )
+        .run(logPath, id);
+      this.db
+        .prepare('DELETE FROM owner_commands WHERE owner=?')
+        .run(`${run.projectId}:${run.taskId}`);
+      this.db.prepare('DELETE FROM settings WHERE key=?').run(`question.answers.active.${id}`);
+      this.db
+        .prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)')
+        .run(
+          `task.${run.projectId}.${run.taskId}.clearedIntegrations`,
+          JSON.stringify(integrations),
+        );
+    });
+  }
   // ── runs ─────────────────────────────────────────────────────────────────
 
   createRun(

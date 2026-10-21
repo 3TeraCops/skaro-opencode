@@ -53,6 +53,7 @@ export function sessionHandlers({
   | 'task.send'
   | 'task.respond'
   | 'task.interrupt'
+  | 'task.clear'
   | 'task.stopBackground'
   | 'task.setSettings'
   | 'task.merge'
@@ -68,6 +69,7 @@ export function sessionHandlers({
   | 'chat.interrupt'
   | 'chat.setSettings'
   | 'chat.archive'
+  | 'chat.clear'
   | 'chat.proposal'
 > {
   return {
@@ -137,6 +139,7 @@ export function sessionHandlers({
     'task.send': (projectId, taskId, input) => runs.send(projectId, taskId, input),
     'task.respond': (projectId, taskId, id, answer) => runs.respond(projectId, taskId, id, answer),
     'task.interrupt': (projectId, taskId) => runs.interrupt(projectId, taskId),
+    'task.clear': (projectId, taskId) => runs.clearChat(projectId, taskId),
     'task.stopBackground': (projectId, taskId, id) => runs.stopBackground(projectId, taskId, id),
     'task.setSettings': (projectId, taskId, settings) =>
       runs.setSettings(projectId, taskId, settings),
@@ -160,6 +163,7 @@ export function sessionHandlers({
     'chat.setSettings': (projectId, chatId, settings) =>
       chats.setSettings(projectId, chatId, settings),
     'chat.archive': (projectId, chatId, archived) => chats.archive(projectId, chatId, archived),
+    'chat.clear': (projectId, chatId) => chats.clear(projectId, chatId),
     'chat.proposal': (projectId, chatId, itemId, action) =>
       itemId.startsWith('skaro-c4-') && action.action !== 'revert'
         ? c4.decide(projectId, itemId, action.action)

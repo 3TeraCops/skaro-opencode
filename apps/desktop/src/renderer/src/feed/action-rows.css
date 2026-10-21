@@ -1,5 +1,16 @@
 /* Owner's 2026-09-29 screenshot: larger, lighter action/thought text, no leading chevron. */
-.fd-feed .fd-action-summary,
+.fd-feed .fd-action-summary {
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 500;
+  color: var(--sk-text-17);
+  gap: 5px;
+}
+
+.fd-feed .fd-sublist {
+  --fd-text: 12px;
+}
+
 .fd-feed .fd-live {
   font-size: var(--fd-text, 14px);
   line-height: 1.4;

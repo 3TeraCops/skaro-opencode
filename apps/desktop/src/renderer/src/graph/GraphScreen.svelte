@@ -107,8 +107,9 @@
           {ontask}
         />{/if}
     </div>
-  {:else if !model.status || ['queued', 'indexing', 'stale'].includes(model.status.phase)}<LoadingView
-    />{/if}
+  {:else if !model.error && !['error', 'unavailable', 'cancelled'].includes(model.status?.phase ?? '')}
+    <LoadingView />
+  {/if}
   <GraphFooter {model} />
   {#if fullscreen}<TooltipHost />{/if}
 </div>

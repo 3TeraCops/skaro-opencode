@@ -21,6 +21,7 @@ import { TaskRunEngine } from './task-run-engine';
 import { TaskCatalogService } from './task-catalog-service';
 import { errorText } from './session-log';
 import { startTaskEnvironment } from './task-environment-tool';
+import { clearTaskChat } from './task-clear';
 import { configureTaskEnvironment } from './task-environment-config-tool';
 import type { ConfigureEnvironmentArgs } from '@skaro/mcp-server';
 export { ActiveRun, type TaskRunDeps } from './task-run-model';
@@ -145,6 +146,9 @@ export class TaskRuns {
   }
   interrupt(projectId: string, taskId: string): Promise<void> {
     return this.engine.messages.interrupt(projectId, taskId);
+  }
+  clearChat(projectId: string, taskId: string): Promise<void> {
+    return clearTaskChat(this.engine, projectId, taskId);
   }
   cancel(projectId: string, taskId: string): Promise<void> {
     return this.engine.scheduling.cancel(projectId, taskId);

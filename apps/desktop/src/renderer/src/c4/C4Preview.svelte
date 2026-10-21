@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from '@skaro/ui';
-  import { Maximize2, ArrowRight } from '@lucide/svelte';
+  import { Maximize2 } from '@lucide/svelte';
+  import LoadingIndicator from '../LoadingIndicator.svelte';
   import type { C4Model, C4View } from '@skaro/core/c4-view';
   import { layoutC4 } from './layout';
   import C4PreviewSvg from './C4PreviewSvg.svelte';
@@ -33,17 +34,21 @@
         >{t(`c4.${view.kind}`)} · {t(`c4.${view.state}`)}</span
       ><Maximize2 size={15} strokeWidth={1.8} />
     </div>
-    {#if placed}{#await placed}<div class="c4-loading" role="status">
-          {t('c4.loading')}
-        </div>{:then graph}<C4PreviewSvg {graph} title={view.title} />{:catch error}<div
-          class="c4-error"
-        >
-          {String(error)}
-        </div>{/await}{:else}<div class="c4-loading" role="status">{t('c4.loading')}</div>{/if}
+    <div class="preview-body">
+      {#if placed}
+        {#await placed}
+          <LoadingIndicator size={20} />
+        {:then graph}
+          <C4PreviewSvg {graph} title={view.title} />
+        {:catch error}
+          <div class="c4-error">{String(error)}</div>
+        {/await}
+      {:else}
+        <LoadingIndicator size={20} />
+      {/if}
+    </div>
     <div class="preview-footer">
-      <span>C4 · {t('c4.revision', { n: model.revision })}</span><span
-        >{t('c4.open')} <ArrowRight size={13} strokeWidth={1.8} /></span
-      >
+      <span>C4 · {t('c4.revision', { n: model.revision })}</span>
     </div>
   </button>
 </section>
@@ -52,6 +57,7 @@
   .c4-preview {
     width: 100%;
     min-width: 0;
+    min-height: calc(var(--c4-preview-height, 340px) + 84px);
     border: 1px solid var(--sk-line-strong);
     border-radius: 12px;
     overflow: hidden;
@@ -82,6 +88,15 @@
     font-weight: 700;
     color: var(--sk-text-bright);
   }
+  .preview-body {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: var(--c4-preview-height, 340px);
+    min-height: var(--c4-preview-height, 340px);
+    overflow: hidden;
+    background: var(--sk-bg);
+  }
   .kind {
     font-size: 11px;
     color: var(--sk-text-muted);
@@ -93,12 +108,6 @@
     border-top: 1px solid var(--sk-line);
     font-size: 11px;
     color: var(--sk-text-muted);
-  }
-  .preview-footer span:last-child {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--sk-link);
   }
   .open:hover .preview-footer {
     background: var(--sk-surface-2);

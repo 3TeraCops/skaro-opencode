@@ -21,7 +21,7 @@ export class ProjectDocs {
   draft = $state('');
   /** The file changed on disk while it was edited (text there now). */
   conflict = $state<string | undefined>();
-  private readonly projectId: string;
+  readonly projectId: string;
   private readonly stop: () => void;
   private reading = 0;
 

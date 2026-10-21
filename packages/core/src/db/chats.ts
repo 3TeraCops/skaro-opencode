@@ -4,6 +4,28 @@ import { type Row, toChat } from './rows.ts';
 import { randomUUID } from 'node:crypto';
 
 export class DbChats extends DbTable {
+  /** Reset conversation storage only; project files and task/runtime records are untouched. */
+  clearHistory(id: string, logPath: string): void {
+    const chat = this.getChat(id);
+    if (!chat) throw new Error(`chat ${id} not found`);
+    this.transaction(() => {
+      this.db
+        .prepare('UPDATE chats SET log_path=?,native_session_id=NULL,updated_at=? WHERE id=?')
+        .run(logPath, this.now(), id);
+      this.db.prepare('DELETE FROM owner_commands WHERE owner=?').run(`${chat.projectId}:${id}`);
+      const remove = this.db.prepare('DELETE FROM settings WHERE key=?');
+      for (const key of [
+        `chat.plan-decisions.${id}`,
+        `chat.${id}.notes`,
+        `chat.planning.${id}`,
+        `question.answers.live.${id}`,
+      ])
+        remove.run(key);
+      this.db
+        .prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)')
+        .run(`chat.${id}.clearedAt`, JSON.stringify(this.now()));
+    });
+  }
   // ── chats ────────────────────────────────────────────────────────────────
 
   createChat(input: {

@@ -56,7 +56,12 @@ export class TaskSession {
           return;
         }
         if (!this.view?.history || change.view.source.revision < this.view.history.revision) return;
-        this.view = { ...this.view, history: change.view.source, timeline: change.view.timeline };
+        this.view = {
+          ...this.view,
+          history: change.view.source,
+          historyPage: change.view.page,
+          timeline: change.view.timeline,
+        };
         this.generation++;
         this.timeline = change.view.timeline;
         this.remember();

@@ -1,8 +1,8 @@
-/* Fixed soft pink, as requested by the owner; independent of OS theme colours. */
+/* Shared by the conversation and task board. */
 .agent-activity {
   flex: none;
   display: inline-block;
-  color: #ee9cbd;
+  color: var(--sk-text-21);
   line-height: 0;
 }
 

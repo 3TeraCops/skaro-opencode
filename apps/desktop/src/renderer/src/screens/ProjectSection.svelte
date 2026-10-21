@@ -29,7 +29,7 @@
     onchanged,
     onimport,
     graphTarget,
-    c4Target,
+    c4Target = $bindable(),
     ongraph,
     onc4,
     onleave,
@@ -75,7 +75,7 @@
   {/key}
 {:else if section === 'c4'}
   {#await loadC4Screen()}<LoadingView />{:then { default: C4Screen }}
-    <C4Screen projectId={project.id} target={c4Target} {ongraph} />
+    <C4Screen projectId={project.id} bind:target={c4Target} {ongraph} />
   {/await}
 {:else if section === 'graph'}
   {#await loadGraphScreen()}<LoadingView />{:then { default: GraphScreen }}

@@ -80,6 +80,7 @@ export class TaskRunViews {
       projectId,
       taskId,
       active?.timeline.state,
+      this.ctx.deps.db.getSetting(`task.${projectId}.${taskId}.clearedIntegrations`, []),
     );
     const integrations = this.ctx.integrations.store.all(projectId);
     const read = options?.paged

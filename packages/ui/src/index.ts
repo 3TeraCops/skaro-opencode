@@ -14,6 +14,7 @@ export { default as Button } from './components/Button.svelte';
 export { default as IconButton } from './components/IconButton.svelte';
 export { default as StatusDot, type DotState } from './components/StatusDot.svelte';
 export { default as Segmented } from './components/Segmented.svelte';
+export { default as ViewSwitch } from './components/ViewSwitch.svelte';
 export { default as Toggle } from './components/Toggle.svelte';
 export { default as EffortSlider } from './components/EffortSlider.svelte';
 export { default as Popover } from './components/Popover.svelte';

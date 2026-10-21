@@ -204,6 +204,7 @@ export interface Methods
     answer: InteractionAnswer,
   ) => void;
   'task.interrupt': (projectId: string, taskId: string) => void;
+  'task.clear': (projectId: string, taskId: string) => void;
   'task.stopBackground': (projectId: string, taskId: string, backgroundId: string) => void;
   'task.setSettings': (projectId: string, taskId: string, settings: AgentSettings) => void;
   'task.merge': (
