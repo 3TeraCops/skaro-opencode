@@ -30,6 +30,7 @@ import { CiRuns } from './ci-runs';
 import { C4Service } from './c4-service';
 import { proposeC4Specification } from './c4-specification';
 import { ProjectOverview } from './project-overview';
+import { GraphService } from './graph/service';
 
 export async function createServices(
   appState: AppState,
@@ -39,6 +40,7 @@ export async function createServices(
   const db = appState.db;
   const attachments = new AttachmentStore(join(dataDir, 'attachments'));
   const projects = new Projects(db, (projectId) => emit('project.changed', { projectId }), dataDir);
+  const graph = new GraphService(appState, dataDir, (status) => emit('graph.changed', status));
   const overview = new ProjectOverview(db, projects, (card) => emit('projects.card', card));
   const agents = new AgentManager({
     // Development and tests share one download of the agents.
@@ -163,7 +165,9 @@ export async function createServices(
     if (error) notifier.notify('error', text);
   });
 
+  graph.start();
   return {
+    graph,
     overview,
     c4,
     appState,

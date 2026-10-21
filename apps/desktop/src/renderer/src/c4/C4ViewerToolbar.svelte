@@ -1,9 +1,13 @@
 <script lang="ts">
   import { ArrowLeft, Maximize2, Minimize2, X } from '@lucide/svelte';
-  import { IconButton, Select, t } from '@skaro/ui';
+  import { Icon, IconButton, Select, t } from '@skaro/ui';
   import C4Search from './C4Search.svelte';
   import type { C4ViewerState } from './viewer-state.svelte';
-  let { state }: { state: C4ViewerState } = $props();
+  let {
+    state,
+    ongraph,
+  }: { state: C4ViewerState; ongraph?: ((id: string, viewId: string) => void) | undefined } =
+    $props();
   const options = $derived(
     state.model.views.map((view) => ({
       value: view.id,
@@ -31,6 +35,11 @@
         strokeWidth={1.9}
       />{/if}
   </IconButton>
+  {#if ongraph}<IconButton
+      tip={t('graph.title')}
+      onclick={() => ongraph?.(state.selected, state.view.id)}
+      ><Icon name="network" size={16} /></IconButton
+    >{/if}
   <IconButton tip={t('c4.close')} onclick={() => void state.close()}
     ><X size={14} strokeWidth={2.2} /></IconButton
   >

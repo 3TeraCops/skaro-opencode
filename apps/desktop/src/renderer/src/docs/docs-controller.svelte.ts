@@ -24,6 +24,14 @@ export function createDocsController(p: DocsProps) {
     .catch(() => undefined);
   /** Where to go after "Отменить правки": a document, or just out of the editor. */
   let pending = $state<string | undefined>();
+  let pendingAction: (() => void) | undefined;
+  p.onleave?.(requestLeave);
+  onDestroy(() => p.onleave?.(undefined));
+  function requestLeave(proceed: () => void): void {
+    if (!docs.dirty) { proceed(); return; }
+    pending = undefined; pendingAction = proceed; modal = 'leave';
+  }
+  function stay(): void { modal = undefined; pending = undefined; pendingAction = undefined; }
   let page: DocPage | undefined = $state();
   let now = $state(Date.now());
 
@@ -59,6 +67,7 @@ export function createDocsController(p: DocsProps) {
   });
 
   function select(path: string): void {
+    pendingAction = undefined;
     if (docs.dirty) {
       pending = path;
       modal = 'leave';
@@ -68,6 +77,7 @@ export function createDocsController(p: DocsProps) {
   }
 
   function cancel(): void {
+    pendingAction = undefined;
     if (docs.dirty) {
       pending = undefined;
       modal = 'leave';
@@ -75,10 +85,12 @@ export function createDocsController(p: DocsProps) {
   }
 
   function discard(): void {
+    const action = pendingAction; pendingAction = undefined;
     modal = undefined;
     docs.cancel();
     if (pending) select(pending);
     pending = undefined;
+    action?.();
   }
 
   async function link(href: string): Promise<void> {
@@ -157,6 +169,7 @@ export function createDocsController(p: DocsProps) {
     select,
     cancel,
     discard,
+    stay,
     link,
     create,
     createSpec,

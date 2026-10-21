@@ -116,6 +116,7 @@ export class ChatImportReview {
       total: state.staged.length,
     });
     await removeImport(state.dir);
+    this.ctx.deps.emit('project.changed', { projectId: live.projectId });
     const skipped = state.staged.filter((s) => !keys.includes(s.key));
     const note = [
       `The user imported ${keys.length} of ${state.staged.length}: ` +

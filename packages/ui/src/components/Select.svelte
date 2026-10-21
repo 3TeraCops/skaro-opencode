@@ -17,6 +17,7 @@
     menuWidth = 264,
     label,
     variant = 'default',
+    disabled = false,
   }: {
     options: SelectOptionItem<T>[];
     value: T;
@@ -24,9 +25,13 @@
     menuWidth?: number | string;
     label?: string;
     variant?: 'default' | 'model';
+    disabled?: boolean;
   } = $props();
 
   let open = $state(false);
+  $effect(() => {
+    if (disabled) open = false;
+  });
   const current = $derived(options.find((o) => o.value === value));
 </script>
 
@@ -46,6 +51,7 @@
         data-select
         type="button"
         class="field"
+        {disabled}
         aria-label={label}
         aria-haspopup="listbox"
         onclick={toggle}

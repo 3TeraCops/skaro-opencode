@@ -40,6 +40,7 @@
   import type { DocEntry } from '../../../shared/ipc';
   import { recordOf, titleOf } from './model';
   import DocTreeFooter from './DocTreeFooter.svelte';
+  import DocTreeItem from './DocTreeItem.svelte';
   import WindowedContent from '../WindowedContent.svelte';
   import './doc-tree.css';
 </script>
@@ -48,31 +49,22 @@
   {@const on = model.p.docs.selected === doc.path}
   {@const missing = !known && !model.p.docs.exists(doc.path)}
   {@const rec = recordOf(doc)}
-  <div
-    data-doc-tree
-    class="item"
-    class:on
-    class:muted={missing || rec?.status === 'superseded'}
-    role="treeitem"
-    aria-selected={on}
-    tabindex="0"
-    data-tip={model.tip(doc, missing)}
-    onclick={() => model.p.onselect(doc.path)}
-    onkeydown={(e) => e.key === 'Enter' && model.p.onselect(doc.path)}
-  >
-    {#if icon}
-      <span data-doc-tree class="icon"
-        ><Icon
-          name={icon === 'brief' ? 'docText' : icon === 'arch' ? 'layers' : 'fileBlank'}
-          size={15}
-        /></span
-      >
-    {:else}
-      <span data-doc-tree class="num">{rec?.id}</span>
-    {/if}
-    <span data-doc-tree class="label">{titleOf(doc)}</span>
-    {#if rec?.status === 'proposed'}<span data-doc-tree class="dot"></span>{/if}
-  </div>
+  <DocTreeItem
+    title={titleOf(doc)}
+    selected={on}
+    muted={missing || rec?.status === 'superseded'}
+    tip={model.tip(doc, missing)}
+    number={rec?.id}
+    proposed={rec?.status === 'proposed'}
+    icon={icon
+      ? icon === 'brief'
+        ? 'docText'
+        : icon === 'arch'
+          ? 'layers'
+          : 'fileBlank'
+      : undefined}
+    onselect={() => model.p.onselect(doc.path)}
+  />
 {/snippet}
 
 {#snippet group(key: 'adr' | 'specs' | 'docs', count: number)}

@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./c4-view": "./src/c4/browser.ts"
+    "./c4-view": "./src/c4/browser.ts",
+    "./graph-view": "./src/graph/browser.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."

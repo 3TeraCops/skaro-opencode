@@ -1,0 +1,78 @@
+.graph-preview {
+  background: var(--sk-bg);
+}
+.graph-preview:fullscreen {
+  width: 100%;
+  height: 100%;
+}
+.graph-preview .content {
+  flex: 1;
+  overflow: hidden;
+}
+.graph-canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.sigma-host,
+.graph-effects {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.graph-effects {
+  pointer-events: none;
+}
+.graph-legend {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0 18px 14px;
+}
+.graph-legend > span {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: var(--sk-fs-3);
+  color: var(--sk-text-muted);
+}
+.graph-legend i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.graph-toggles {
+  display: flex;
+  gap: 32px;
+  margin-left: auto;
+}
+.graph-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 18px;
+  border-top: 1px solid var(--sk-line);
+  color: var(--sk-text-muted);
+  font-size: var(--sk-fs-3);
+}
+.graph-toggles > div {
+  width: max-content;
+}
+.graph-error {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  right: 20px;
+}
+@media (max-width: 1250px) {
+  .graph-toggles {
+    margin-left: 0;
+  }
+  .graph-footer {
+    flex-wrap: wrap;
+  }
+}

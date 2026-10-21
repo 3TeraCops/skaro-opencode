@@ -2,6 +2,15 @@ import type { MethodName, EventName } from './ipc';
 
 /** The whitelist the preload exposes; must list every key of `Methods`. */
 export const METHODS = [
+  'graph.status',
+  'graph.rebuild',
+  'graph.cancel',
+  'graph.query',
+  'graph.scenarios',
+  'graph.model',
+  'graph.source',
+  'graph.view',
+  'graph.saveView',
   'session.remember',
   'docs.catalog',
   'docs.page',
@@ -136,6 +145,7 @@ export const METHODS = [
 ] as const satisfies readonly MethodName[];
 
 export const EVENTS = [
+  'graph.changed',
   'history.changed',
   'command.changed',
   'projects.card',

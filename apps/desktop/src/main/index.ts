@@ -16,6 +16,7 @@ import type { UpdateActivity } from './update-activity';
 import { trace } from './trace';
 import { HistoryReads, setHistoryReads } from './history-read-service';
 import { registerProjectLogos } from './app-logo';
+import { graphHandlers } from './graph/handlers';
 trace(`main loaded, pid ${process.pid}`);
 // Tests run against their own data dir.
 if (process.env['SKARO_USER_DATA']) {
@@ -36,10 +37,13 @@ let historyReads: HistoryReads | undefined;
 let updateActivity: UpdateActivity | undefined;
 let overview: import('./project-overview').ProjectOverview | undefined;
 let taskRuns: import('./tasks').TaskRuns | undefined;
+let graph: import('./graph/service').GraphService | undefined;
 function emit<E extends EventName>(event: E, payload: Events[E]): void {
   historyReads?.observe(event, payload);
   updateActivity?.observe(event, payload);
   overview?.observe(event, payload);
+  if (event === 'project.changed')
+    void graph?.rebuild((payload as Events['project.changed']).projectId).catch(() => undefined);
   if (event === 'project.changed' || event === 'task.changed')
     taskRuns?.projectChanged((payload as { projectId: string }).projectId);
   const window = mainWindow();
@@ -97,6 +101,7 @@ if (!locked) {
     const { runs, chats, mcp, projects, ci } = services;
     appState.chatCatalogOverlay = (page) => chats.liveRows(page);
     overview = services.overview;
+    graph = services.graph;
     taskRuns = services.runs;
     const result = await createUpdates({ ...services, emit });
     updateActivity = result.activity;
@@ -109,6 +114,7 @@ if (!locked) {
       ...appHandlers(services, updates, mainWindow, emit),
       ...sessionHandlers(services),
       ...fileHandlers(services, mainWindow, picked),
+      ...graphHandlers(services.graph),
     };
     commands.start(handlers);
     const acceptedHandlers = {
@@ -148,7 +154,9 @@ if (!locked) {
       void closeNativeSessions()
         .then(() => commands.close())
         .then(() => ci.close())
-        .then(() => Promise.allSettled([runs.close(), chats.close(), mcp.close()]))
+        .then(() =>
+          Promise.allSettled([runs.close(), chats.close(), mcp.close(), services.graph.close()]),
+        )
         .then(() => {
           trace('runs and mcp server closed');
           projects.close();
