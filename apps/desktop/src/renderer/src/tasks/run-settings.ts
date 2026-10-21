@@ -1,4 +1,4 @@
-import type { AgentSettings, ProjectSettings } from '../../../shared/ipc';
+import { normalizeAgentId, type AgentSettings, type ProjectSettings } from '../../../shared/ipc';
 
 /** A first launch follows the project; a resumed task keeps its established settings. */
 export function runSettings(
@@ -11,7 +11,7 @@ export function runSettings(
 ): AgentSettings {
   if (started) return { ...task };
   return {
-    agent: project.defaultAgent === 'codex' ? 'codex' : 'claude-code',
+    agent: normalizeAgentId(project.defaultAgent),
     ...(project.defaultModel ? { model: project.defaultModel } : {}),
     effort: project.defaultEffort ?? 'high',
     permissionMode: project.permissionMode,

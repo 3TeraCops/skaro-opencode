@@ -43,7 +43,7 @@ export function hostOf(url: string): string {
 }
 
 export function agentName(agent: string): string {
-  return agent === 'codex' ? 'Codex' : 'Claude Code';
+  return agent === 'codex' ? 'Codex' : agent === 'opencode' ? 'OpenCode' : 'Claude Code';
 }
 
 /** Model id as people say it: claude-opus-5-1 → Opus 5.1. */

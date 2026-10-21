@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { ClaudeAdapter } from '@skaro/adapter-claude/adapter';
 import { CodexAdapter, CodexAuthRevision } from '@skaro/adapter-codex';
 import { nativeAdapter } from './native/adapter';
+import { OpenCodeAdapter, openCodeConfigDir } from '@skaro/adapter-opencode';
 import { AgentInstaller, agentPackage, type AgentId } from '@skaro/core';
 import type {
   AgentAdapter,
@@ -17,12 +18,13 @@ import type {
 } from '@skaro/timeline';
 import { agentDefaultsKey, agentReady, type AgentInfo } from '../shared/ipc';
 
-export const AGENT_IDS: readonly AgentId[] = ['claude-code', 'codex'];
+export const AGENT_IDS: readonly AgentId[] = ['claude-code', 'codex', 'opencode'];
 
 /** Approximate download size shown before the first download (bytes). */
 const DOWNLOAD_SIZE: Record<AgentId, number> = {
   'claude-code': 230e6,
   codex: 90e6,
+  opencode: 0,
 };
 
 interface Store {
@@ -75,6 +77,7 @@ export class AgentManager {
         },
         openUrl: options.openUrl,
       }),
+      opencode: new OpenCodeAdapter(),
     };
     for (const id of AGENT_IDS) {
       this.info.set(id, { id, installed: false, sizeBytes: DOWNLOAD_SIZE[id], checking: true });
@@ -83,7 +86,8 @@ export class AgentManager {
 
   adapter(id: AgentId): AgentAdapter {
     const adapter = this.adapters[id];
-    if (!this.attachmentsDir) return adapter;
+    // OpenCode is external: no downloaded binary to hand to the native attachment layer.
+    if (!this.attachmentsDir || id === 'opencode') return adapter;
     return nativeAdapter(adapter, async () => {
       const installed = await this.installer.installed(id);
       if (!installed) throw new Error('The agent is not installed');
@@ -117,7 +121,7 @@ export class AgentManager {
   async requireReady(id: AgentId): Promise<void> {
     let info = this.info.get(id);
     if (!info || info.checking) info = await (this.checks.get(id) ?? this.refreshOne(id));
-    const name = id === 'codex' ? 'Codex' : 'Claude Code';
+    const name = id === 'codex' ? 'Codex' : id === 'opencode' ? 'OpenCode' : 'Claude Code';
     const ru = this.locale() === 'ru';
     if (!info?.installed) {
       throw new Error(
@@ -168,7 +172,11 @@ export class AgentManager {
       next = {
         id,
         installed: status.installed,
-        version: status.installed ? agentPackage(id).shownVersion : undefined,
+        version: status.installed
+          ? id === 'opencode'
+            ? status.version
+            : agentPackage(id).shownVersion
+          : undefined,
         authenticated: status.authenticated,
         account: status.account,
         sizeBytes: DOWNLOAD_SIZE[id],
@@ -177,7 +185,7 @@ export class AgentManager {
     } catch (error) {
       next = {
         id,
-        installed: (await this.installer.installed(id)) !== undefined,
+        installed: id === 'opencode' ? false : (await this.installer.installed(id)) !== undefined,
         sizeBytes: DOWNLOAD_SIZE[id],
         error: error instanceof Error ? error.message : String(error),
       };
@@ -190,6 +198,19 @@ export class AgentManager {
   install(id: AgentId): Promise<void> {
     const running = this.downloads.get(id);
     if (running) return running;
+    if (id === 'opencode') {
+      const task = (async () => {
+        const status = await this.adapters.opencode.status();
+        if (!status.installed)
+          throw new Error(
+            'OpenCode is not installed. Install the OpenCode desktop app or put `opencode` on PATH.',
+          );
+        await this.refreshOne(id);
+      })();
+      this.downloads.set(id, task);
+      void task.finally(() => this.downloads.delete(id));
+      return task;
+    }
     const task = (async () => {
       let lastReport = 0;
       this.patch(id, { download: { received: 0 } });
@@ -236,6 +257,7 @@ export class AgentManager {
 
   /** ~/.claude or ~/.codex, or where the environment points them. */
   configDir(id: AgentId): string {
+    if (id === 'opencode') return openCodeConfigDir();
     return id === 'codex'
       ? (process.env['CODEX_HOME'] ?? join(homedir(), '.codex'))
       : (process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude'));
@@ -248,7 +270,8 @@ export class AgentManager {
   /** D-28 self-check before the first run, remembered per agent version. */
   async sandbox(id: AgentId): Promise<SandboxCheck> {
     const key = `agents.${id}.sandbox`;
-    const version = agentPackage(id).version;
+    const version =
+      id === 'opencode' ? (this.info.get(id)?.version ?? 'external') : agentPackage(id).version;
     const saved = this.store.getSetting(key) as (SandboxCheck & { version: string }) | null;
     if (saved && saved.version === version) return saved;
     const dir = join(this.scratchDir, 'sandbox-check');

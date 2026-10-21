@@ -38,6 +38,7 @@ export function statusLabel(status: TaskStatus): string {
 export const AGENT_NAMES: Record<AgentId, string> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
+  opencode: 'OpenCode',
 };
 
 /** "Claude Code · Opus 5", or "—" when no agent is assigned. */

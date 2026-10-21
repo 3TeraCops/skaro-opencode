@@ -1,6 +1,9 @@
 <script lang="ts">
-  /** Agent logos: Claude Code (coral mark) and Codex (monochrome). */
-  let { agent, size = 16 }: { agent: 'claude-code' | 'codex'; size?: number } = $props();
+  /** Agent logos: Claude Code (coral mark), Codex (monochrome) and OpenCode. */
+  let {
+    agent,
+    size = 16,
+  }: { agent: 'claude-code' | 'codex' | 'opencode'; size?: number } = $props();
 </script>
 
 {#if agent === 'claude-code'}
@@ -11,6 +14,22 @@
       fill="#D97757"
       d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z"
     />
+  </svg>
+{:else if agent === 'opencode'}
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.8"
+    aria-label="OpenCode"
+    role="img"
+    class="opencode"
+  >
+    <rect x="3" y="3" width="18" height="18" rx="4" />
+    <path d="M8 9l3 3-3 3" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M13 15h4" stroke-linecap="round" />
   </svg>
 {:else}
   <svg
@@ -34,7 +53,8 @@
     display: block;
   }
 
-  .codex {
+  .codex,
+  .opencode {
     color: var(--sk-text);
   }
 </style>

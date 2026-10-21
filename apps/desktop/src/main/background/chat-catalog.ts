@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import type { ChatRange, ChatCatalog, ChatPage } from '../../shared/chat-catalog';
 import type { ChatSummary } from '../../shared/ipc-sessions';
+import { normalizeAgentId } from '../../shared/ipc-entities';
 
 /** Read canonical metadata through its covering order index; never load histories or all chats. */
 export class ChatCatalogReader {
@@ -53,7 +54,7 @@ export class ChatCatalogReader {
       .map((row): ChatSummary => ({
         id: String(row['id']),
         title: String(row['title']),
-        agent: row['agent'] === 'codex' ? 'codex' : 'claude-code',
+        agent: normalizeAgentId(row['agent']),
         archived: Boolean(row['archived']),
         updatedAt: Number(row['updated_at']),
         live: false,

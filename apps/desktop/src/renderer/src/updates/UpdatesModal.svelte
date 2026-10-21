@@ -16,7 +16,12 @@
         ? t('updates.apply')
         : t('updates.update'),
   );
-  const names = { skaro: 'Skaro', codex: 'Codex', 'claude-code': 'Claude Code' };
+  const names = {
+    skaro: 'Skaro',
+    codex: 'Codex',
+    'claude-code': 'Claude Code',
+    opencode: 'OpenCode',
+  };
   const open = (url: string) => void window.skaro.invoke('shell.openExternal', url);
 </script>
 

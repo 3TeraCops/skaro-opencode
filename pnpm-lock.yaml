@@ -103,6 +103,9 @@ importers:
       '@skaro/adapter-codex':
         specifier: workspace:*
         version: link:../../packages/adapter-codex
+      '@skaro/adapter-opencode':
+        specifier: workspace:*
+        version: link:../../packages/adapter-opencode
       '@skaro/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -210,6 +213,12 @@ importers:
         version: link:../timeline
 
   packages/adapter-codex:
+    dependencies:
+      '@skaro/timeline':
+        specifier: workspace:*
+        version: link:../timeline
+
+  packages/adapter-opencode:
     dependencies:
       '@skaro/timeline':
         specifier: workspace:*

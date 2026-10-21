@@ -3,6 +3,7 @@
 import { readFile } from 'node:fs/promises';
 import { ClaudeProjector } from '@skaro/adapter-claude/projector';
 import { CodexProjector } from '@skaro/adapter-codex/projector';
+import { OpenCodeProjector } from '@skaro/adapter-opencode';
 import type {
   Emit,
   Interaction,
@@ -13,6 +14,7 @@ import type {
 } from '@skaro/timeline';
 
 export function projectorFor(agent: string): (ctx: ProjectionContext, emit: Emit) => Projector {
+  if (agent === 'opencode') return (_ctx, emit) => new OpenCodeProjector(emit);
   return agent === 'codex'
     ? (ctx, emit) => new CodexProjector(ctx, emit)
     : (ctx, emit) => new ClaudeProjector(ctx, emit);

@@ -3,13 +3,13 @@
 
   let { open = $bindable() }: { open: boolean } = $props();
 
-  let agent = $state<'claude-code' | 'codex'>('claude-code');
+  let agent = $state<'claude-code' | 'codex' | 'opencode'>('claude-code');
   let effort = $state('medium');
 </script>
 
 <Modal bind:open title="Агент задачи">
   <div data-inventory class="agents">
-    {#each [{ id: 'claude-code', name: 'Claude Code' }, { id: 'codex', name: 'Codex' }] as const as option (option.id)}
+    {#each [{ id: 'claude-code', name: 'Claude Code' }, { id: 'codex', name: 'Codex' }, { id: 'opencode', name: 'OpenCode' }] as const as option (option.id)}
       <button
         data-inventory
         type="button"

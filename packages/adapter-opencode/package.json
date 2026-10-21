@@ -1,0 +1,16 @@
+{
+  "name": "@skaro/adapter-opencode",
+  "version": "0.0.0",
+  "private": true,
+  "description": "OpenCode adapter (opencode serve HTTP API).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@skaro/timeline": "workspace:*"
+  }
+}

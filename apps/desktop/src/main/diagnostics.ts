@@ -17,7 +17,12 @@ export async function collectDiagnostics(
   const report: Diagnostics = {
     format: 1,
     createdAt: new Date().toISOString(),
-    versions: { ...versions, codex: AGENT_PINS.codex, claude: AGENT_PINS['claude-code'] },
+    versions: {
+      ...versions,
+      codex: AGENT_PINS.codex,
+      claude: AGENT_PINS['claude-code'],
+      opencode: AGENT_PINS.opencode,
+    },
     platform: { os: process.platform, arch: process.arch },
     logs: { scanned: 0, unavailable: 0, invalidLines: 0, projectionErrors: 0 },
     unknownEvents: 0,
@@ -45,7 +50,11 @@ export async function collectDiagnostics(
         if (seen.has(id)) return;
         seen.add(id);
         const agent =
-          record.agent === 'codex' || record.agent === 'claude-code' ? record.agent : 'unknown';
+          record.agent === 'codex' ||
+          record.agent === 'claude-code' ||
+          record.agent === 'opencode'
+            ? record.agent
+            : 'unknown';
         const typeHash = createHash('sha256').update(event.item.native.type).digest('hex');
         const key = `${agent}/${typeHash}`;
         const entry = counts.get(key) ?? {

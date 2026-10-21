@@ -22,7 +22,7 @@
     title: string;
     stage?: string;
     time?: string;
-    agent?: 'claude-code' | 'codex';
+    agent?: 'claude-code' | 'codex' | 'opencode';
     state?: DotState;
     stateTip?: string;
     selected?: boolean;
@@ -48,7 +48,8 @@
   {#if stage}<span class="stage">{stage}</span>{/if}
   <div class="bottom">
     <span class="time">{time ?? ''}</span>
-    {#if agent}<span data-tip={agent === 'codex' ? 'Codex' : 'Claude Code'}
+    {#if agent}<span
+        data-tip={agent === 'codex' ? 'Codex' : agent === 'opencode' ? 'OpenCode' : 'Claude Code'}
         ><AgentLogo {agent} /></span
       >{/if}
   </div>

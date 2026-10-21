@@ -14,7 +14,7 @@ export function taskListAssignment(
   );
   if (saved?.followProject && !run) return taskAgentPreferences(artifacts.config, task, saved);
   const agent = saved?.agent ?? run?.agent ?? task.agent;
-  if (agent !== 'claude-code' && agent !== 'codex') return {};
+  if (agent !== 'claude-code' && agent !== 'codex' && agent !== 'opencode') return {};
   const model = saved?.model ?? run?.model ?? task.model;
   return { agent, ...(model ? { model } : {}) };
 }

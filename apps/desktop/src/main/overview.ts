@@ -10,7 +10,7 @@ import {
   type AppDb,
   type ProjectRecord,
 } from '@skaro/core';
-import type { AgentId, ProjectCard } from '../shared/ipc';
+import { normalizeAgentId, type ProjectCard } from '../shared/ipc';
 import type { Projects } from './projects';
 
 export async function projectCards(db: AppDb, projects: Projects): Promise<ProjectCard[]> {
@@ -56,7 +56,7 @@ export async function projectCardFrom(
   if (branch) card.branch = branch;
   if (!artifacts) return card;
 
-  card.agent = artifacts.config.defaultAgent === 'codex' ? 'codex' : 'claude-code';
+  card.agent = normalizeAgentId(artifacts.config.defaultAgent);
   if (artifacts.config.defaultModel) card.model = artifacts.config.defaultModel;
 
   const tasks = artifacts.tasks.filter((t) => !t.archived);
@@ -72,7 +72,7 @@ export async function projectCardFrom(
         card.running.push({
           id: task.id,
           title: task.title,
-          agent: (run?.agent === 'codex' ? 'codex' : 'claude-code') as AgentId,
+          agent: normalizeAgentId(run?.agent),
           ...(run?.model ? { model: run.model } : {}),
         });
       }

@@ -1,15 +1,15 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AGENT_PINS, agentPackage, type AgentId } from '@skaro/core';
-import type { ReleaseAgent, ReleaseManifest } from './update-release';
+import type { ReleaseAgent, ReleaseManifest, ReleasableAgentId } from './update-release';
 import { STABLE_VERSION } from './update-release';
 
 export interface BundleVersions {
   bundleVersion: string;
   skaroVersion: string;
   claudeSdk: string;
-  adapters: Record<AgentId, string>;
-  agents: Record<AgentId, ReleaseAgent>;
+  adapters: Record<ReleasableAgentId, string>;
+  agents: Record<ReleasableAgentId, ReleaseAgent>;
 }
 
 /** The release build embeds this file; dev uses only its real compiled pins. */
@@ -23,7 +23,7 @@ export async function currentBundle(
       const pkg = agentPackage(id as AgentId);
       return [id, { version: pkg.version, shownVersion: pkg.shownVersion }];
     }),
-  ) as Record<AgentId, ReleaseAgent>;
+  ) as Record<ReleasableAgentId, ReleaseAgent>;
   if (!packaged)
     return {
       bundleVersion: version,
@@ -58,7 +58,7 @@ export function sameBundle(expected: ReleaseManifest, actual: BundleVersions): b
     expected.skaroVersion === actual.skaroVersion &&
     expected.claudeSdk === actual.claudeSdk &&
     ['codex', 'claude-code'].every((id) => {
-      const agent = id as AgentId;
+      const agent = id as ReleasableAgentId;
       return (
         expected.adapters[agent] === actual.adapters[agent] &&
         expected.agents[agent].version === actual.agents[agent].version &&

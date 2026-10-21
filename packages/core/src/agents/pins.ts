@@ -1,17 +1,19 @@
 // Agent versions pinned by this Skaro release (D-23, D-26) and where their binaries live.
 
-export type AgentId = 'claude-code' | 'codex';
+export type AgentId = 'claude-code' | 'codex' | 'opencode';
 
 /** Pinned versions. Bump together with adapter golden tests (agent-output.md, section 8). */
 export const AGENT_PINS: Record<AgentId, string> = {
   'claude-code': '0.3.285', // @anthropic-ai/claude-agent-sdk (Claude Code 2.1.285)
   codex: '0.159.2', // @openai/codex
+  opencode: '2.0.32', // external CLI, installed with the OpenCode desktop app
 };
 
 /** The agent's own version, shown to the user ("Claude Code 2.1.281"): moves with the pins. */
 const SHOWN_VERSIONS: Record<AgentId, string> = {
   'claude-code': '2.1.285',
   codex: '0.159.2',
+  opencode: '2.0.32',
 };
 
 export interface Platform {
@@ -79,6 +81,8 @@ export function agentPackage(
   const exe = platform.os === 'win32' ? '.exe' : '';
   const version = pin?.version ?? AGENT_PINS[agent];
   const shownVersion = pin?.shownVersion ?? SHOWN_VERSIONS[agent];
+  if (agent === 'opencode')
+    throw new Error('OpenCode is installed separately: use the desktop app or OPENCODE_BIN');
   if (agent === 'claude-code') {
     if (
       !['win32', 'darwin', 'linux'].includes(platform.os) ||

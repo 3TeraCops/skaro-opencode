@@ -2,6 +2,7 @@ import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { ClaudeProjector } from '@skaro/adapter-claude/projector';
 import { CodexProjector } from '@skaro/adapter-codex/projector';
+import { OpenCodeProjector } from '@skaro/adapter-opencode';
 import {
   isRunLogMeta,
   segmentTurns,
@@ -25,7 +26,11 @@ export async function replayHistory(
   const context = { now: () => now, attachImage: attachments.attachImage };
   const emit = (event: TimelineEvent) => saved(segmentTurns(segment, event));
   const create = (): Projector =>
-    agent === 'codex' ? new CodexProjector(context, emit) : new ClaudeProjector(context, emit);
+    agent === 'opencode'
+      ? new OpenCodeProjector(emit)
+      : agent === 'codex'
+        ? new CodexProjector(context, emit)
+        : new ClaudeProjector(context, emit);
   let projector: Projector | undefined;
   const input = createReadStream(path, { encoding: 'utf8' });
   const lines = createInterface({ input, crlfDelay: Infinity });

@@ -1,5 +1,5 @@
 import { type ChatRecord } from '@skaro/core';
-import type { AgentId, ChatSettings } from '../shared/ipc';
+import { normalizeAgentId, type AgentId, type ChatSettings } from '../shared/ipc';
 import { saved, lastOf, settingsKey, lastKey } from './chat-settings-helpers';
 
 import type { ChatEngine } from './chat-engine';
@@ -39,7 +39,7 @@ export class ChatConfiguration {
       null,
     );
     return {
-      agent: chat.agent === 'codex' ? 'codex' : 'claude-code',
+      agent: normalizeAgentId(chat.agent),
       ...(stored ? saved(stored) : {}),
     };
   }

@@ -151,8 +151,8 @@ export class TaskRunHandoff {
         'other',
         'info',
         this.ctx.deps.locale() === 'ru'
-          ? `Агент изменён: ${active.run.agent === 'codex' ? 'Codex' : 'Claude Code'} → ${saved.agent === 'codex' ? 'Codex' : 'Claude Code'}. Работа продолжится со следующего сообщения.`
-          : `Agent changed: ${active.run.agent === 'codex' ? 'Codex' : 'Claude Code'} → ${saved.agent === 'codex' ? 'Codex' : 'Claude Code'}. Work continues with the next message.`,
+          ? `Агент изменён: ${agentName(active.run.agent)} → ${agentName(saved.agent)}. Работа продолжится со следующего сообщения.`
+          : `Agent changed: ${agentName(active.run.agent)} → ${agentName(saved.agent)}. Work continues with the next message.`,
       );
       await this.ctx.history.drain(successor);
       this.ctx.setRuntime(projectId, taskId, 'idle', run.id);
@@ -175,4 +175,8 @@ export class TaskRunHandoff {
       throw error;
     }
   }
+}
+
+function agentName(agent: string): string {
+  return agent === 'codex' ? 'Codex' : agent === 'opencode' ? 'OpenCode' : 'Claude Code';
 }

@@ -1,5 +1,5 @@
 import type { ProjectConfig, Task } from '@skaro/core';
-import type { AgentSettings } from '../shared/ipc';
+import { normalizeAgentId, type AgentSettings } from '../shared/ipc';
 
 export type TaskAgentPreferences = Partial<AgentSettings> & { followProject?: boolean };
 
@@ -12,7 +12,7 @@ export function taskAgentPreferences(
   if (started) {
     const model = saved?.model ?? started.model ?? task.model;
     return {
-      agent: started.agent === 'codex' ? 'codex' : 'claude-code',
+      agent: normalizeAgentId(started.agent),
       ...(model ? { model } : {}),
       effort: saved?.effort ?? 'high',
     };
@@ -29,7 +29,7 @@ export function taskAgentPreferences(
       : undefined) ??
     'high';
   return {
-    agent: configured === 'codex' ? 'codex' : 'claude-code',
+    agent: normalizeAgentId(configured),
     ...(model ? { model } : {}),
     effort,
   };

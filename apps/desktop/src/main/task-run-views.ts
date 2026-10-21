@@ -4,7 +4,14 @@ import { historyReads } from './history-read-service';
 import { emptyTimeline } from '@skaro/timeline';
 import { retireTaskHistories } from './task-memory';
 import { indexTasks, type ProjectArtifacts, type RunRecord, type Task } from '@skaro/core';
-import type { AgentId, AgentSettings, TaskAssignment, TaskSummary, TaskView } from '../shared/ipc';
+import {
+  normalizeAgentId,
+  type AgentId,
+  type AgentSettings,
+  type TaskAssignment,
+  type TaskSummary,
+  type TaskView,
+} from '../shared/ipc';
 import { toggleCriterion } from './task-body';
 import { key, settingsKey, awaitingKey, findTask, ref, runInfo, detail } from './task-run-helpers';
 import type { TaskRunEngine } from './task-run-engine';
@@ -190,7 +197,7 @@ export class TaskRunViews {
       saved?.agent || started ? configured : this.ctx.deps.agents.readyAgent(configured);
     const { model, effort } = preferences;
     return {
-      agent: agent === 'codex' ? 'codex' : 'claude-code',
+      agent: normalizeAgentId(agent),
       ...(model ? { model } : {}),
       ...(effort ? { effort } : {}),
       permissionMode: saved?.permissionMode ?? artifacts.config.permissionMode,

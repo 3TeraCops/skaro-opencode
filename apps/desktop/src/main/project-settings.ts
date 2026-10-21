@@ -2,14 +2,19 @@
 // equal to the app-wide defaults ("Настройки") are not written, so the project keeps following them.
 
 import type { InheritableSetting, ProjectConfig } from '@skaro/core';
-import { BUILT_IN_DEFAULTS, type ProjectDefaults, type ProjectSettings } from '../shared/ipc';
+import {
+  BUILT_IN_DEFAULTS,
+  normalizeAgentId,
+  type ProjectDefaults,
+  type ProjectSettings,
+} from '../shared/ipc';
 import { syncAgentFiles } from './agent-files';
 import type { Projects } from './projects';
 import { agentDefaultsChanged } from './task-agent-preferences';
 
 export function toSettings(config: ProjectConfig): ProjectSettings {
   return {
-    defaultAgent: config.defaultAgent === 'codex' ? 'codex' : 'claude-code',
+    defaultAgent: normalizeAgentId(config.defaultAgent),
     ...(config.defaultModel ? { defaultModel: config.defaultModel } : {}),
     ...(config.defaultEffort ? { defaultEffort: config.defaultEffort } : {}),
     permissionMode: config.permissionMode,

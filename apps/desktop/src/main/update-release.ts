@@ -10,7 +10,9 @@ import type { UpdateComponent } from '../shared/updates';
 
 export const RELEASE_ROOT = 'https://github.com/dartdavros/skaro/releases';
 export const RELEASE_API = 'https://api.github.com/repos/dartdavros/skaro/releases/latest';
-export const AGENT_IDS: AgentId[] = ['codex', 'claude-code'];
+/** Agents whose binaries Skaro downloads and updates itself (OpenCode comes with its app). */
+export type ReleasableAgentId = 'codex' | 'claude-code';
+export const AGENT_IDS: ReleasableAgentId[] = ['codex', 'claude-code'];
 export const PLATFORM_KEYS = [
   'win32-x64',
   'win32-arm64',
@@ -43,15 +45,15 @@ export interface ReleasePlatform {
   /** Channel metadata published separately from the public installers. */
   feed: string;
   payload: { name: string; sha512: string; size: number };
-  agents: Record<AgentId, AgentPackage & AgentArtifact>;
+  agents: Record<ReleasableAgentId, AgentPackage & AgentArtifact>;
 }
 export interface ReleaseManifest {
   schema: 1;
   bundleVersion: string;
   skaroVersion: string;
   claudeSdk: string;
-  adapters: Record<AgentId, string>;
-  agents: Record<AgentId, ReleaseAgent>;
+  adapters: Record<ReleasableAgentId, string>;
+  agents: Record<ReleasableAgentId, ReleaseAgent>;
   platforms: Record<string, ReleasePlatform>;
 }
 
@@ -175,7 +177,7 @@ export function mergeReleaseParts(
 
 export function changedComponents(
   next: ReleaseManifest,
-  current: { skaroVersion: string; agents: Record<AgentId, ReleaseAgent> },
+  current: { skaroVersion: string; agents: Record<ReleasableAgentId, ReleaseAgent> },
   installed: readonly AgentId[],
 ): UpdateComponent[] {
   const url = `${RELEASE_ROOT}/tag/v${next.bundleVersion}`;

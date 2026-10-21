@@ -2,7 +2,12 @@ import type { AgentActivity, PermissionMode } from '@skaro/timeline';
 
 export type Locale = 'ru' | 'en';
 
-export type AgentId = 'claude-code' | 'codex';
+export type AgentId = 'claude-code' | 'codex' | 'opencode';
+
+/** Reads an agent id from config or a run record; unknown values fall back to Claude Code. */
+export function normalizeAgentId(value: unknown): AgentId {
+  return value === 'codex' || value === 'opencode' ? value : 'claude-code';
+}
 
 export interface AgentInfo {
   id: AgentId;
