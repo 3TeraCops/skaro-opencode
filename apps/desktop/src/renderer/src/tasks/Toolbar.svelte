@@ -75,7 +75,7 @@
   >
     {#snippet marker(a: string)}
       <span data-task-toolbar class="logo">
-        {#if a === 'claude-code' || a === 'codex'}
+        {#if a === 'claude-code' || a === 'codex' || a === 'opencode'}
           <AgentLogo agent={a} size={12} />
         {:else}
           <svg

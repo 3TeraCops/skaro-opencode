@@ -32,7 +32,7 @@
   </div>
 
   <div data-task-assign-dialog class="agents">
-    {#each ['claude-code', 'codex'] as const as id (id)}
+    {#each ['claude-code', 'codex', 'opencode'] as const as id (id)}
       {@const info = agents.list.find((a) => a.id === id)}
       <div
         data-task-assign-dialog

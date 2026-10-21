@@ -21,7 +21,7 @@
 </script>
 
 <div data-agent-defaults class="agents">
-  {#each ['claude-code', 'codex'] as const as id (id)}
+  {#each ['claude-code', 'codex', 'opencode'] as const as id (id)}
     {@const on = settings.defaultAgent === id}
     <div
       data-agent-defaults
