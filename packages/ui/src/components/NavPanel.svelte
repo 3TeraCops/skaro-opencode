@@ -74,13 +74,12 @@
         type="button"
         class="item"
         class:active={item.id === active}
-        data-tip={item.tip}
         aria-current={item.id === active ? 'page' : undefined}
         onclick={() => onselect(item.id)}
       >
         <span class="icon"><Icon name={item.icon} size={16} /></span>
         <span class="label">{item.label}</span>
-        {#if item.count}<span class="count" data-tip={item.countTip}>{item.count}</span>{/if}
+        {#if item.count}<span class="count">{item.count}</span>{/if}
       </button>
     {/each}
     <span class="spacer"></span>
@@ -92,7 +91,7 @@
       />{/if}
     {#if footerItem}
       <div class="sep"></div>
-      <button type="button" class="item footer-item" data-tip={footerItem.label} onclick={onfooter}>
+      <button type="button" class="item footer-item" onclick={onfooter}>
         <span class="icon"><Icon name={footerItem.icon} size={16} /></span>
         <span class="label">{footerItem.label}</span>
         {#if footerItem.trailing}<span class="count">{footerItem.trailing}</span>{/if}

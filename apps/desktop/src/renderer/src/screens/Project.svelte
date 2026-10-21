@@ -110,7 +110,7 @@
     {doc}
     {data}
     {graphTarget}
-    {c4Target}
+    bind:c4Target
     onleave={(guard) => (leaveSection = guard)}
     ongraph={(elementId, viewId) => {
       graphTarget = { elementId, viewId };

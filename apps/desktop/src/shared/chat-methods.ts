@@ -26,6 +26,7 @@ export interface ChatMethods extends ChatCatalogMethods {
   'chat.interrupt': (projectId: string, chatId: string) => void;
   'chat.setSettings': (projectId: string, chatId: string, settings: ChatSettings) => void;
   'chat.archive': (projectId: string, chatId: string, archived: boolean) => void;
+  'chat.clear': (projectId: string, chatId: string) => void;
   'chat.proposal': (
     projectId: string,
     chatId: string,

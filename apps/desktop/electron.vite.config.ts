@@ -34,6 +34,9 @@ export default defineConfig({
   renderer: {
     worker: { format: 'es' },
     plugins: [svelte()],
+    // These imports are reached through lazy views and a worker, beyond the initial scan.
+    // Prebundle them before mounting Svelte so navigation cannot trigger a runtime replacement.
+    optimizeDeps: { include: ['highlight.js/lib/common', 'graphology-layout-forceatlas2'] },
     // Own port on 127.0.0.1: the default 5173 is often taken by other projects' dev servers,
     // and the window would load their page instead of Skaro.
     server: { host: '127.0.0.1', port: 4791, strictPort: true },

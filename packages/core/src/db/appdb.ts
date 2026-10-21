@@ -186,6 +186,9 @@ export class AppDb extends DbTable {
   getRun(id: string): RunRecord | undefined {
     return this.runs.getRun(id);
   }
+  clearRunHistory(...args: Parameters<DbRuns['clearHistory']>): void {
+    this.runs.clearHistory(...args);
+  }
 
   continueRun(...args: Parameters<DbRuns['continueRun']>): RunRecord {
     return this.runs.continueRun(...args);
@@ -230,6 +233,9 @@ export class AppDb extends DbTable {
 
   getChat(id: string): ChatRecord | undefined {
     return this.chats.getChat(id);
+  }
+  clearChatHistory(id: string, logPath: string): void {
+    this.chats.clearHistory(id, logPath);
   }
 
   /** Chats of a project (or of one task), most recently active first. */

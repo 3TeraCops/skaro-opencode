@@ -44,18 +44,9 @@
     ).length,
   );
   const items = $derived<NavItem[]>([
-    {
-      id: 'tasks',
-      label: t('nav.tasks'),
-      tip: t('nav.tasks.tip'),
-      icon: 'tasks',
-      count: attention,
-      countTip: t('board.attention.tip'),
-      railTip: tn('board.attention.rail', attention),
-    },
+    { id: 'docs', label: t('nav.docs'), tip: t('nav.docs.tip'), icon: 'docs' },
     { id: 'c4', label: 'C4', tip: t('nav.c4.tip'), icon: 'layers' },
     { id: 'graph', label: t('nav.graph'), tip: t('nav.graph.tip'), icon: 'network' },
-    { id: 'docs', label: t('nav.docs'), tip: t('nav.docs.tip'), icon: 'docs' },
     {
       id: 'plan',
       label: t('nav.plan'),
@@ -64,6 +55,15 @@
       count: stagesWaiting,
       countTip: t('plan.attention.tip'),
       railTip: tn('plan.attention.rail', stagesWaiting),
+    },
+    {
+      id: 'tasks',
+      label: t('nav.tasks'),
+      tip: t('nav.tasks.tip'),
+      icon: 'tasks',
+      count: attention,
+      countTip: t('board.attention.tip'),
+      railTip: tn('board.attention.rail', attention),
     },
     { id: 'chat', label: t('nav.chat'), tip: t('nav.chat.tip'), icon: 'chat', separated: true },
     { id: 'params', label: t('nav.params'), tip: t('nav.params.tip'), icon: 'params' },

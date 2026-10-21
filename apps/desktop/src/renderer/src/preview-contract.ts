@@ -8,6 +8,8 @@ export type PreviewMethods = Omit<
   | 'updates.download'
   | 'updates.apply'
   | 'task.revertMerge'
+  | 'task.clear'
+  | 'chat.clear'
   | 'task.openExternal'
   | 'task.stopEnvironmentReview'
   | 'diagnostics.export'
@@ -22,6 +24,8 @@ export function invokePreview(handlers: object, method: MethodName, args: unknow
     method.startsWith('updates.') ||
     method === 'app.checkUpdate' ||
     method === 'task.revertMerge' ||
+    method === 'task.clear' ||
+    method === 'chat.clear' ||
     method === 'task.openExternal' ||
     method === 'task.stopEnvironmentReview' ||
     method === 'diagnostics.export' ||

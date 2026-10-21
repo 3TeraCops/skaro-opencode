@@ -227,8 +227,10 @@ export class IntegrationHistory {
     return currentActivity((await this.journal(op).snapshot).timeline.state);
   }
 
-  async project(projectId: string, taskId: string, base?: TimelineState) {
-    const operations = this.store.all(projectId).filter((op) => participatesIn(op, taskId));
+  async project(projectId: string, taskId: string, base?: TimelineState, hidden: string[] = []) {
+    const operations = this.store
+      .all(projectId)
+      .filter((op) => participatesIn(op, taskId) && !hidden.includes(op.id));
     const sources: IntegrationTimeline[] = [];
     for (const op of operations) {
       const snapshot = await this.journal(op).snapshot;

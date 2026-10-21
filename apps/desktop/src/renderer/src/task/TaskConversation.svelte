@@ -8,6 +8,7 @@
   import TaskCollapsedHeader from './TaskCollapsedHeader.svelte';
   import TaskStarting from './TaskStarting.svelte';
   import LoadingView from '../screens/LoadingView.svelte';
+  import TaskChatClear from './TaskChatClear.svelte';
   import type { TaskController } from './task-controller.svelte';
   import './task-conversation.css';
   let {
@@ -40,8 +41,13 @@
   const hasFeed = $derived(controller.hasFeed);
 </script>
 
-<div class="main task-conversation">
+{#snippet clearAction()}<TaskChatClear {controller} {projectId} {taskId} />{/snippet}
+
+<div class="main task-conversation" class:corner-action={descriptionOpen && !stage}>
   {#if view}
+    {#if descriptionOpen && !stage}
+      <TaskChatClear {controller} {projectId} {taskId} floating />
+    {/if}
     {#if stage}
       <TaskCollapsedHeader
         task={view.task}
@@ -49,9 +55,10 @@
         expandable={!descriptionOpen}
         {onexpand}
         ontasks={onplan}
+        actions={clearAction}
       />
     {:else if !descriptionOpen}
-      <TaskCollapsedHeader task={view.task} {onexpand} {ontasks} />
+      <TaskCollapsedHeader task={view.task} {onexpand} {ontasks} actions={clearAction} />
     {/if}
     <div class="banners">
       <SessionBanners

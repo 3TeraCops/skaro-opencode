@@ -14,6 +14,9 @@ function signature(context: Context): string {
   return `${HISTORY_VERSION}:${context.token}|${[...context.origins].map(([id, item]) => `${id}:${item.seq}:${Number(item.live)}`).join('|')}`;
 }
 export class TaskHistoryReads {
+  forget(owner: string): void {
+    this.contexts.delete(owner);
+  }
   private readonly contexts = new Map<string, Context>();
   private readonly initializing = new Set<string>();
   private readonly dataDir: string;

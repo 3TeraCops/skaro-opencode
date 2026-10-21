@@ -50,6 +50,21 @@ export class HistoryReads {
       return this.initial(view);
     });
   }
+  reset(owner: string, seq: number, state: TimelineState): Promise<void> {
+    return this.queue(owner, async () => {
+      this.tasks.forget(owner);
+      const view = await uploadHistory(
+        this.dataDir,
+        owner,
+        `${HISTORY_VERSION}:${seq}`,
+        state,
+        undefined,
+        true,
+      );
+      this.sequences.set(owner, seq);
+      this.emit('history.changed', { owner, view: await this.initial(view) });
+    });
+  }
   async peek(owner: string, path: string, subject: number) {
     const saved = await this.queue(owner, () =>
       background(this.dataDir, 'read.peek', owner, path, subject),

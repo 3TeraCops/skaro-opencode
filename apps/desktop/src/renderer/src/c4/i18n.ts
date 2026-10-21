@@ -1,5 +1,7 @@
 import { addMessages } from '@skaro/ui';
 addMessages('ru', {
+  'c4.view.list': 'Список',
+  'c4.view.grid': 'Плитка',
   'c4.open': 'Открыть диаграмму',
   'c4.close': 'Закрыть',
   'c4.fullscreen': 'Полный экран',
@@ -40,6 +42,8 @@ addMessages('ru', {
   'c4.applying': 'Применение согласованного пакета…',
 });
 addMessages('en', {
+  'c4.view.list': 'List',
+  'c4.view.grid': 'Grid',
   'c4.open': 'Open diagram',
   'c4.close': 'Close',
   'c4.fullscreen': 'Full screen',

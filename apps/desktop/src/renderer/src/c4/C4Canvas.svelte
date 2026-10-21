@@ -7,7 +7,8 @@
     useSvelteFlow,
     getViewportForBounds,
   } from '@xyflow/svelte';
-  import { t, Banner } from '@skaro/ui';
+  import { Banner } from '@skaro/ui';
+  import LoadingView from '../screens/LoadingView.svelte';
   import type { C4Model, C4View } from '@skaro/core/c4-view';
   import C4NodeView from './C4Node.svelte';
   import C4EdgeView from './C4Edge.svelte';
@@ -110,7 +111,7 @@
 
 <div class="c4-canvas" bind:this={canvas} bind:clientWidth={width} bind:clientHeight={height}>
   {#if error}<Banner kind="error" text={error} />{/if}
-  {#if loading}<div class="c4-loading" role="status">{t('c4.loading')}</div>{/if}
+  {#if loading}<LoadingView overlay />{/if}
   <SvelteFlow
     bind:nodes
     bind:edges

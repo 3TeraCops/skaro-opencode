@@ -3,6 +3,7 @@ import type { ReleaseManifest } from './update-release';
 import { releasePlatform } from './update-release';
 import { installerUrl, updateFeedBase } from './update-locations';
 import type { Platform } from '@skaro/core';
+import { updateInstallDirectory } from './update-target';
 
 /** The actual NSIS / Squirrel.Mac / AppImage updater; never enabled against a dev checkout. */
 export class UpdateDriver {
@@ -10,9 +11,14 @@ export class UpdateDriver {
   private readonly platform: Platform;
   private readonly packaged: boolean;
   private onFailure?: (error: Error) => void;
-  constructor(platform: Platform, packaged: boolean) {
+  constructor(platform: Platform, packaged: boolean, executable: string) {
     this.platform = platform;
     this.packaged = packaged;
+    // NSIS otherwise trusts InstallLocation from the registry, which may belong to
+    // another installation. Update and restart the executable the owner is using.
+    const directory = updateInstallDirectory(platform, packaged, executable);
+    if (directory && this.updater instanceof electronUpdater.NsisUpdater)
+      this.updater.installDirectory = directory;
     this.updater.autoDownload = false;
     this.updater.autoInstallOnAppQuit = false;
     this.updater.allowDowngrade = false;
@@ -60,6 +66,7 @@ export class UpdateDriver {
   }
 
   apply(): void {
+    if (!this.packaged) throw new Error('UPDATES_PACKAGED_ONLY');
     this.updater.quitAndInstall(false, true);
   }
   onApplyFailure(listener: (error: Error) => void): void {

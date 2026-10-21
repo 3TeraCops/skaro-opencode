@@ -4,7 +4,6 @@
   import type { AgentId } from '../../../shared/ipc';
   import type { ComposerController } from './composer-controller.svelte';
   import ComposerPermissions from './ComposerPermissions.svelte';
-  import EffortBars from './EffortBars.svelte';
   import { effortLabel } from '../tasks/agent-models.svelte';
   import './composer-bar.css';
   import './composer-permissions.css';
@@ -111,8 +110,6 @@
     <AgentLogo {agent} size={15} />
     <span>{model}</span>
     {#if showEffort && effort}
-      <span class="model-sep"></span>
-      <EffortBars count={efforts.length} current={effortIndex} />
       <span class="model-effort">{effortLabel(effort)}</span>
     {/if}
     <Icon name="chevronDown" size={11} stroke={2.4} />

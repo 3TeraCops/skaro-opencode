@@ -11,6 +11,7 @@
   import './chat-pane.css';
   import { createChatController } from './chat-controller.svelte';
   import ChatControls from './ChatControls.svelte';
+  import ChatClearButton from './ChatClearButton.svelte';
   import ChatStart from './ChatStart.svelte';
   import ChatChangedPanel from './ChatChangedPanel.svelte';
   import LoadingView from '../screens/LoadingView.svelte';
@@ -49,6 +50,14 @@
 <div class="main">
   <div class="head">
     <span class="title">{controller.title}</span>
+    {#if chatId && controller.view}
+      <ChatClearButton
+        {projectId}
+        {chatId}
+        disabled={controller.running || !controller.started}
+        onerror={(error) => (controller.actionError = error)}
+      />
+    {/if}
     <button
       type="button"
       class="archive"
@@ -92,7 +101,7 @@
       cwd={projectPath}
       mergeMessage=""
     />
-  {:else if controller.running || (controller.view && !controller.archived)}
+  {:else if controller.running}
     <!-- The first message is on its way: the agent is starting. -->
     <div class="empty"><span class="fd-pulse"></span></div>
   {:else if controller.sessionError && !controller.view}

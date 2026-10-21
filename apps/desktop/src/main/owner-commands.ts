@@ -11,6 +11,16 @@ export class CommandCancelled extends Error {
   }
 }
 let current: OwnerCommands | undefined;
+const blockedOwners = new Set<string>();
+/** Clearing a conversation must not race with accepting a new message for that owner. */
+export function blockOwnerMessages(project: string, owner: string): () => void {
+  const key = `${project}:${owner}`;
+  if (blockedOwners.has(key)) throw new Error('Chat history is being cleared.');
+  blockedOwners.add(key);
+  return () => {
+    blockedOwners.delete(key);
+  };
+}
 export function queueOwnerMessage(
   method: SendMethod,
   project: string,
@@ -35,6 +45,8 @@ export class OwnerCommands {
     this.publish = publish;
   }
   accept(method: SendMethod, projectId: string, ownerId: string, input: MessageInput): void {
+    if (blockedOwners.has(`${projectId}:${ownerId}`))
+      throw new Error('Chat history is being cleared. Retry after it finishes.');
     const id = input.commandId ?? randomUUID();
     const command = this.db.commands.accept({
       id,

@@ -177,6 +177,12 @@ export class ChatTaskReplans {
       async () => {
         for (const decision of new TaskReplanJournal(this.ctx.deps.db, live.projectId).list()) {
           if (decision.chatId !== live.chat.id) continue;
+          const clearedAt = this.ctx.deps.db.getSetting(`chat.${live.chat.id}.clearedAt`, 0);
+          if (
+            ['applied', 'reverted'].includes(decision.phase) &&
+            decision.item.startedAt <= clearedAt
+          )
+            continue;
           try {
             await resumeTaskReplan(this.ctx, live, decision);
           } catch {

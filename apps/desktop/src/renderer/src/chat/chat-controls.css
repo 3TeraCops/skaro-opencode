@@ -1,6 +1,6 @@
 .chat > .main > .bottom {
   flex: none;
-  padding: 0 14px 12px;
+  padding: 0 14px 17px;
   display: flex;
   flex-direction: column;
   gap: 6px;

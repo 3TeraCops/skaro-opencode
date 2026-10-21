@@ -9,7 +9,7 @@
   import '../graph/i18n';
   let {
     projectId,
-    target,
+    target = $bindable(),
     ongraph,
   }: {
     projectId: string;
@@ -18,10 +18,6 @@
   } = $props();
   let model = $state.raw<C4Model | null>(),
     error = $state('');
-  let opened = $state<{ viewId: string; elementId?: string }>();
-  $effect(() => {
-    if (target) opened = target;
-  });
   onMount(() => {
     let disposed = false,
       revision = 0;
@@ -54,16 +50,10 @@
 
 {#if error}<Banner kind="error" text={error} />
 {:else if model?.views.length}
-  {#if opened}
-    <C4Workspace
-      {model}
-      {projectId}
-      target={opened}
-      onclose={() => (opened = undefined)}
-      {ongraph}
-    />
+  {#if target}
+    <C4Workspace {model} {projectId} {target} onclose={() => (target = undefined)} {ongraph} />
   {:else}
-    <C4Gallery {model} onopen={(viewId) => (opened = { viewId })} />
+    <C4Gallery {model} onopen={(viewId) => (target = { viewId })} />
   {/if}
 {:else if model === undefined}<LoadingView />
 {:else}<Banner kind="info" text={t('graph.noC4')} />{/if}
