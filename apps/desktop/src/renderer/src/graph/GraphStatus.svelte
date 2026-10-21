@@ -5,6 +5,10 @@
   const busy = $derived(
     model.status && ['queued', 'indexing', 'stale'].includes(model.status.phase),
   );
+  let hiddenBuild = $state(false);
+  $effect(() => {
+    if (!busy) hiddenBuild = false;
+  });
 </script>
 
 {#if model.error}<div class="graph-alert">
@@ -23,7 +27,7 @@
 {:else if model.playback.phase === 'error'}<div class="graph-alert">
     <Banner kind="error" text={model.playback.scenario?.diagnostics.join('; ') ?? ''} />
   </div>{/if}
-{#if busy}
+{#if busy && !hiddenBuild}
   <div class="graph-notice">
     <Banner
       kind="info"
@@ -31,6 +35,7 @@
         done: model.status?.progress?.done ?? 0,
         total: model.status?.progress?.total ?? 0,
       })}
+      onclose={() => (hiddenBuild = true)}
     />
     <Button
       variant="ghost"
@@ -40,7 +45,7 @@
       }}>{t('graph.cancel')}</Button
     >
   </div>
-{:else if model.status && ['error', 'unavailable', 'cancelled'].includes(model.status.phase)}
+{:else if !busy && model.status && ['error', 'unavailable', 'cancelled'].includes(model.status.phase)}
   <div class="graph-notice">
     <Banner
       kind={model.status.phase === 'cancelled' ? 'info' : 'error'}

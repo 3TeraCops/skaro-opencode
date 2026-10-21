@@ -9,7 +9,7 @@ import type {
   UnresolvedReference,
 } from '@skaro/core/graph-view';
 
-export const ANALYZER_VERSION = 'graph-1.0.5';
+export const ANALYZER_VERSION = 'graph-1.0.6';
 export const hash = (text: string | Uint8Array): string =>
   createHash('sha256').update(text).digest('hex');
 export interface SourceFile {

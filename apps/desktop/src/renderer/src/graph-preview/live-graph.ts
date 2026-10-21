@@ -6,6 +6,7 @@ import { fitGraph } from './viewport';
 import LayoutWorker from './layout.worker?worker';
 import { createEdgeCurveProgram } from '@sigma/edge-curve';
 import { loopAt } from './edge-geometry';
+import { LayoutMotion } from './layout-motion';
 
 export class LiveGraph {
   readonly renderer: Sigma<NodeData, EdgeData>;
@@ -21,13 +22,12 @@ export class LiveGraph {
   oncamera?: () => void;
   private readonly selectLoop: (event: PointerEvent) => void;
   private hovered = '';
-  private bases = new Map<string, { x: number; y: number }>();
+  private layout: LayoutMotion;
   private worker: Worker;
   private frame = 0;
   private disposed = false;
   private last = 0;
   private elapsed = 0;
-  private span = 10;
   private readonly container: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
   readonly graph: PreviewGraph;
@@ -44,7 +44,10 @@ export class LiveGraph {
     this.container = container;
     this.canvas = canvas;
     this.graph = graph;
-    this.remember();
+    graph.forEachNode((id) => {
+      if (positions[id]) graph.mergeNodeAttributes(id, positions[id]);
+    });
+    this.layout = new LayoutMotion(graph);
     this.renderer = new Sigma<NodeData, EdgeData>(graph, container, {
       labelFont: 'Nunito Sans Variable',
       labelSize: 11,
@@ -146,14 +149,17 @@ export class LiveGraph {
     this.worker = new LayoutWorker();
     this.worker.onmessage = (event: MessageEvent<{ id: string; x: number; y: number }[]>) => {
       if (this.disposed) return;
-      for (const node of event.data)
-        graph.mergeNodeAttributes(node.id, positions[node.id] ?? { x: node.x, y: node.y });
-      this.remember();
-      const all = [...this.bases.values()],
+      this.layout.target(event.data);
+      if (this.reduced.matches) this.layout.step(0, true);
+      const all = [...event.data, ...graph.mapNodes((_id, node) => node)],
         xs = all.map((p) => p.x),
         ys = all.map((p) => p.y);
-      this.span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
-      const pad = this.span * 0.05;
+      const span = Math.max(
+        1,
+        Math.max(...xs) - Math.min(...xs),
+        Math.max(...ys) - Math.min(...ys),
+      );
+      const pad = span * 0.05;
       this.renderer.setCustomBBox({
         x: [Math.min(...xs) - pad, Math.max(...xs) + pad],
         y: [Math.min(...ys) - pad, Math.max(...ys) + pad],
@@ -170,15 +176,12 @@ export class LiveGraph {
     this.frame = requestAnimationFrame(this.animate);
     document.addEventListener('visibilitychange', this.visibility);
   }
-  private remember(): void {
-    this.graph.forEachNode((id, node) => this.bases.set(id, { x: node.x, y: node.y }));
-  }
   select(id: string): void {
     this.selected = id;
     this.renderer.refresh();
   }
   positions(): Record<string, { x: number; y: number }> {
-    return Object.fromEntries(this.bases);
+    return this.layout.positions();
   }
   focus(id: string): void {
     if (!this.graph.hasNode(id)) return;
@@ -207,19 +210,12 @@ export class LiveGraph {
       const delta = this.last ? Math.min(60, now - this.last) : 0;
       this.last = now;
       this.onframe?.(delta);
-      if (this.motion && !this.reduced.matches) {
+      if (this.reduced.matches) this.layout.step(0, true);
+      else if (this.motion && this.layout.step(delta)) {
         this.elapsed += delta;
-        const amplitude = this.span * 0.005;
-        this.graph.updateEachNodeAttributes((id, node) => {
-          const base = this.bases.get(id)!;
-          return {
-            ...node,
-            x: base.x + Math.sin(this.elapsed * 0.00027 + node.phase) * amplitude,
-            y: base.y + Math.cos(this.elapsed * 0.00021 + node.phase) * amplitude,
-          };
-        });
         this.container.dataset.motionFrame = String(Math.round(this.elapsed));
       }
+      this.container.dataset.layoutMoving = String(this.layout.moving);
       paintEffects(
         this.canvas,
         this.renderer,

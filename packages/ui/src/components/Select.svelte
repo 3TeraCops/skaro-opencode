@@ -44,7 +44,7 @@
     bind:open
     width={variant === 'model' ? '100%' : menuWidth}
     offset={variant === 'model' ? 38 : 36}
-    {...variant === 'model' ? { maxHeight: 300 } : {}}
+    maxHeight={300}
   >
     {#snippet trigger({ toggle })}
       <button

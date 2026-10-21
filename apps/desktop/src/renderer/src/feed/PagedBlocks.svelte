@@ -3,6 +3,7 @@
   import type { HistoryBlock, HistorySource } from '../../../shared/history';
   import { useFeed } from './context.svelte';
   import { HistoryViewport } from './history-viewport.svelte';
+  import LoadingIndicator from '../LoadingIndicator.svelte';
   let {
     source,
     children,
@@ -38,7 +39,7 @@
     >
       {#if block}{@render children(block)}
       {:else}<div class="loading" style:height={`${viewport.window.estimate}px`}>
-          <span class="fd-pulse"></span>
+          <LoadingIndicator />
         </div>{/if}
     </div>
   {/each}

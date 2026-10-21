@@ -44,9 +44,6 @@ export const origins = [
   'analyzer-inferred',
 ] as const;
 export const resolutions = ['explicit', 'resolved', 'inferred', 'unresolved'] as const;
-export function options(values: readonly string[], prefix: string, all: string) {
-  return [
-    { value: 'all', label: t(all) },
-    ...values.map((value) => ({ value, label: t(`${prefix}.${value}`) })),
-  ];
+export function options(values: readonly string[], prefix: string) {
+  return values.map((value) => ({ value, label: t(`${prefix}.${value}`) }));
 }

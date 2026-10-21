@@ -1,17 +1,27 @@
 import type { GraphViewState } from '@skaro/core/graph-view';
 import type { ProjectGraph } from './data.svelte';
 
+const internalPath = (path: string) => path === '.skaro' || path.startsWith('.skaro/');
+const visibleSelection = (id: string) => !/^(?:file|group):\.skaro(?:\/|$)/.test(id);
+
 export function restoreGraphView(
   model: ProjectGraph,
   saved: GraphViewState | null,
   checkoutId?: string,
 ): void {
-  model.saved = saved ?? undefined;
+  model.saved = saved
+    ? { ...saved, selected: visibleSelection(saved.selected ?? '') ? (saved.selected ?? '') : '' }
+    : undefined;
   if (!saved || saved.checkoutId !== checkoutId) return;
-  model.filter = saved.filter;
-  model.expanded = saved.expanded;
-  model.history = saved.history;
-  model.historyIndex = saved.history.length - 1;
+  const { subsystem, subsystems, ...filter } = saved.filter;
+  model.filter = {
+    ...filter,
+    ...(subsystem && !internalPath(subsystem) ? { subsystem } : {}),
+    ...(subsystems ? { subsystems: subsystems.filter((path) => !internalPath(path)) } : {}),
+  };
+  model.expanded = saved.expanded.filter(visibleSelection);
+  model.history = saved.history.filter(visibleSelection);
+  model.historyIndex = model.history.length - 1;
   model.camera = saved.camera;
   model.positions = saved.positions ?? {};
 }

@@ -72,7 +72,7 @@ const messages: Record<string, [string, string]> = {
   aggregated: ['в группах: {n}', 'grouped: {n}'],
   omitted: ['скрыто: {n}', 'omitted: {n}'],
   loadMore: ['Загрузить ещё', 'Load more'],
-  coverage: ['Покрытие', 'Coverage'],
+  coverage: ['Покрытие анализа', 'Analysis coverage'],
   coverageCounts: [
     'Разобрано {parsed} из {found} файлов · пропущено {skipped} · ошибок {errors} · неразрешённых ссылок {unresolved}',
     'Parsed {parsed} of {found} files · skipped {skipped} · errors {errors} · unresolved references {unresolved}',

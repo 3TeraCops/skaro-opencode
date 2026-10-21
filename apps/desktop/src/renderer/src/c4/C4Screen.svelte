@@ -3,22 +3,25 @@
   import { Banner, t } from '@skaro/ui';
   import type { C4Model } from '@skaro/core/c4-view';
   import C4Workspace from './C4Workspace.svelte';
+  import C4Gallery from './C4Gallery.svelte';
   import LoadingView from '../screens/LoadingView.svelte';
   import './i18n';
   import '../graph/i18n';
   let {
     projectId,
     target,
-    onclose,
     ongraph,
   }: {
     projectId: string;
     target?: { viewId: string; elementId?: string } | undefined;
-    onclose: () => void;
     ongraph: (id: string, viewId: string) => void;
   } = $props();
   let model = $state.raw<C4Model | null>(),
     error = $state('');
+  let opened = $state<{ viewId: string; elementId?: string }>();
+  $effect(() => {
+    if (target) opened = target;
+  });
   onMount(() => {
     let disposed = false,
       revision = 0;
@@ -50,6 +53,17 @@
 </script>
 
 {#if error}<Banner kind="error" text={error} />
-{:else if model?.views.length}<C4Workspace {model} {projectId} {target} {onclose} {ongraph} />
+{:else if model?.views.length}
+  {#if opened}
+    <C4Workspace
+      {model}
+      {projectId}
+      target={opened}
+      onclose={() => (opened = undefined)}
+      {ongraph}
+    />
+  {:else}
+    <C4Gallery {model} onopen={(viewId) => (opened = { viewId })} />
+  {/if}
 {:else if model === undefined}<LoadingView />
 {:else}<Banner kind="info" text={t('graph.noC4')} />{/if}

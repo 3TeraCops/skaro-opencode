@@ -101,8 +101,7 @@ test('background graph and native graph/C4 sections on the real Chatballs checko
     const canvas = page.locator('.graph-canvas');
     expect(Number(await canvas.getAttribute('data-node-count'))).toBeGreaterThan(140);
     const host = page.locator('.sigma-host');
-    const frame = await host.getAttribute('data-motion-frame');
-    await expect.poll(() => host.getAttribute('data-motion-frame')).not.toBe(frame);
+    await expect(host).toHaveAttribute('data-layout-moving', 'false', { timeout: 15_000 });
     await page.getByRole('button', { name: 'Приостановить движение', exact: true }).click();
     const paused = await host.getAttribute('data-motion-frame');
     await page.waitForTimeout(300);
@@ -176,6 +175,7 @@ test('background graph and native graph/C4 sections on the real Chatballs checko
     await expect(page.getByText('database is locked', { exact: true })).toHaveCount(0);
     if (process.env.SKARO_GRAPH_EXPORT === '1') await exportGraphPreview(page, root!, evidence!);
     await page.getByRole('button', { name: 'C4', exact: true }).click();
+    await page.locator('[data-c4-gallery]').getByRole('button').first().click();
     await page.locator('[data-c4-element]').first().waitFor({ timeout: 30_000 });
     await page.getByRole('spinbutton').fill('125%');
     await page.getByRole('spinbutton').press('Enter');

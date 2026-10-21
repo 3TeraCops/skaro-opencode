@@ -13,6 +13,7 @@
   import ChatControls from './ChatControls.svelte';
   import ChatStart from './ChatStart.svelte';
   import ChatChangedPanel from './ChatChangedPanel.svelte';
+  import LoadingView from '../screens/LoadingView.svelte';
   let {
     projectId,
     projectPath,
@@ -81,7 +82,9 @@
     />
   </div>
 
-  {#if controller.timeline && controller.started}
+  {#if chatId && !controller.view && !controller.sessionError}
+    <LoadingView />
+  {:else if controller.timeline && controller.started}
     <Feed
       timeline={controller.timeline}
       history={controller.view?.history}
@@ -101,9 +104,7 @@
       onprefill={(text) => controls?.prefill(text)}
     />
   {:else}
-    <div class="empty" role="status" aria-label={t('agent.state.checking')}>
-      <span class="fd-pulse"></span>
-    </div>
+    <div class="empty"></div>
   {/if}
 
   <ChatControls bind:this={controls} {controller} {projectId} {chatId} {agents} />

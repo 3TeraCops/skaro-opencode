@@ -25,7 +25,8 @@
   } = $props();
 
   let root: HTMLDivElement | undefined = $state();
-  let place = $state<{ top: number; left: number; right: number; width: number } | undefined>();
+  let menu: HTMLDivElement | undefined = $state();
+  let place = $state<{ top: number; left: number; width: number; height: number } | undefined>();
 
   const toggle = () => (open = !open);
   const close = () => (open = false);
@@ -33,17 +34,30 @@
   function measure(): void {
     const rect = root?.getBoundingClientRect();
     if (!rect) return;
+    const gap = 8;
+    const below = Math.max(0, window.innerHeight - rect.top - offset - gap);
+    const above = Math.max(0, rect.top - gap - 4);
+    const desired = Math.min(maxHeight ?? window.innerHeight - gap * 2, menu?.scrollHeight ?? 0);
+    const upwards = desired > below && above > below;
+    const height = Math.min(maxHeight ?? window.innerHeight - gap * 2, upwards ? above : below);
+    const actualWidth = Math.min(menu?.offsetWidth ?? rect.width, window.innerWidth - gap * 2);
     const next = {
-      top: rect.top + offset,
-      left: rect.left,
-      right: window.innerWidth - rect.right,
+      top: upwards ? Math.max(gap, rect.top - Math.min(desired, height) - 4) : rect.top + offset,
+      left: Math.max(
+        gap,
+        Math.min(
+          align === 'left' ? rect.left : rect.right - actualWidth,
+          window.innerWidth - actualWidth - gap,
+        ),
+      ),
       width: rect.width,
+      height,
     };
     if (
       place?.top !== next.top ||
       place.left !== next.left ||
-      place.right !== next.right ||
-      place.width !== next.width
+      place.width !== next.width ||
+      place.height !== next.height
     )
       place = next;
   }
@@ -92,13 +106,11 @@
   {#if open && place}
     <div
       class="menu"
-      class:scroll={maxHeight !== undefined}
+      bind:this={menu}
       role="menu"
-      style="top: {place.top}px; {align}: {align === 'left'
-        ? place.left
-        : place.right}px; {menuWidth ? `width: ${menuWidth};` : ''} {maxHeight
-        ? `max-height: ${maxHeight}px;`
-        : ''}"
+      style="top: {place.top}px; left: {place.left}px; {menuWidth
+        ? `width: ${menuWidth};`
+        : ''} max-height: {place.height}px;"
     >
       {@render children({ close })}
     </div>
@@ -112,6 +124,9 @@
 
   .menu {
     position: fixed;
+    max-width: calc(100vw - 16px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     z-index: 90;
     display: flex;
     flex-direction: column;
@@ -121,9 +136,5 @@
     background: var(--sk-menu);
     box-shadow: var(--sk-menu-shadow);
     animation: skIn 0.14s ease-out;
-  }
-
-  .menu.scroll {
-    overflow-y: auto;
   }
 </style>

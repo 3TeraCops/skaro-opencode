@@ -1,6 +1,7 @@
 <script lang="ts" generics="Block extends { id: string }">
   import type { Snippet } from 'svelte';
   import { createWindowedContent } from './windowed-controller.svelte';
+  import LoadingIndicator from './LoadingIndicator.svelte';
   let {
     count,
     revision,
@@ -66,7 +67,7 @@
           class="pending"
           style:height={`${view.range.estimate}px`}
         >
-          <span class="fd-pulse"></span>
+          <LoadingIndicator size={16} />
         </div>{/if}
     </div>
   {/each}

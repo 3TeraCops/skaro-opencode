@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { t } from '@skaro/ui';
+  import LoadingIndicator from '../LoadingIndicator.svelte';
 </script>
 
-<div class="loading" role="status" aria-label={t('agent.state.checking')}>
-  <span class="fd-pulse"></span>
+<div class="loading">
+  <LoadingIndicator />
 </div>
 
 <style>

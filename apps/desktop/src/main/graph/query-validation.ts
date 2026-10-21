@@ -63,6 +63,14 @@ export function validateQuery(query: GraphQuery): {
   for (const key of ['language', 'subsystem'] as const)
     if (filter[key] !== undefined && (typeof filter[key] !== 'string' || filter[key]!.length > 300))
       throw new Error('Invalid graph scope filter');
+  for (const key of ['languages', 'subsystems'] as const)
+    if (
+      filter[key] !== undefined &&
+      (!Array.isArray(filter[key]) ||
+        filter[key]!.length > 100 ||
+        filter[key]!.some((value) => typeof value !== 'string' || value.length > 300))
+    )
+      throw new Error('Invalid graph scope filter');
   const limit = Math.min(
     query.operation === 'search' ? 100 : 500,
     Math.max(1, Math.floor(query.limit ?? 500)),
@@ -106,17 +114,18 @@ export function nodeMatches(
   },
   filter: GraphFilter = {},
 ): boolean {
+  const languages = filter.languages ?? (filter.language ? [filter.language] : []);
+  const subsystems = filter.subsystems ?? (filter.subsystem ? [filter.subsystem] : []);
   return (
     (!filter.kinds?.length || filter.kinds.includes(node.kind as never)) &&
     (!filter.origins?.length || filter.origins.includes(node.origin as never)) &&
     ((filter.state ?? 'current') === 'all' ||
       !node.state ||
       node.state === (filter.state ?? 'current')) &&
-    (!filter.language || node.attributes?.language === filter.language) &&
-    (!filter.subsystem ||
-      node.sources?.some(
-        (source) =>
-          source.path === filter.subsystem || source.path.startsWith(filter.subsystem + '/'),
+    (!languages.length || languages.includes(String(node.attributes?.language ?? ''))) &&
+    (!subsystems.length ||
+      node.sources?.some((source) =>
+        subsystems.some((path) => source.path === path || source.path.startsWith(path + '/')),
       ) === true)
   );
 }

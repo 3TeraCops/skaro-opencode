@@ -3,6 +3,7 @@
   import { chatListViewport } from './chat-list-viewport.svelte';
   import WindowedContent from '../WindowedContent.svelte';
   import ChatSessionRow from './ChatSessionRow.svelte';
+  import LoadingView from '../screens/LoadingView.svelte';
   import type { ChatScreenController } from './chat-screen-controller.svelte';
   let { state: model }: { state: ChatScreenController } = $props();
   let content: { reveal(index: number): Promise<void> } | undefined = $state();
@@ -29,6 +30,7 @@
     {t('chat.new')}
   </button>
   <div data-chat-screen class="list" bind:this={list}>
+    {#if !model.list.loaded}<LoadingView />{/if}
     <WindowedContent
       bind:this={content}
       count={model.list.count}

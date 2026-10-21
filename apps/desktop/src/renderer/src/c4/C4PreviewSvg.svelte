@@ -123,7 +123,7 @@
   .c4-preview-svg {
     display: block;
     width: 100%;
-    height: 340px;
+    height: var(--c4-preview-height, 340px);
     font-family: var(--sk-font);
     background: var(--sk-bg);
   }

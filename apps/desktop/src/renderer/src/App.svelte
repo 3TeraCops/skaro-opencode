@@ -7,12 +7,14 @@
   import Project from './screens/Project.svelte';
   import Settings from './screens/Settings.svelte';
   import TitleBar from './TitleBar.svelte';
+  import SelectionCopy from './SelectionCopy.svelte';
   import UpdatesModal from './updates/UpdatesModal.svelte';
   import { createNavigation } from './app-navigation.svelte';
   const nav = createNavigation();
 </script>
 
 <TooltipHost />
+<SelectionCopy />
 <UpdatesModal />
 <NewProjectModal bind:open={nav.newProject} oncreated={(p) => void nav.projectAdded(p)} />
 

@@ -131,6 +131,9 @@ export interface GraphFilter {
   origins?: Origin[];
   resolutions?: Resolution[];
   state?: ArchitectureState | 'all';
+  languages?: string[];
+  subsystems?: string[];
+  /** Legacy saved filters; new controls use the arrays above. */
   language?: string;
   subsystem?: string;
 }
