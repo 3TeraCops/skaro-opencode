@@ -27,12 +27,15 @@
   }
 </script>
 
-<Popover bind:open {width}>
+<Popover bind:open {width} maxHeight={300}>
   {#snippet trigger({ toggle: toggleMenu, open })}
     <button
       type="button"
       class="trigger"
       class:active={open || selected.length > 0}
+      aria-label={label}
+      aria-haspopup="menu"
+      aria-expanded={open}
       onclick={toggleMenu}
     >
       {label}

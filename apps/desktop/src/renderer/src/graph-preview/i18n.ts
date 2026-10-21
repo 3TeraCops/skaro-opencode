@@ -2,7 +2,7 @@ import { addMessages } from '@skaro/ui';
 addMessages('ru', {
   'graph.title': 'Граф связей',
   'graph.overview': 'Вся текущая архитектура',
-  'graph.motion': 'Движение узлов',
+  'graph.motion': 'Раскладка по связям',
   'graph.flow': 'Анимация связей',
   'graph.pause': 'Приостановить движение',
   'graph.resume': 'Продолжить движение',
@@ -23,7 +23,7 @@ addMessages('ru', {
 addMessages('en', {
   'graph.title': 'Relationship graph',
   'graph.overview': 'Entire current architecture',
-  'graph.motion': 'Node motion',
+  'graph.motion': 'Dependency layout',
   'graph.flow': 'Animated connections',
   'graph.pause': 'Pause motion',
   'graph.resume': 'Resume motion',

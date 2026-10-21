@@ -5,6 +5,7 @@
   import { mountC4 } from '../c4/markdown';
   import { MarkdownDom } from './markdown-dom';
   import { markdownInteractions } from './markdown-interactions';
+  import LoadingIndicator from '../LoadingIndicator.svelte';
 
   let { text }: { text: string } = $props();
   const interactions = markdownInteractions(useFeed());
@@ -53,7 +54,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="md" bind:this={root} onclick={interactions.onclick}>
-  {#if !painted && text}<span class="fd-pulse"></span>{/if}
+  {#if !painted && text}<LoadingIndicator size={16} />{/if}
 </div>
 
 <style>

@@ -40,11 +40,11 @@ export class AppDb extends DbTable {
   private readonly events: DbEvents;
   private readonly interactions: DbInteractions;
 
-  private constructor(db: DatabaseSync, now: () => number, filePath: string) {
+  private constructor(db: DatabaseSync, now: () => number, filePath: string, readOnly = false) {
     super(db, now);
     this.filePath = filePath;
     this.commands = new DbCommands(db, now);
-    this.collections = new DbCollections(db, now);
+    this.collections = new DbCollections(db, now, readOnly);
     this.shell = new DbProjectShell(db, now);
     this.projects = new DbProjects(db, now);
     this.settings = new DbSettings(db, now);
@@ -59,7 +59,7 @@ export class AppDb extends DbTable {
   static readOnly(path: string): AppDb {
     const db = new DatabaseSync(path, { readOnly: true });
     db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=5000;');
-    return new AppDb(db, Date.now, path);
+    return new AppDb(db, Date.now, path, true);
   }
 
   /** Opens (and migrates) the database; `:memory:` for tests. */

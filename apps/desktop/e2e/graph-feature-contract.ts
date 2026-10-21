@@ -42,7 +42,7 @@ export async function verifyGraphContract(page: Page, status: GraphStatus, accep
         await window.skaro.invoke('graph.query', {
           ...scope,
           operation: 'details',
-          id: 'file:.skaro/c4/model.json',
+          id: `c4:${accepted.elements.find((element) => element.state === 'current')!.id}`,
         })
       ).nodes[0]!.sources[0]!;
       const source = await window.skaro.invoke('graph.source', scope, ref);

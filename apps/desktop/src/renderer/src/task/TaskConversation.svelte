@@ -7,6 +7,7 @@
   import SessionBanners from './SessionBanners.svelte';
   import TaskCollapsedHeader from './TaskCollapsedHeader.svelte';
   import TaskStarting from './TaskStarting.svelte';
+  import LoadingView from '../screens/LoadingView.svelte';
   import type { TaskController } from './task-controller.svelte';
   import './task-conversation.css';
   let {
@@ -150,5 +151,7 @@
     {/if}
   {:else if controller.session.error}
     <div class="empty"><span class="empty-text">{t('task.notFound')}</span></div>
+  {:else}
+    <LoadingView />
   {/if}
 </div>

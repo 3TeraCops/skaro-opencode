@@ -5,6 +5,7 @@ import { scan } from './source-policy';
 import { GraphStore } from './store';
 import { projectDocuments } from './projections/documents';
 import { projectC4 } from './projections/c4';
+import { hideInternalArtifacts } from './projections/visible-facts';
 import { analyzeCompose } from './analyzers/compose';
 import { analyzePython, PYTHON_AST_VERSION } from './analyzers/python';
 import { analyzeTypescript } from './analyzers/typescript';
@@ -104,6 +105,7 @@ export async function buildIndex(
           );
       } else coverage.limitations.push(`${language}: file metadata only; no semantic analyzer.`);
     }
+    hideInternalArtifacts(facts);
     coverage.unresolved = facts.unresolved.length;
     coverage.diagnostics.push(
       ...manifest.skipped.slice(0, Math.max(0, 1000 - coverage.diagnostics.length)),

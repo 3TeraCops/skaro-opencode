@@ -75,7 +75,7 @@
   {/key}
 {:else if section === 'c4'}
   {#await loadC4Screen()}<LoadingView />{:then { default: C4Screen }}
-    <C4Screen projectId={project.id} target={c4Target} onclose={() => go('tasks')} {ongraph} />
+    <C4Screen projectId={project.id} target={c4Target} {ongraph} />
   {/await}
 {:else if section === 'graph'}
   {#await loadGraphScreen()}<LoadingView />{:then { default: GraphScreen }}
