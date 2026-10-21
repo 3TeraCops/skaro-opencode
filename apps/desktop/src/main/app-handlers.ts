@@ -16,7 +16,7 @@ import { background } from './background/client';
 import { collectDiagnostics } from './diagnostics';
 
 export function appHandlers(
-  { appState, db, runs, projects, agents, chats, dataDir, overview }: Services,
+  { appState, db, runs, projects, agents, chats, dataDir, overview, graph }: Services,
   updates: Updates,
   window: () => BrowserWindow | undefined,
   emit: (event: 'project.changed', payload: { projectId: string }) => void,
@@ -141,14 +141,21 @@ export function appHandlers(
     'projects.add': async (path) => {
       const folder = await inspectFolder(path);
       if (!folder.exists) throw new Error('folder not found');
-      return appState.addProject(path);
+      const project = appState.addProject(path);
+      void graph.register(project.id).catch(() => undefined);
+      return project;
     },
     'projects.create': async (parent, name) => {
       const path = await createFolder(parent, name);
       appState.setSetting('projects.parent', parent);
-      return appState.addProject(path);
+      const project = appState.addProject(path);
+      void graph.register(project.id).catch(() => undefined);
+      return project;
     },
-    'projects.remove': (id) => appState.removeProject(id),
+    'projects.remove': async (id) => {
+      appState.removeProject(id);
+      await graph.remove(id);
+    },
     'projects.overview': () => overview.list(),
     'project.rename': (projectId, name) => appState.renameProject(projectId, name),
     'project.pickLogo': async (projectId) => {
@@ -188,6 +195,7 @@ export function appHandlers(
       const folder = await inspectFolder(path);
       if (!folder.exists) throw new Error('folder not found');
       const project = appState.relocateProject(id, path);
+      void graph.register(id).catch(() => undefined);
       projects.forget(id);
       return project;
     },

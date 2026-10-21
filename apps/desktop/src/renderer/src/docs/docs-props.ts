@@ -10,4 +10,5 @@ export type DocsProps = {
   ontask: (id: string) => void;
   /** "Импортировать документацию". */
   onimport: () => void;
+  onleave?: ((guard: ((proceed: () => void) => void) | undefined) => void) | undefined;
 };

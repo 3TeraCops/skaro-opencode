@@ -48,6 +48,7 @@ import type { TaskCatalogMethods } from './task-catalog';
 import type { ChatMethods } from './chat-methods';
 import type { ProjectCatalogMethods } from './project-catalog';
 import type { DocumentCatalogMethods } from './document-catalog';
+import type { GraphMethods, GraphEvents } from './graph';
 export * from './ipc-entities';
 export * from './ipc-sessions';
 export type { UpdateState } from './updates';
@@ -59,7 +60,8 @@ export interface Methods
     DocumentCatalogMethods,
     ProjectCatalogMethods,
     TaskCatalogMethods,
-    ChatMethods {
+    ChatMethods,
+    GraphMethods {
   'c4.files': (projectId: string, itemId: string) => string[];
   'c4.file': (projectId: string, itemId: string, path: string, side: 'before' | 'after') => string;
   'session.remember': (key: string, view: ChatView | TaskView) => void;
@@ -225,7 +227,7 @@ export interface Methods
 }
 
 /** Events from the main process: name → payload. */
-export interface Events extends HistoryEvents {
+export interface Events extends HistoryEvents, GraphEvents {
   'command.changed': import('@skaro/timeline').OwnerCommand;
   'projects.card': ProjectCard;
   'updates.changed': UpdateState;

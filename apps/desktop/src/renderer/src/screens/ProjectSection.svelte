@@ -8,6 +8,8 @@
   const loadTaskScreen = () => import('../task/TaskScreen.svelte');
   const loadTasksScreen = () => import('../tasks/TasksScreen.svelte');
   const loadProjectParams = () => import('../params/ProjectParams.svelte');
+  const loadC4Screen = () => import('../c4/C4Screen.svelte');
+  const loadGraphScreen = () => import('../graph/GraphScreen.svelte');
 
   let {
     project,
@@ -26,6 +28,11 @@
     onremove,
     onchanged,
     onimport,
+    graphTarget,
+    c4Target,
+    ongraph,
+    onc4,
+    onleave,
   }: {
     project: ProjectInfo;
     section: string;
@@ -44,6 +51,11 @@
     onremove: () => void;
     onchanged: () => void;
     onimport: () => void;
+    graphTarget?: { elementId: string; viewId?: string } | undefined;
+    c4Target?: { viewId: string; elementId?: string } | undefined;
+    ongraph: (elementId: string, viewId: string) => void;
+    onc4: (viewId: string, elementId?: string) => void;
+    onleave: (guard: ((proceed: () => void) => void) | undefined) => void;
   } = $props();
 </script>
 
@@ -61,6 +73,20 @@
       />
     {/await}
   {/key}
+{:else if section === 'c4'}
+  {#await loadC4Screen()}<LoadingView />{:then { default: C4Screen }}
+    <C4Screen projectId={project.id} target={c4Target} onclose={() => go('tasks')} {ongraph} />
+  {/await}
+{:else if section === 'graph'}
+  {#await loadGraphScreen()}<LoadingView />{:then { default: GraphScreen }}
+    <GraphScreen
+      projectId={project.id}
+      target={graphTarget}
+      {onc4}
+      ondoc={openDoc}
+      ontask={openTask}
+    />
+  {/await}
 {:else if section === 'docs'}
   {#await loadDocsScreen()}<LoadingView />{:then { default: DocsScreen }}
     <DocsScreen
@@ -70,6 +96,7 @@
       onchat={newChat}
       ontask={openTask}
       {onimport}
+      {onleave}
     />
   {/await}
 {:else if section === 'plan'}

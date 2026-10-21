@@ -53,6 +53,8 @@
       countTip: t('board.attention.tip'),
       railTip: tn('board.attention.rail', attention),
     },
+    { id: 'c4', label: 'C4', tip: t('nav.c4.tip'), icon: 'layers' },
+    { id: 'graph', label: t('nav.graph'), tip: t('nav.graph.tip'), icon: 'network' },
     { id: 'docs', label: t('nav.docs'), tip: t('nav.docs.tip'), icon: 'docs' },
     {
       id: 'plan',

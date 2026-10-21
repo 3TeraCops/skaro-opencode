@@ -35,6 +35,9 @@
   /** A document to open when "Документы" shows next (a task's specification). */
   let doc = $state<string | undefined>();
   let limitsOpen = $state(false);
+  let graphTarget = $state<{ elementId: string; viewId?: string }>();
+  let c4Target = $state<{ viewId: string; elementId?: string }>();
+  let leaveSection: ((proceed: () => void) => void) | undefined;
 
   function openDoc(path: string): void {
     doc = path;
@@ -53,15 +56,21 @@
   onDestroy(() => data.dispose());
 
   const current = $derived(
-    ['tasks', 'docs', 'plan', 'chat', 'params'].includes(section) ? section : 'tasks',
+    ['tasks', 'c4', 'graph', 'docs', 'plan', 'chat', 'params'].includes(section)
+      ? section
+      : 'tasks',
   );
 
   /** The open task names a milestone: it is the screen of a stage, shown under "План". */
   const stageOpen = $derived(task !== undefined && data.milestones.some((m) => m.id === task));
 
   function go(id: string): void {
-    if (id === 'tasks' || stageOpen) task = undefined;
-    section = id;
+    const proceed = () => {
+      if (id === 'tasks' || stageOpen) task = undefined;
+      section = id;
+    };
+    if (section === 'docs' && leaveSection && id !== section) leaveSection(proceed);
+    else proceed();
   }
 
   /** Opens a task, or the stage of a milestone. */
@@ -87,8 +96,9 @@
     ontask={openTask}
     onlimits={() => (limitsOpen = true)}
     onselect={(id) => {
-      if ((id === 'tasks' && section === 'tasks') || stageOpen) task = undefined;
-      section = id;
+      graphTarget = undefined;
+      c4Target = undefined;
+      go(id);
     }}
   />
   <ProjectSection
@@ -99,6 +109,17 @@
     bind:chat
     {doc}
     {data}
+    {graphTarget}
+    {c4Target}
+    onleave={(guard) => (leaveSection = guard)}
+    ongraph={(elementId, viewId) => {
+      graphTarget = { elementId, viewId };
+      go('graph');
+    }}
+    onc4={(viewId, elementId) => {
+      c4Target = { viewId, ...(elementId ? { elementId } : {}) };
+      go('c4');
+    }}
     agents={agents.list}
     ontasks={() => (task = undefined)}
     {openDoc}

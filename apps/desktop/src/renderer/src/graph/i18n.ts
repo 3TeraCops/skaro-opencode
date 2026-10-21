@@ -1,0 +1,183 @@
+import { addMessages } from '@skaro/ui';
+import '../graph-preview/i18n';
+import '../c4/i18n';
+
+const messages: Record<string, [string, string]> = {
+  noC4: ['Принятая модель C4 ещё не создана.', 'No accepted C4 model exists yet.'],
+  canvas: [
+    'Карта связей проекта. Используйте поиск для выбора элемента.',
+    'Project relationship map. Use search to select an object.',
+  ],
+  noData: [
+    'В выбранной области нет объектов. Измените фильтры или проверьте покрытие.',
+    'No objects in this scope. Change filters or inspect coverage.',
+  ],
+  noResults: ['Ничего не найдено', 'No results'],
+  loading: ['Загрузка…', 'Loading…'],
+  retry: ['Повторить', 'Retry'],
+  webglLost: [
+    'Контекст WebGL потерян. Воспроизведение приостановлено; восстановите холст вручную.',
+    'WebGL context lost. Playback paused; restore the canvas manually.',
+  ],
+  playback: ['Воспроизведение сценария', 'Scenario playback'],
+  restart: ['В начало', 'Restart'],
+  previous: ['Предыдущий шаг', 'Previous step'],
+  next: ['Следующий шаг', 'Next step'],
+  pauseScenario: ['Приостановить сценарий', 'Pause scenario'],
+  chooseStep: ['Выбрать шаг', 'Choose step'],
+  speed: ['Скорость воспроизведения', 'Playback speed'],
+  filters: ['Фильтры графа', 'Graph filters'],
+  state: ['Архитектурное состояние', 'Architecture state'],
+  layers: ['Слои', 'Layers'],
+  edgeTypes: ['Типы связей', 'Relationship types'],
+  allStates: ['Все состояния', 'All states'],
+  allLayers: ['Все слои', 'All layers'],
+  allEdges: ['Все связи', 'All relationships'],
+  allLanguages: ['Все языки', 'All languages'],
+  allOrigins: ['Все источники', 'All origins'],
+  allResolutions: ['Все основания', 'All resolutions'],
+  moreFilters: ['Происхождение и ограничения', 'Origin and limits'],
+  origin: ['Происхождение', 'Origin'],
+  resolution: ['Основание связи', 'Resolution'],
+  language: ['Язык', 'Language'],
+  subsystem: ['Подсистема', 'Subsystem'],
+  allSubsystems: ['Все подсистемы', 'All subsystems'],
+  staleBinding: [
+    'Привязка C4 устарела после изменения документа.',
+    'C4 binding is stale after document edits.',
+  ],
+  resetFilters: ['Сбросить фильтры', 'Reset filters'],
+  back: ['Предыдущий выбранный объект', 'Previous selection'],
+  forward: ['Следующий выбранный объект', 'Next selection'],
+  entireProject: ['Весь проект', 'Entire project'],
+  codeDocs: ['Код и документация проекта', 'Project code and documentation'],
+  invalidated: [
+    'Основание графа изменилось. Сценарий остановлен на прежнем снимке.',
+    'Graph sources changed. Scenario stopped on its previous snapshot.',
+  ],
+  loadLatest: ['Открыть обновлённый сценарий', 'Open updated scenario'],
+  refreshing: [
+    'Граф обновляется в фоне · {done} из {total}',
+    'Graph updating in background · {done} of {total}',
+  ],
+  building: [
+    'Граф строится в фоне · {done} из {total}',
+    'Graph building in background · {done} of {total}',
+  ],
+  cancel: ['Отменить построение', 'Cancel indexing'],
+  rebuild: ['Перестроить граф', 'Rebuild graph'],
+  'phase.cancelled': ['Построение графа отменено.', 'Graph indexing cancelled.'],
+  'phase.error': ['Не удалось построить граф.', 'Graph indexing failed.'],
+  'phase.unavailable': ['Исходники проекта недоступны.', 'Project sources are unavailable.'],
+  aggregated: ['в группах: {n}', 'grouped: {n}'],
+  omitted: ['скрыто: {n}', 'omitted: {n}'],
+  loadMore: ['Загрузить ещё', 'Load more'],
+  coverage: ['Покрытие', 'Coverage'],
+  coverageCounts: [
+    'Разобрано {parsed} из {found} файлов · пропущено {skipped} · ошибок {errors} · неразрешённых ссылок {unresolved}',
+    'Parsed {parsed} of {found} files · skipped {skipped} · errors {errors} · unresolved references {unresolved}',
+  ],
+  animationDisclaimer: [
+    'Анимация связей модели · не фактический трафик',
+    'Model relationship animation · not runtime traffic',
+  ],
+  path: ['Путь и влияние', 'Path and impact'],
+  pathFrom: ['Начало пути', 'Set path start'],
+  pathTo: ['Конец пути', 'Set path end'],
+  direction: ['Направление обхода', 'Traversal direction'],
+  directed: ['По направлению связей', 'Follow directed edges'],
+  undirected: ['В обоих направлениях', 'Traverse both directions'],
+  depth: ['Глубина обхода', 'Traversal depth'],
+  depthValue: ['Глубина: {n}', 'Depth: {n}'],
+  findPath: ['Найти путь', 'Find path'],
+  impact: ['Влияние изменений', 'Change impact'],
+  pathEvidence: [
+    'По умолчанию пути используют явные и разрешённые связи. Это потенциальная зависимость, а не доказательство ошибки или выполнения.',
+    'Paths use explicit and resolved edges by default. This is a potential dependency, not proof of execution or a defect.',
+  ],
+  searchLimited: [
+    'Поиск ограничен глубиной, временем или покрытием. Отсутствие пути не доказано.',
+    'Search limited by depth, time or coverage. Absence of a path is not proven.',
+  ],
+  noPath: ['В выбранной области путь не найден.', 'No path found in the selected scope.'],
+  analysisResult: ['В результате: {n} объектов', 'Result: {n} objects'],
+  clearAnalysis: ['Снять подсветку результата', 'Clear result highlighting'],
+  expand: ['Раскрыть', 'Expand'],
+  neighbors: ['Показать соседей', 'Show neighbors'],
+  openC4: ['Открыть в C4', 'Open in C4'],
+  openDocument: ['Открыть документ', 'Open document'],
+  openTask: ['Открыть задачу или этап', 'Open task or milestone'],
+  sources: ['Источники', 'Sources'],
+  groupMembers: ['Объектов в группе: {n}', 'Group members: {n}'],
+  originalEdges: ['Исходных связей: {n}', 'Original relationships: {n}'],
+  chooseOriginal: ['Выбрать исходную связь', 'Choose original relationship'],
+  unresolved: ['Неразрешённые ссылки', 'Unresolved references'],
+  sourceLine: ['Исходник · строка {n}', 'Source · line {n}'],
+};
+const kinds: Record<string, [string, string]> = {
+  architecture: ['Архитектура', 'Architecture'],
+  instance: ['Экземпляр', 'Instance'],
+  file: ['Файл', 'File'],
+  symbol: ['Символ', 'Symbol'],
+  endpoint: ['API / точка входа', 'API / entry point'],
+  event: ['Событие', 'Event'],
+  model: ['Модель данных', 'Data model'],
+  service: ['Сервис', 'Service'],
+  document: ['Документ', 'Document'],
+  requirement: ['Требование', 'Requirement'],
+  task: ['Задача', 'Task'],
+  milestone: ['Этап', 'Milestone'],
+  package: ['Группа', 'Group'],
+};
+const edges: Record<string, [string, string]> = {
+  contains: ['Содержит', 'Contains'],
+  imports: ['Импортирует', 'Imports'],
+  exports: ['Экспортирует', 'Exports'],
+  references: ['Ссылается', 'References'],
+  calls: ['Вызывает', 'Calls'],
+  inherits: ['Наследует', 'Inherits'],
+  implements: ['Реализует', 'Implements'],
+  handles: ['Обрабатывает', 'Handles'],
+  requests: ['Запрашивает', 'Requests'],
+  emits: ['Публикует', 'Emits'],
+  consumes: ['Потребляет событие', 'Consumes event'],
+  reads: ['Читает', 'Reads'],
+  writes: ['Записывает', 'Writes'],
+  'model-relation': ['Связь моделей', 'Model relation'],
+  deploys: ['Размещает', 'Deploys'],
+  'depends-on': ['Зависит', 'Depends on'],
+  documents: ['Документирует', 'Documents'],
+  covers: ['Покрывает', 'Covers'],
+  'governed-by': ['Определяется решением', 'Governed by'],
+  'implements-requirement': ['Реализует требование', 'Implements requirement'],
+  interacts: ['Взаимодействует', 'Interacts'],
+};
+const origins: Record<string, [string, string]> = {
+  'accepted-c4': ['Принятая C4', 'Accepted C4'],
+  'extracted-code': ['Извлечено из кода', 'Extracted from code'],
+  'extracted-document': ['Извлечено из документа', 'Extracted from document'],
+  'analyzer-inferred': ['Вывод анализатора', 'Analyzer inference'],
+};
+const resolutions: Record<string, [string, string]> = {
+  explicit: ['Явная связь', 'Explicit'],
+  resolved: ['Цель разрешена', 'Resolved'],
+  inferred: ['Выведено правилом', 'Inferred'],
+  unresolved: ['Цель не разрешена', 'Unresolved'],
+};
+for (const [locale, index] of [
+  ['ru', 0],
+  ['en', 1],
+] as const) {
+  const translated = Object.fromEntries(
+    Object.entries(messages).map(([key, value]) => [`graph.${key}`, value[index]]),
+  );
+  for (const [prefix, dictionary] of Object.entries({
+    kind: kinds,
+    edge: edges,
+    origin: origins,
+    resolution: resolutions,
+  }))
+    for (const [key, value] of Object.entries(dictionary))
+      translated[`graph.${prefix}.${key}`] = value[index];
+  addMessages(locale, translated);
+}

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Button, t } from '@skaro/ui';
+  import type { Snippet } from 'svelte';
+  import './details.css';
   import type { C4Model } from '@skaro/core/c4-view';
   import { kindKey } from './i18n';
   let {
@@ -9,6 +11,8 @@
     ondrill,
     planned = false,
     canDrill = false,
+    children,
+    onsource,
   }: {
     model: C4Model;
     selected: string;
@@ -16,6 +20,8 @@
     ondrill: (id: string) => void;
     planned?: boolean;
     canDrill?: boolean;
+    children?: Snippet | undefined;
+    onsource?: ((path: string) => void) | undefined;
   } = $props();
   const element = $derived(model.elements.find((e) => e.id === selected));
   const relationship = $derived(model.relationships.find((r) => r.id === selected));
@@ -45,7 +51,11 @@
       <Button variant="ghost" size="sm" onclick={() => ondrill(element.id)}>{t('c4.drill')}</Button>
     {/if}
     {#if element?.code.length}<h4>{t('c4.code')}</h4>
-      {#each element.code as path, i (i)}<code>{path}</code>{/each}{/if}
+      {#each element.code as path, i (i)}{#if onsource}<Button
+            variant="ghost"
+            size="sm"
+            onclick={() => onsource?.(path)}><code>{path}</code></Button
+          >{:else}<code>{path}</code>{/if}{/each}{/if}
     {#if relationship}
       {#each [relationship.source, relationship.target] as id (id)}<Button
           variant="ghost"
@@ -68,67 +78,6 @@
       {#each entity.decisions as id, i (i)}<code>ADR-{id}</code>{/each}{/if}
     <h4>{t('c4.evidence')}</h4>
     {#each entity.evidence as text, i (i)}<p>{text}</p>{/each}
+    {@render children?.()}
   </aside>
 {/if}
-
-<style>
-  .c4-details {
-    width: 300px;
-    flex: 0 0 300px;
-    padding: 18px;
-    overflow: auto;
-    border-left: 1px solid var(--sk-line);
-    background: var(--sk-modal);
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .kind,
-  .state {
-    font-size: 11px;
-    color: var(--sk-link);
-  }
-  h3 {
-    margin: 0;
-    font-size: 14px;
-    color: var(--sk-text-bright);
-    overflow-wrap: anywhere;
-  }
-  h4 {
-    margin: 16px 0 0;
-    font-size: 12px;
-    color: var(--sk-text-muted);
-  }
-  p {
-    margin: 0;
-    font-size: 13px;
-    line-height: 1.6;
-    color: var(--sk-text-secondary);
-    overflow-wrap: anywhere;
-  }
-  code {
-    font-size: 11px;
-    color: var(--sk-text-muted);
-    overflow-wrap: anywhere;
-  }
-  .relation {
-    min-width: 0;
-  }
-  .relation span {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .relation small {
-    display: block;
-    color: var(--sk-text-muted);
-    padding-left: 12px;
-  }
-  @media (max-width: 850px) {
-    .c4-details {
-      width: 240px;
-      flex-basis: 240px;
-      padding: 15px;
-    }
-  }
-</style>

@@ -25,6 +25,7 @@ export default defineConfig({
           index: resolve('src/main/index.ts'),
           'background-worker': resolve('src/main/background/worker.ts'),
           'native-worker': resolve('src/main/native/worker.ts'),
+          'graph-worker': resolve('src/main/graph/worker.ts'),
         },
       },
     },

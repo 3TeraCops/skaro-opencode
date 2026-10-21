@@ -1,18 +1,27 @@
 <script lang="ts">
   import { Minus, Plus, Scan } from '@lucide/svelte';
   import { IconButton, t } from '@skaro/ui';
+  import ZoomPercent from './ZoomPercent.svelte';
   let {
     zoom,
     onzoom,
     onfit,
-  }: { zoom: number; onzoom: (factor: number) => void; onfit: () => void } = $props();
+    min = 0.02,
+    max = 4,
+  }: {
+    zoom: number;
+    onzoom: (factor: number) => void;
+    onfit: () => void;
+    min?: number;
+    max?: number;
+  } = $props();
 </script>
 
 <div class="c4-canvas-tools">
   <IconButton tip={t('c4.zoomOut')} onclick={() => onzoom(1 / 1.25)}
     ><Minus size={15} strokeWidth={1.8} /></IconButton
   >
-  <span>{Math.round(zoom * 100)}%</span>
+  <ZoomPercent {zoom} {onzoom} {min} {max} />
   <IconButton tip={t('c4.zoomIn')} onclick={() => onzoom(1.25)}
     ><Plus size={15} strokeWidth={1.8} /></IconButton
   >
@@ -33,11 +42,5 @@
     box-shadow:
       0 0 0 1px var(--sk-white-a4),
       0 8px 24px var(--sk-black-a35);
-  }
-  span {
-    min-width: 42px;
-    text-align: center;
-    font: var(--sk-fs-3) var(--sk-mono);
-    color: var(--sk-text-muted);
   }
 </style>

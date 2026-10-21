@@ -1,0 +1,54 @@
+.graph-workspace {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.graph-workspace .c4-viewer-nav {
+  flex-wrap: wrap;
+}
+.graph-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px 12px;
+}
+.graph-alert {
+  margin: 8px 18px 12px;
+}
+.graph-notice > :first-child {
+  flex: 1;
+}
+.graph-playback {
+  padding-bottom: 8px;
+}
+.graph-step {
+  padding: 0 18px 14px;
+  color: var(--sk-text-secondary);
+  font-size: var(--sk-fs-5);
+}
+.graph-step > span {
+  color: var(--sk-text-muted);
+  font-size: var(--sk-fs-3);
+}
+.graph-step p {
+  margin: 6px 0;
+  line-height: 1.6;
+}
+.graph-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.graph-coverage {
+  padding: 12px;
+  font-size: var(--sk-fs-4);
+  color: var(--sk-text-muted);
+}
+.graph-coverage p {
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+.graph-workspace .graph-footer {
+  align-items: center;
+  flex-wrap: wrap;
+}

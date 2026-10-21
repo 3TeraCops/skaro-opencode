@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { DocsProps } from './docs-props';
   import { createDocsController } from './docs-controller.svelte';
-  let { projectId, open, tasks, onchat, ontask, onimport }: DocsProps = $props();
+  let { projectId, open, tasks, onchat, ontask, onimport, onleave }: DocsProps = $props();
   const model = createDocsController({
     get projectId() {
       return projectId;
@@ -21,6 +21,7 @@
     get onimport() {
       return onimport;
     },
+    get onleave() { return onleave; },
   });
   import { titleOf } from './model';
   import DocContent from './DocContent.svelte';
@@ -69,6 +70,6 @@
   <LeaveModal
     title={titleOf(model.doc)}
     ondiscard={model.discard}
-    onstay={() => (model.modal = undefined)}
+    onstay={model.stay}
   />
 {/if}
